@@ -4,6 +4,7 @@ Domain Layer - Core interfaces for the deep learning framework.
 This module defines the abstraction layer that decouples business logic
 from concrete implementations (PyTorch, MONAI, etc.).
 """
+
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 import torch
@@ -185,28 +186,6 @@ class OptimizerFactory(ABC):
         pass
 
 
-class LRSchedulerFactory(ABC):
-    """
-    Interface for learning rate scheduler creation.
-    """
-
-    @abstractmethod
-    def create(
-        self,
-        optimizer: torch.optim.Optimizer,
-    ) -> Optional[torch.optim.lr_scheduler._LRScheduler]:
-        """
-        Create a learning rate scheduler.
-
-        Args:
-            optimizer: The optimizer to schedule
-
-        Returns:
-            LR scheduler or None if no scheduler is needed
-        """
-        pass
-
-
 # =============================================================================
 # Inference Interfaces
 # =============================================================================
@@ -295,36 +274,6 @@ class Metrics(ABC):
     @abstractmethod
     def reset(self) -> None:
         """Reset accumulated metrics for next epoch/test."""
-        pass
-
-
-# =============================================================================
-# Export Interfaces
-# =============================================================================
-
-
-class Exporter(ABC):
-    """
-    Interface for result export.
-
-    Handles saving predictions in various formats (CSV, JSON, images, etc.).
-    """
-
-    @abstractmethod
-    def export(
-        self,
-        predictions: Any,
-        metadata: Dict[str, Any],
-        output_dir: str,
-    ) -> None:
-        """
-        Export predictions to disk.
-
-        Args:
-            predictions: Predictions to export
-            metadata: Additional metadata (filenames, patient IDs, etc.)
-            output_dir: Directory to save exports
-        """
         pass
 
 
@@ -451,100 +400,20 @@ class VQModelInterface(ModelInterface):
 
     @property
     @abstractmethod
-    def latent_shape(self) -> Tuple[int, int, int]:
-        """Get the shape of latent representations (C, H, W)."""
-        pass
-
-
-class GANOptimizerInterface(ABC):
-    """
-    Interface for GAN optimizers (Generator + Discriminator).
-
-    VQGAN requires managing two separate optimizers.
-    """
-
-    @abstractmethod
-    def zero_grad(self) -> None:
-        """Zero gradients for both G and D."""
+    def latent_shape(self) -> Tuple[int, int, int, int]:
+        """Get the shape of latent representations (C, D, H, W)."""
         pass
 
     @abstractmethod
-    def step(self) -> None:
-        """Step both optimizers."""
-        pass
-
-    @property
-    @abstractmethod
-    def generator_optimizer(self) -> torch.optim.Optimizer:
-        """Get the generator optimizer."""
-        pass
-
-    @property
-    @abstractmethod
-    def discriminator_optimizer(self) -> torch.optim.Optimizer:
-        """Get the discriminator optimizer."""
-        pass
-
-
-# =============================================================================
-# Lightning Module Interface
-# =============================================================================
-
-
-class LightningModuleInterface(ABC):
-    """
-    Interface for PyTorch Lightning module creation.
-
-    This interface allows custom training logic while maintaining
-    compatibility with the Lightning training loop.
-    """
-
-    @abstractmethod
-    def training_step(
-        self,
-        batch: Tuple[torch.Tensor, ...],
-        batch_idx: int,
-    ) -> Dict[str, torch.Tensor]:
+    def forward_with_loss(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Training step logic.
+        Forward pass returning reconstruction and quantization loss.
 
         Args:
-            batch: Input batch
-            batch_idx: Batch index
+            x: Input tensor
 
         Returns:
-            Dictionary with 'loss' key
-        """
-        pass
-
-    @abstractmethod
-    def validation_step(
-        self,
-        batch: Tuple[torch.Tensor, ...],
-        batch_idx: int,
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Validation step logic.
-
-        Args:
-            batch: Input batch
-            batch_idx: Batch index
-
-        Returns:
-            Dictionary of validation metrics
-        """
-        pass
-
-    @abstractmethod
-    def configure_optimizers(self) -> Union[
-        torch.optim.Optimizer,
-        Tuple[List[torch.optim.Optimizer], List[Any]],
-    ]:
-        """
-        Configure optimizers and schedulers.
-
-        Returns:
-            Optimizer or tuple of (optimizers, schedulers)
+            Tuple of (reconstructed, quantization_loss)
         """
         pass
 

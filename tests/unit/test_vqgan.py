@@ -19,6 +19,7 @@ from maskgit3d.infrastructure.vqgan.discriminator import (
     IdentityDiscriminator,
     ActNorm,
 )
+from maskgit3d.domain.interfaces import ModelInterface
 from maskgit3d.infrastructure.vqgan.vqgan_model_3d import VQModel3D
 
 
@@ -283,3 +284,19 @@ class TestVQModel3D:
             channel_multipliers=(1, 2),
         )
         assert model.codebook_size == 128
+
+
+def test_vqmodel_forward_returns_tensor_for_model_interface_contract():
+    """VQModel3D.forward() must return a single Tensor per ModelInterface contract."""
+    model = VQModel3D(
+        in_channels=1,
+        codebook_size=64,
+        embed_dim=32,
+        latent_channels=64,
+        resolution=32,
+        channel_multipliers=(1, 2),
+    )
+    x = torch.randn(1, 1, 32, 32, 32)
+    out = model.forward(x)
+    assert isinstance(out, torch.Tensor), f"Expected Tensor, got {type(out)}"
+    assert isinstance(model, ModelInterface)

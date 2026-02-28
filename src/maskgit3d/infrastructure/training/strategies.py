@@ -5,7 +5,7 @@ This module provides concrete implementations of TrainingStrategy
 including loss functions, optimization, and metrics computation.
 """
 
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union, cast
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -16,6 +16,7 @@ from maskgit3d.domain.interfaces import (
     ModelInterface,
     OptimizerFactory,
     TrainingStrategy,
+    VQModelInterface,
 )
 
 
@@ -277,10 +278,11 @@ class VQGANTrainingStrategy(TrainingStrategy):
             x = batch
 
         model.train()
+        vq_model = cast(VQModelInterface, model)
 
         # Forward pass with mixed precision
         with self.mixed_precision.autocast_context():
-            xrec, qloss = model(x)
+            xrec, qloss = vq_model.forward_with_loss(x)
             rec_loss = torch.abs(x - xrec)
             loss = self.pixel_loss_weight * rec_loss.mean() + self.codebook_weight * qloss.mean()
 
@@ -311,6 +313,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
             Dictionary of validation metrics
         """
         model.eval()
+        vq_model = cast(VQModelInterface, model)
 
         if isinstance(batch, (tuple, list)):
             x = batch[0]
@@ -318,7 +321,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
             x = batch
 
         with torch.no_grad():
-            xrec, qloss = model(x)
+            xrec, qloss = vq_model.forward_with_loss(x)
             rec_loss = torch.abs(x - xrec)
 
         return {
@@ -327,64 +330,6 @@ class VQGANTrainingStrategy(TrainingStrategy):
             "val_codebook_loss": qloss.mean().item(),
         }
 
-
-class VQGANOptimizerFactory:
-    """
-    Factory for VQGAN optimizers (Generator + Discriminator).
-
-    VQGAN requires two separate optimizers: one for the autoencoder
-    and one for the discriminator.
-    """
-
-    def __init__(
-        self,
-        lr_g: float = 4.5e-6,
-        lr_d: float = 4.5e-6,
-        betas: Tuple[float, float] = (0.5, 0.9),
-        weight_decay: float = 0.0,
-    ):
-        """
-        Initialize VQGAN optimizer factory.
-
-        Args:
-            lr_g: Learning rate for generator
-            lr_d: Learning rate for discriminator
-            betas: Adam beta parameters
-            weight_decay: Weight decay
-        """
-        self.lr_g = lr_g
-        self.lr_d = lr_d
-        self.betas = betas
-        self.weight_decay = weight_decay
-
-    def create(
-        self,
-        model_params_g: Iterator[torch.Tensor],
-        model_params_d: Iterator[torch.Tensor],
-    ) -> Tuple[torch.optim.Optimizer, torch.optim.Optimizer]:
-        """
-        Create generator and discriminator optimizers.
-
-        Args:
-            model_params_g: Generator (autoencoder) parameters
-            model_params_d: Discriminator parameters
-
-        Returns:
-            Tuple of (generator_optimizer, discriminator_optimizer)
-        """
-        opt_g = torch.optim.Adam(
-            model_params_g,
-            lr=self.lr_g,
-            betas=self.betas,
-            weight_decay=self.weight_decay,
-        )
-        opt_d = torch.optim.Adam(
-            model_params_d,
-            lr=self.lr_d,
-            betas=self.betas,
-            weight_decay=self.weight_decay,
-        )
-        return opt_g, opt_d
 
 # =============================================================================
 # VQGAN Inference Strategies
@@ -443,12 +388,13 @@ class VQGANInference(InferenceStrategy):
         elif self.mode == "generate":
             with torch.no_grad():
                 # Generate random codes
+                # latent_shape is (C, D, H, W) for 3D
                 latent_shape = model.latent_shape
-                _, hh, ww = latent_shape
+                dd, hh, ww = latent_shape[1], latent_shape[2], latent_shape[3]
                 codes = torch.randint(
                     0,
                     model.codebook_size,
-                    (batch.shape[0], hh, ww),
+                    (batch.shape[0], dd, hh, ww),
                     device=batch.device,
                 )
                 return model.decode_code(codes)
