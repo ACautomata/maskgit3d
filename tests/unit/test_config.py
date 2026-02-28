@@ -18,6 +18,12 @@ from maskgit3d.infrastructure.maskgit.maskgit_model import MaskGITModel
 from maskgit3d.infrastructure.vqgan import MaisiVQModel3D
 
 
+def test_maskgit_model_requires_explicit_vqgan_and_transformer_dependencies():
+    """MaskGITModel requires explicit vqgan and transformer dependencies."""
+    with pytest.raises(TypeError):
+        MaskGITModel()
+
+
 class TestParameterValidation:
     """Tests for parameter validation functions."""
 

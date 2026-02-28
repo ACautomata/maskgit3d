@@ -27,106 +27,32 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
 
     def __init__(
         self,
-        vqgan: Optional[VQModel3D] = None,
-        transformer: Optional[MaskGITTransformer] = None,
-        # VQGAN config
-        in_channels: int = 1,
-        codebook_size: int = 1024,
-        embed_dim: int = 256,
-        latent_channels: int = 256,
-        resolution: int = 64,
-        channel_multipliers: Tuple[int, ...] = (1, 1, 2, 2, 4),
-        # Transformer config
-        transformer_hidden: int = 768,
-        transformer_layers: int = 12,
-        transformer_heads: int = 12,
-        # Training config
+        vqgan: VQModel3D,
+        transformer: MaskGITTransformer,
         mask_ratio: float = 0.5,
     ):
         """
         Args:
-            vqgan: Optional pre-configured VQModel
-            transformer: Optional pre-configured Transformer
-            in_channels: Number of input channels
-            codebook_size: Size of VQ codebook
-            embed_dim: Embedding dimension for codebook
-            latent_channels: Latent space channels
-            resolution: Input resolution
-            channel_multipliers: Channel multipliers for encoder/decoder
-            transformer_hidden: Hidden dimension for transformer
-            transformer_layers: Number of transformer layers
-            transformer_heads: Number of attention heads
+            vqgan: VQGAN model for encoding/decoding
+            transformer: Transformer for masked token prediction
             mask_ratio: Ratio of tokens to mask during training
         """
         super().__init__()
 
-        self.in_channels = in_channels
-        self._codebook_size = codebook_size
-        self.embed_dim = embed_dim
+        self.vqgan = vqgan
+        self.transformer = transformer
         self.mask_ratio = mask_ratio
-
-        # Build VQGAN if not provided
-        if vqgan is None:
-            self.vqgan = self._build_vqgan(
-                in_channels=in_channels,
-                codebook_size=codebook_size,
-                embed_dim=embed_dim,
-                latent_channels=latent_channels,
-                resolution=resolution,
-                channel_multipliers=channel_multipliers,
-            )
-        else:
-            self.vqgan = vqgan
-
-        # Build Transformer if not provided
-        # vocab_size = codebook_size + 1 (for mask token)
-        if transformer is None:
-            self.transformer = MaskGITTransformer(
-                vocab_size=codebook_size + 1,
-                hidden_size=transformer_hidden,
-                num_layers=transformer_layers,
-                num_heads=transformer_heads,
-            )
-        else:
-            self.transformer = transformer
+        self._codebook_size = vqgan.codebook_size
+        # embed_dim is derived from latent_shape
+        self._latent_shape = (1,) + vqgan.latent_shape[1:]
 
         # Sampler for inference
         self.sampler = MaskGITSampler(num_iterations=12)
 
-        # Latent shape (computed from VQGAN)
-        self._latent_shape = self._compute_latent_shape(resolution, channel_multipliers)
-
-    def _build_vqgan(
-        self,
-        in_channels: int,
-        codebook_size: int,
-        embed_dim: int,
-        latent_channels: int,
-        resolution: int,
-        channel_multipliers: Tuple[int, ...],
-    ) -> "VQModel3D":
-        """Build 3D VQGAN model."""
-        from maskgit3d.infrastructure.vqgan.vqgan_model_3d import VQModel3D
-
-        return VQModel3D(
-            in_channels=in_channels,
-            codebook_size=codebook_size,
-            embed_dim=embed_dim,
-            latent_channels=latent_channels,
-            resolution=resolution,
-            channel_multipliers=channel_multipliers,
-        )
-
-    def _compute_latent_shape(
-        self,
-        resolution: int,
-        channel_multipliers: Tuple[int, ...],
-    ) -> Tuple[int, int, int, int]:
-        """Compute latent shape after VQGAN encoding."""
-        # Each downsampling step halves the resolution
-        num_downsamples = len(channel_multipliers) - 1
-        latent_res = resolution // (2**num_downsamples)
-        return (1, latent_res, latent_res, latent_res)
+    @property
+    def embed_dim(self) -> int:
+        """Embedding dimension (from latent shape)."""
+        return self._latent_shape[1]
 
     @property
     def device(self) -> torch.device:
@@ -255,22 +181,6 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
 
         # Decode tokens to images
         return self.decode_tokens(tokens)
-
-    def train_step(
-        self,
-        x: torch.Tensor,
-    ) -> Dict[str, float]:
-        """
-        Execute one training step with masked token prediction.
-
-        Args:
-            x: Input volumes [B, C, D, H, W]
-
-        Returns:
-            Dictionary of training metrics
-        """
-        _, metrics = self.compute_maskgit_loss(x=x, mask_ratio=self.mask_ratio)
-        return metrics
 
     def compute_maskgit_loss(
         self,

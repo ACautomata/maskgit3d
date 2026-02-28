@@ -721,8 +721,32 @@ class MaskGITModelModule(Module):
 
         if model_type == "maskgit":
             from maskgit3d.infrastructure.maskgit import MaskGITModel
+            from maskgit3d.infrastructure.vqgan.vqgan_model_3d import VQModel3D
+            from maskgit3d.infrastructure.maskgit.transformer import MaskGITTransformer
 
-            return MaskGITModel(**model_params)
+            # Create VQGAN
+            vqgan = VQModel3D(
+                in_channels=model_params["in_channels"],
+                codebook_size=model_params["codebook_size"],
+                embed_dim=model_params["embed_dim"],
+                latent_channels=model_params["latent_channels"],
+                resolution=model_params["resolution"],
+                channel_multipliers=model_params["channel_multipliers"],
+            )
+
+            # Create Transformer
+            transformer = MaskGITTransformer(
+                vocab_size=model_params["codebook_size"] + 1,
+                hidden_size=model_params["transformer_hidden"],
+                num_layers=model_params["transformer_layers"],
+                num_heads=model_params["transformer_heads"],
+            )
+
+            return MaskGITModel(
+                vqgan=vqgan,
+                transformer=transformer,
+                mask_ratio=model_params.get("mask_ratio", 0.5),
+            )
         raise ValueError(f"Unknown MaskGIT model type: {model_type}")
 
 
