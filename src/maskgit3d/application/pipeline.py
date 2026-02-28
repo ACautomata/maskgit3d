@@ -11,6 +11,8 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 
+from maskgit3d.infrastructure.checkpoints import load_checkpoint as load_ckpt
+
 # Try importing pytorch_lightning, handle gracefully if not available
 try:
     import pytorch_lightning as pl
@@ -273,15 +275,8 @@ class TrainingPipeline:
 
     def _load_checkpoint(self, checkpoint_path: str) -> int:
         """Load model checkpoint and return starting epoch."""
-        # Validate checkpoint file exists and is accessible
-        checkpoint_path_obj = Path(checkpoint_path)
-        if not checkpoint_path_obj.exists():
-            raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
-        if not checkpoint_path_obj.is_file():
-            raise ValueError(f"Checkpoint path is not a file: {checkpoint_path}")
-
-        # Load checkpoint with weights_only=True for security
-        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=True)
+        # Use centralized checkpoint loader with security best practices
+        checkpoint = load_ckpt(checkpoint_path, map_location=self.device)
 
         # Load model weights - model implements ModelInterface
         self.model.load_state_dict(checkpoint["model_state_dict"])
@@ -409,15 +404,8 @@ class TestPipeline:
 
     def _load_checkpoint(self, checkpoint_path: str) -> None:
         """Load model checkpoint."""
-        # Validate checkpoint file exists and is accessible
-        checkpoint_path_obj = Path(checkpoint_path)
-        if not checkpoint_path_obj.exists():
-            raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
-        if not checkpoint_path_obj.is_file():
-            raise ValueError(f"Checkpoint path is not a file: {checkpoint_path}")
-
-        # Load checkpoint with weights_only=True for security
-        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=True)
+        # Use centralized checkpoint loader with security best practices
+        checkpoint = load_ckpt(checkpoint_path, map_location=self.device)
 
         # Load model weights - model implements ModelInterface
         self.model.load_state_dict(checkpoint["model_state_dict"])

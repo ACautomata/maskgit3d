@@ -234,7 +234,7 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
 
     def load_checkpoint(self, path: str) -> None:
         """Load model checkpoint."""
-        checkpoint = torch.load(path, map_location=self.device)
+        checkpoint = torch.load(path, map_location=self.device, weights_only=True)
         if "vqgan" in checkpoint:
             self.vqgan.load_state_dict(checkpoint["vqgan"])
         if "transformer" in checkpoint:
