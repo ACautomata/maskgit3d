@@ -4,6 +4,7 @@ Training strategy implementations for VQGAN and MaskGIT models.
 This module provides concrete implementations of TrainingStrategy
 including loss functions, optimization, and metrics computation.
 """
+
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 import torch
 import torch.nn as nn
@@ -58,10 +59,10 @@ class MixedPrecisionTrainer:
     def autocast_context(self):
         """Get autocast context for forward pass."""
         if not self.enabled:
-            return torch.amp.autocast(device_type='cuda', dtype=torch.float32, enabled=False)
+            return torch.amp.autocast(device_type="cuda", dtype=torch.float32, enabled=False)
 
         dtype = torch.float16 if self.dtype == "float16" else torch.bfloat16
-        return torch.amp.autocast(device_type='cuda', dtype=dtype, enabled=True)
+        return torch.amp.autocast(device_type="cuda", dtype=dtype, enabled=True)
 
     def scale_loss(self, loss: torch.Tensor) -> torch.Tensor:
         """
@@ -100,10 +101,7 @@ class MixedPrecisionTrainer:
 
             # Clip gradients
             if self.grad_clip is not None:
-                torch.nn.utils.clip_grad_norm_(
-                    optimizer.param_groups[0]["params"],
-                    self.grad_clip
-                )
+                torch.nn.utils.clip_grad_norm_(optimizer.param_groups[0]["params"], self.grad_clip)
 
             # Step with scaler
             self.scaler.step(optimizer)
@@ -111,10 +109,7 @@ class MixedPrecisionTrainer:
         else:
             # BF16 - just clip and step
             if self.grad_clip is not None:
-                torch.nn.utils.clip_grad_norm_(
-                    optimizer.param_groups[0]["params"],
-                    self.grad_clip
-                )
+                torch.nn.utils.clip_grad_norm_(optimizer.param_groups[0]["params"], self.grad_clip)
             optimizer.step()
 
         optimizer.zero_grad()
@@ -477,7 +472,8 @@ class VQGANInference(InferenceStrategy):
                 latent_shape = model.latent_shape
                 _, hh, ww = latent_shape
                 codes = torch.randint(
-                    0, model.codebook_size,
+                    0,
+                    model.codebook_size,
                     (batch.shape[0], hh, ww),
                     device=batch.device,
                 )
@@ -538,6 +534,7 @@ class VQGANMetrics(Metrics):
         # Use MONAI for PSNR and SSIM
         try:
             from monai.metrics import PSNRMetric, SSIMMetric
+
             self.psnr_metric = PSNRMetric(
                 max_val=data_range,
                 reduction="mean",
@@ -609,6 +606,7 @@ class VQGANMetrics(Metrics):
         """Fallback SSIM computation using torchmetrics if available."""
         try:
             from torchmetrics.functional import structural_similarity_index_measure
+
             return structural_similarity_index_measure(
                 img1.unsqueeze(0) if img1.dim() == 3 else img1,
                 img2.unsqueeze(0) if img2.dim() == 3 else img2,
@@ -616,7 +614,7 @@ class VQGANMetrics(Metrics):
             )
         except ImportError:
             # Ultimate fallback: simple correlation-based metric
-            return torch.tensor(1.0 - F.mse_loss(img1, img2) / (self.data_range ** 2))
+            return torch.tensor(1.0 - F.mse_loss(img1, img2) / (self.data_range**2))
 
     def compute(self) -> Dict[str, float]:
         """Compute final metrics."""
@@ -702,9 +700,8 @@ class MaskGITTrainingStrategy(TrainingStrategy):
 
         # Forward pass with masking and mixed precision
         with self.mixed_precision.autocast_context():
-            # Use model's train_step method
-            if hasattr(model, 'train_step'):
-                metrics = model.train_step(x)
+            if hasattr(model, "compute_maskgit_loss"):
+                loss, metrics = model.compute_maskgit_loss(x, mask_ratio=self.mask_ratio)
             else:
                 # Manual implementation for compatibility
                 tokens = model.encode_tokens(x)
@@ -713,6 +710,11 @@ class MaskGITTrainingStrategy(TrainingStrategy):
 
                 # Random masking
                 mask = torch.rand(B, D * H * W, device=tokens.device) < self.mask_ratio
+
+                # Ensure at least one token masked per sample
+                for i in range(B):
+                    if not mask[i].any():
+                        mask[i, torch.randint(0, D * H * W, (1,), device=tokens.device)] = True
 
                 # Get predictions
                 logits = model.transformer.forward(tokens_flat, mask_indices=mask)
@@ -725,14 +727,17 @@ class MaskGITTrainingStrategy(TrainingStrategy):
 
                 metrics = {
                     "loss": loss.item(),
+                    "mask_acc": (masked_logits.argmax(dim=-1) == masked_targets)
+                    .float()
+                    .mean()
+                    .item(),
+                    "mask_ratio": mask.float().mean().item(),
                 }
 
-        # Backward with mixed precision
-        if "loss" in metrics:
-            loss_tensor = torch.tensor(metrics["loss"], device=x.device, requires_grad=True)
-            scaled_loss = self.mixed_precision.scale_loss(loss_tensor)
-            scaled_loss.backward()
-            self.mixed_precision.step_optimizer(optimizer, loss_tensor)
+        # Backward with mixed precision on live loss tensor
+        scaled_loss = self.mixed_precision.scale_loss(loss)
+        scaled_loss.backward()
+        self.mixed_precision.step_optimizer(optimizer, loss)
 
         return metrics
 

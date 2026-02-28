@@ -269,13 +269,22 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
         Returns:
             Dictionary of training metrics
         """
+        _, metrics = self.compute_maskgit_loss(x=x, mask_ratio=self.mask_ratio)
+        return metrics
+
+    def compute_maskgit_loss(
+        self,
+        x: torch.Tensor,
+        mask_ratio: float,
+    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        """Compute MaskGIT cross-entropy loss and detached scalar metrics."""
         # Encode to tokens
         tokens = self.encode_tokens(x)
         B, D, H, W = tokens.shape
         tokens_flat = tokens.view(B, -1)
 
         # Random masking
-        mask = torch.rand(B, D * H * W, device=tokens.device) < self.mask_ratio
+        mask = torch.rand(B, D * H * W, device=tokens.device) < mask_ratio
 
         # Ensure at least one token masked per sample
         for i in range(B):
@@ -296,11 +305,12 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
             preds = masked_logits.argmax(dim=-1)
             acc = (preds == masked_targets).float().mean()
 
-        return {
+        metrics = {
             "loss": loss.item(),
             "mask_acc": acc.item(),
             "mask_ratio": mask.float().mean().item(),
         }
+        return loss, metrics
 
     def save_checkpoint(self, path: str) -> None:
         """Save model checkpoint."""

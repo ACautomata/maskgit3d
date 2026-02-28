@@ -3,6 +3,7 @@ Unit tests for training strategies.
 
 These tests verify the functionality of training and inference strategies.
 """
+
 import pytest
 import torch
 from unittest.mock import MagicMock, patch
@@ -51,8 +52,8 @@ class TestVQGANTrainingStrategy:
         optimizer = MagicMock()
 
         # Use patch to avoid actual backward pass
-        with patch.object(optimizer, 'zero_grad'):
-            with patch.object(optimizer, 'step'):
+        with patch.object(optimizer, "zero_grad"):
+            with patch.object(optimizer, "step"):
                 metrics = strategy.train_step(mock_model, batch, optimizer)
 
         assert "loss" in metrics
@@ -286,6 +287,46 @@ class TestMaskGITTrainingStrategy:
     def test_maskgit_validate_step(self):
         """Test validation step."""
         pytest.skip("MaskGIT validate_step has 3D tensor shape issues")
+
+    def test_maskgit_train_step_backprop_updates_parameters(self):
+        """Train step should backpropagate through live loss tensor."""
+        strategy = MaskGITTrainingStrategy(mask_ratio=0.5)
+
+        class TinyModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.tensor(1.0))
+
+            def encode_tokens(self, x):
+                return torch.zeros((x.shape[0], 1, 1, 4), dtype=torch.long, device=x.device)
+
+            @property
+            def transformer(self):
+                outer = self
+
+                class _T:
+                    @staticmethod
+                    def forward(tokens_flat, mask_indices):
+                        logits = torch.zeros(
+                            tokens_flat.shape[0],
+                            tokens_flat.shape[1],
+                            8,
+                            device=tokens_flat.device,
+                        )
+                        logits[..., 0] = outer.weight
+                        return logits
+
+                return _T()
+
+        model = TinyModel()
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+        batch = (torch.randn(2, 1, 4, 4, 4),)
+
+        before = model.weight.detach().clone()
+        strategy.train_step(model, batch, optimizer)
+        after = model.weight.detach().clone()
+
+        assert not torch.equal(before, after)
 
 
 class TestMaskGITInference:
