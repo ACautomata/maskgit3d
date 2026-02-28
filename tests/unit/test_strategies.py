@@ -371,3 +371,30 @@ class TestMaskGITInference:
 
         assert "volumes" in result
         assert result["volumes"].shape == predictions.shape
+
+        assert "volumes" in result
+        assert result["volumes"].shape == predictions.shape
+
+
+def test_strategy_annotations_use_specific_model_interfaces():
+    """Verify training strategies use specific model interfaces in type hints."""
+    import inspect
+    from maskgit3d.infrastructure.training.strategies import (
+        VQGANTrainingStrategy,
+        MaskGITTrainingStrategy,
+    )
+
+    vq_sig = inspect.signature(VQGANTrainingStrategy.train_step)
+    mg_sig = inspect.signature(MaskGITTrainingStrategy.train_step)
+
+    # VQGANTrainingStrategy should use VQModelInterface
+    vq_model_annotation = str(vq_sig.parameters["model"].annotation)
+    assert "VQModelInterface" in vq_model_annotation, (
+        f"Expected VQModelInterface in annotation, got: {vq_model_annotation}"
+    )
+
+    # MaskGITTrainingStrategy should use MaskGITModelInterface
+    mg_model_annotation = str(mg_sig.parameters["model"].annotation)
+    assert "MaskGITModelInterface" in mg_model_annotation, (
+        f"Expected MaskGITModelInterface in annotation, got: {mg_model_annotation}"
+    )
