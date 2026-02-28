@@ -202,3 +202,15 @@ def test_maisi_vq_module_binds_maisi_class_name():
     module = MaisiVQModule(model_config={"type": "maisi_vq", "params": {}})
     model = module.model_module.provide_maisi_vq_model()
     assert model.__class__ is MaisiVQModel3D
+
+
+class TestOptimizerConfigDataclass:
+    """Tests for OptimizerConfig dataclass."""
+
+    def test_optimizer_config_dataclass_defaults_are_stable(self):
+        """Test OptimizerConfig dataclass defaults are stable."""
+        from maskgit3d.config.schemas import OptimizerConfig
+
+        cfg = OptimizerConfig(type="adam", params={"lr": 1e-4})
+        assert cfg.type == "adam"
+        assert cfg.params["lr"] == 1e-4
