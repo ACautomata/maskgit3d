@@ -25,6 +25,12 @@ class TestModelInterface:
         with pytest.raises(TypeError):
             ModelInterface()
 
+    def test_model_interface_declares_module_runtime_methods(self):
+        """ModelInterface must declare nn.Module runtime methods used by pipelines."""
+        required = ["to", "parameters", "train", "eval", "state_dict", "load_state_dict"]
+        for name in required:
+            assert hasattr(ModelInterface, name), f"ModelInterface missing {name}"
+
 
 class TestMockModel:
     """Tests using a mock model."""
