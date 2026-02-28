@@ -4,16 +4,17 @@
 This module provides the 3D version of VQGAN for volumetric medical images.
 """
 
-from typing import Dict, Optional, Tuple
+from typing import Tuple
+
 import torch
 import torch.nn as nn
 
-from maskgit3d.domain.interfaces import VQModelInterface
+from maskgit3d.infrastructure.vqgan.base_vq_model import BaseVQModel
 from maskgit3d.infrastructure.vqgan.encoder_decoder_3d import Encoder3d, Decoder3d
-from maskgit3d.infrastructure.vqgan.quantize import VectorQuantizer2
+from maskgit3d.infrastructure.vqgan.quantize import VectorQuantizer
 
 
-class VQModel3D(nn.Module, VQModelInterface):
+class VQModel3D(BaseVQModel):
     """
     3D VQGAN/VQVAE Model for volumetric medical images.
 
@@ -47,12 +48,18 @@ class VQModel3D(nn.Module, VQModelInterface):
             attn_resolutions: Resolutions for attention
             dropout: Dropout probability
         """
-        super().__init__()
+        super().__init__(
+            in_channels=in_channels,
+            codebook_size=codebook_size,
+            embed_dim=embed_dim,
+            latent_channels=latent_channels,
+        )
 
-        self.in_channels = in_channels
-        self._codebook_size = codebook_size
-        self.embed_dim = embed_dim
-        self.resolution = resolution
+        self._resolution = resolution
+        self._channel_multipliers = channel_multipliers
+        self._num_res_blocks = num_res_blocks
+        self._attn_resolutions = attn_resolutions
+        self._dropout = dropout
 
         # Encoder
         self.encoder = Encoder3d(
@@ -66,7 +73,7 @@ class VQModel3D(nn.Module, VQModelInterface):
         )
 
         # Quantizer
-        self.quantize = VectorQuantizer2(
+        self.quantize = VectorQuantizer(
             n_embed=codebook_size,
             embed_dim=embed_dim,
             beta=0.25,
@@ -87,6 +94,15 @@ class VQModel3D(nn.Module, VQModelInterface):
             attn_resolutions=attn_resolutions,
             dropout=dropout,
         )
+
+        # Eagerly compute and cache latent shape from encoder output
+        with torch.no_grad():
+            dummy = torch.zeros(1, in_channels, resolution, resolution, resolution)
+            h = self.encoder(dummy)
+            h = self.quant_conv(h)
+            # h shape: [B, embed_dim, D', H', W']
+            _, _, dd, hh, ww = h.shape
+            self._latent_shape: Tuple[int, int, int, int] = (embed_dim, dd, hh, ww)
 
     def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Tuple]:
         """
@@ -117,80 +133,7 @@ class VQModel3D(nn.Module, VQModelInterface):
         dec = self.decoder(quant)
         return dec
 
-    def decode_code(self, code: torch.Tensor) -> torch.Tensor:
-        """
-        Decode from codebook indices directly.
-
-        Args:
-            code: Codebook indices [B, D, H, W]
-
-        Returns:
-            Reconstructed volumes [B, C, D', H', W']
-        """
-        # Handle different input shapes
-        if code.dim() == 4:  # [B, D, H, W]
-            B, D, H, W = code.shape
-            code_flat = code.view(B, -1)
-        else:  # [B, N]
-            B = code.shape[0]
-            code_flat = code
-            # Try to infer D, H, W from latent shape
-            N = code_flat.shape[1]
-            latent_res = round(N ** (1 / 3))
-            D = H = W = latent_res
-
-        # Get quantized latents from indices
-        quant_b = self.quantize.get_codebook_entry(code_flat, shape=(B, D, H, W, self.embed_dim))
-        # Rearrange from DHWC to CDHW
-        quant_b = quant_b.permute(0, 4, 1, 2, 3).contiguous()
-
-        # Decode
-        dec = self.decode(quant_b)
-        return dec
-
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Full encode-decode forward pass.
-
-        Args:
-            x: Input volumes [B, C, D, H, W]
-
-        Returns:
-            Tuple of (reconstructed_volumes, quantization_loss)
-        """
-        quant, diff, _ = self.encode(x)
-        dec = self.decode(quant)
-        return dec, diff
-
-    def save_checkpoint(self, path: str) -> None:
-        """Save model checkpoint."""
-        torch.save(self.state_dict(), path)
-
-    def load_checkpoint(self, path: str) -> None:
-        """Load model checkpoint."""
-        self.load_state_dict(torch.load(path, map_location="cpu"))
-
     @property
-    def device(self) -> torch.device:
-        """Get model device."""
-        return next(self.parameters()).device
-
-    @property
-    def codebook_size(self) -> int:
-        """Get the number of codes in the codebook."""
-        return self._codebook_size
-
-    @property
-    def latent_shape(self) -> Tuple[int, int, int]:
-        """Get the shape of latent representations (C, D, H, W)."""
-        # Infer from encoder output
-        with torch.no_grad():
-            dummy = torch.zeros(
-                1, self.in_channels, self.resolution, self.resolution, self.resolution
-            )
-            h = self.encoder(dummy)
-            _, _, info = self.quantize(h)
-            indices = info[2]
-            # Indices shape: [B, D', H', W']
-            b, dd, hh, ww = indices.shape
-        return (self.embed_dim, dd, hh, ww)
+    def latent_shape(self) -> Tuple[int, int, int, int]:
+        """Get the cached shape of latent representations (C, D, H, W)."""
+        return self._latent_shape

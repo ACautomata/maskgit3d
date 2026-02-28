@@ -251,3 +251,28 @@ def test_vqmodel_forward_returns_tensor_for_model_interface_contract():
     out = model.forward(x)
     assert isinstance(out, torch.Tensor), f"Expected Tensor, got {type(out)}"
     assert isinstance(model, ModelInterface)
+
+
+def test_vqmodel_latent_shape_does_not_rerun_encoder_each_access(monkeypatch):
+    """latent_shape must return cached value without running the encoder."""
+    model = VQModel3D(
+        in_channels=1,
+        codebook_size=64,
+        embed_dim=32,
+        latent_channels=64,
+        resolution=32,
+        channel_multipliers=(1, 2),
+    )
+
+    call_count = {"n": 0}
+    original = model.encoder.forward
+
+    def wrapped(*args, **kwargs):
+        call_count["n"] += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(model.encoder, "forward", wrapped)
+    _ = model.latent_shape
+    _ = model.latent_shape
+
+    assert call_count["n"] == 0
