@@ -306,7 +306,30 @@ class TestMaskGITTrainingStrategy:
 
     def test_maskgit_validate_step(self):
         """Test validation step."""
-        pytest.skip("MaskGIT validate_step has 3D tensor shape issues")
+        strategy = MaskGITTrainingStrategy(mask_ratio=0.5)
+        mock_model = MagicMock()
+
+        # Mock model(x) - returns reconstruction
+        mock_model.return_value = torch.randn(2, 1, 8, 8, 8)
+
+        # Mock model.encode_tokens(x) - returns token indices
+        mock_model.encode_tokens.return_value = torch.randint(0, 1024, (2, 1, 4, 4, 4))
+
+        # Mock model.transformer.encode() - returns logits for token prediction
+        # Shape should be (B, num_tokens, codebook_size) for argmax to work
+        mock_transformer = MagicMock()
+        mock_transformer.encode.return_value = torch.randn(2, 64, 1024)
+        mock_model.transformer = mock_transformer
+
+        batch = (torch.randn(2, 1, 8, 8, 8),)
+
+        metrics = strategy.validate_step(mock_model, batch)
+
+        assert "val_loss" in metrics
+        assert "val_token_acc" in metrics
+        # Metrics should be Python floats
+        assert isinstance(metrics["val_loss"], float)
+        assert isinstance(metrics["val_token_acc"], float)
 
     def test_maskgit_train_step_backprop_updates_parameters(self):
         """Train step should backpropagate through live loss tensor."""
