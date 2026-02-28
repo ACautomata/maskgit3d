@@ -319,3 +319,8 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "gpu: marks tests that require GPU"
     )
+
+def test_domain_layer_does_not_export_maskgit_strategy_abstraction():
+    """Domain layer should not export framework-specific strategy abstractions."""
+    from maskgit3d.domain import interfaces
+    assert not hasattr(interfaces, "MaskGITTrainingStrategy")
