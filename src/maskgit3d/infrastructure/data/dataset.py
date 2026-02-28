@@ -4,9 +4,12 @@ Simple data providers for synthetic data generation.
 This module provides SimpleDataProvider for generating synthetic 3D volumes
 for testing and development purposes.
 """
+from abc import ABC
 from typing import Iterator, List, Optional, Tuple
 import torch
 from torch.utils.data import DataLoader, Dataset
+
+from maskgit3d.domain.interfaces import DataProvider
 
 
 class SyntheticDataset(Dataset):
@@ -60,7 +63,7 @@ class SyntheticDataset(Dataset):
         return x, y
 
 
-class SimpleDataProvider:
+class SimpleDataProvider(DataProvider):
     """
     Simple data provider using synthetic data.
 

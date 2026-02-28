@@ -257,6 +257,14 @@ class TestOptimizerFactory:
 class TestSimpleDataProvider:
     """Tests using SimpleDataProvider."""
 
+    def test_simple_data_provider_implements_data_provider_interface(self):
+        """SimpleDataProvider must implement DataProvider."""
+        from maskgit3d.infrastructure.data.dataset import SimpleDataProvider
+        from maskgit3d.domain.interfaces import DataProvider
+
+        provider = SimpleDataProvider(num_train=2, num_val=1, num_test=1, batch_size=1)
+        assert isinstance(provider, DataProvider)
+
     def test_simple_data_provider_creation(self):
         """Test creating SimpleDataProvider."""
         from maskgit3d.infrastructure.data.dataset import SimpleDataProvider
