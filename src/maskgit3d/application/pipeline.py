@@ -4,6 +4,7 @@ Application layer - Training and Test pipelines.
 This module provides high-level pipelines that orchestrate
 the training, validation, and testing workflows.
 """
+
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 import torch
@@ -63,9 +64,7 @@ class TrainingPipeline:
 
         # Setup device
         if device is None:
-            self.device = torch.device(
-                "cuda" if torch.cuda.is_available() else "cpu"
-            )
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = device
 
@@ -73,9 +72,7 @@ class TrainingPipeline:
         self.model.to(self.device)
 
         # Create optimizer
-        self.optimizer = self.optimizer_factory.create(
-            self.model.parameters()
-        )
+        self.optimizer = self.optimizer_factory.create(self.model.parameters())
 
         # Ensure checkpoint directory exists
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -102,49 +99,52 @@ class TrainingPipeline:
         if resume_from:
             start_epoch = self._load_checkpoint(resume_from)
 
-        history = {
-            "train_loss": [],
-            "val_loss": [],
-            "train_dice": [],
-            "val_dice": [],
-        }
+        # Initialize empty history - will be populated dynamically
+        history: Dict[str, List[float]] = {}
 
         for epoch in range(start_epoch, num_epochs):
             # Training phase
             train_metrics = self._train_epoch(epoch)
-            history["train_loss"].extend(train_metrics["losses"])
-            history["train_dice"].extend(train_metrics["dice_scores"])
+
+            # Dynamically extend history with train metrics
+            for key, values in train_metrics.items():
+                history.setdefault(key, []).extend(values)
 
             # Validation phase
             if (epoch + 1) % val_frequency == 0:
                 val_metrics = self._validate_epoch(epoch)
-                history["val_loss"].extend(val_metrics["losses"])
-                history["val_dice"].extend(val_metrics["dice_scores"])
 
-                # Print epoch summary
-                avg_train_loss = sum(train_metrics["losses"]) / len(
-                    train_metrics["losses"]
-                )
-                avg_val_loss = sum(val_metrics["losses"]) / len(
-                    val_metrics["losses"]
-                )
-                print(
-                    f"Epoch {epoch + 1}/{num_epochs} - "
-                    f"Train Loss: {avg_train_loss:.4f}, "
-                    f"Val Loss: {avg_val_loss:.4f}"
-                )
+                # Dynamically extend history with validation metrics
+                for key, values in val_metrics.items():
+                    history.setdefault(key, []).extend(values)
+
+                # Print epoch summary - use first available loss key
+                train_loss_key = "train_loss" if "train_loss" in history else None
+                val_loss_key = "val_loss" if "val_loss" in history else None
+
+                if train_loss_key and history[train_loss_key]:
+                    avg_train_loss = sum(history[train_loss_key]) / len(history[train_loss_key])
+                    print(
+                        f"Epoch {epoch + 1}/{num_epochs} - Train Loss: {avg_train_loss:.4f}", end=""
+                    )
+                    if val_loss_key and history[val_loss_key]:
+                        avg_val_loss = sum(history[val_loss_key]) / len(history[val_loss_key])
+                        print(f", Val Loss: {avg_val_loss:.4f}")
+                    else:
+                        print()
+                else:
+                    print(f"Epoch {epoch + 1}/{num_epochs}")
 
                 # Save checkpoint
                 self._save_checkpoint(epoch, train_metrics, val_metrics)
             else:
-                # Print epoch summary (without validation)
-                avg_train_loss = sum(train_metrics["losses"]) / len(
-                    train_metrics["losses"]
-                )
-                print(
-                    f"Epoch {epoch + 1}/{num_epochs} - "
-                    f"Train Loss: {avg_train_loss:.4f}"
-                )
+                # Print epoch summary (without validation) - use first available loss key
+                train_loss_key = "train_loss" if "train_loss" in history else None
+                if train_loss_key and history[train_loss_key]:
+                    avg_train_loss = sum(history[train_loss_key]) / len(history[train_loss_key])
+                    print(f"Epoch {epoch + 1}/{num_epochs} - Train Loss: {avg_train_loss:.4f}")
+                else:
+                    print(f"Epoch {epoch + 1}/{num_epochs}")
 
         return history
 
@@ -152,8 +152,8 @@ class TrainingPipeline:
         """Run one training epoch."""
         self.model.train()
 
-        losses = []
-        dice_scores = []
+        # Collect all metrics dynamically
+        metrics_history: Dict[str, List[float]] = {}
 
         train_loader = self.data_provider.train_loader()
 
@@ -163,28 +163,34 @@ class TrainingPipeline:
             batch = self._move_batch_to_device(batch)
 
             # Training step
-            metrics = self.training_strategy.train_step(
-                self.model, batch, self.optimizer
-            )
+            metrics = self.training_strategy.train_step(self.model, batch, self.optimizer)
 
-            losses.append(metrics.get("loss", 0))
-            dice_scores.append(metrics.get("dice_score", 0))
+            # Dynamically collect all metrics from strategy
+            for key, value in metrics.items():
+                # Skip non-numeric values
+                if not isinstance(value, (int, float)):
+                    continue
+                # Prefix with train_ if not already prefixed
+                prefixed_key = key if key.startswith("train_") else f"train_{key}"
+                metrics_history.setdefault(prefixed_key, []).append(float(value))
 
-            # Logging
-            if (batch_idx + 1) % self.log_interval == 0:
-                pbar.set_postfix({
-                    "loss": f"{metrics['loss']:.4f}",
-                    "dice": f"{metrics.get('dice_score', 0):.4f}",
-                })
+            # Logging - use loss if available
+            log_dict = {}
+            if "loss" in metrics:
+                log_dict["loss"] = f"{metrics['loss']:.4f}"
+            if "train_loss" in metrics:
+                log_dict["loss"] = f"{metrics['train_loss']:.4f}"
+            if log_dict:
+                pbar.set_postfix(log_dict)
 
-        return {"losses": losses, "dice_scores": dice_scores}
+        return metrics_history
 
     def _validate_epoch(self, epoch: int) -> Dict[str, List[float]]:
         """Run one validation epoch."""
         self.model.eval()
 
-        losses = []
-        dice_scores = []
+        # Collect all metrics dynamically
+        metrics_history: Dict[str, List[float]] = {}
 
         val_loader = self.data_provider.val_loader()
 
@@ -195,19 +201,25 @@ class TrainingPipeline:
                 batch = self._move_batch_to_device(batch)
 
                 # Validation step
-                metrics = self.training_strategy.validate_step(
-                    self.model, batch
-                )
+                metrics = self.training_strategy.validate_step(self.model, batch)
 
-                losses.append(metrics.get("val_loss", 0))
-                dice_scores.append(metrics.get("val_dice_score", 0))
+                # Dynamically collect all metrics from strategy
+                for key, value in metrics.items():
+                    # Skip non-numeric values
+                    if not isinstance(value, (int, float)):
+                        continue
+                    # Use val_ prefix if not already prefixed
+                    prefixed_key = key if key.startswith("val_") else f"val_{key}"
+                    metrics_history.setdefault(prefixed_key, []).append(float(value))
 
-                pbar.set_postfix({
-                    "loss": f"{metrics['val_loss']:.4f}",
-                    "dice": f"{metrics.get('val_dice_score', 0):.4f}",
-                })
+                # Logging - use val_loss if available
+                log_dict = {}
+                if "val_loss" in metrics:
+                    log_dict["loss"] = f"{metrics['val_loss']:.4f}"
+                if log_dict:
+                    pbar.set_postfix(log_dict)
 
-        return {"losses": losses, "dice_scores": dice_scores}
+        return metrics_history
 
     def _move_batch_to_device(
         self,
@@ -228,20 +240,26 @@ class TrainingPipeline:
         # Get model state dict - model implements ModelInterface
         model_state = self.model.state_dict()
 
-        torch.save(
-            {
-                "epoch": epoch + 1,
-                "model_state_dict": model_state,
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "train_loss": sum(train_metrics["losses"]) / len(
-                    train_metrics["losses"]
-                ),
-                "val_loss": sum(val_metrics["losses"]) / len(
-                    val_metrics["losses"]
-                ),
-            },
-            checkpoint_path,
-        )
+        # Collect checkpoint data dynamically
+        checkpoint_data: Dict[str, Any] = {
+            "epoch": epoch + 1,
+            "model_state_dict": model_state,
+            "optimizer_state_dict": self.optimizer.state_dict(),
+        }
+
+        # Add train loss if available
+        if "train_loss" in train_metrics and train_metrics["train_loss"]:
+            checkpoint_data["train_loss"] = sum(train_metrics["train_loss"]) / len(
+                train_metrics["train_loss"]
+            )
+
+        # Add val loss if available
+        if "val_loss" in val_metrics and val_metrics["val_loss"]:
+            checkpoint_data["val_loss"] = sum(val_metrics["val_loss"]) / len(
+                val_metrics["val_loss"]
+            )
+
+        torch.save(checkpoint_data, checkpoint_path)
 
         print(f"Checkpoint saved to {checkpoint_path}")
 
@@ -255,11 +273,7 @@ class TrainingPipeline:
             raise ValueError(f"Checkpoint path is not a file: {checkpoint_path}")
 
         # Load checkpoint with weights_only=True for security
-        checkpoint = torch.load(
-            checkpoint_path,
-            map_location=self.device,
-            weights_only=True
-        )
+        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=True)
 
         # Load model weights - model implements ModelInterface
         self.model.load_state_dict(checkpoint["model_state_dict"])
@@ -310,9 +324,7 @@ class TestPipeline:
 
         # Setup device
         if device is None:
-            self.device = torch.device(
-                "cuda" if torch.cuda.is_available() else "cpu"
-            )
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = device
 
@@ -362,9 +374,7 @@ class TestPipeline:
                     targets = None
 
                 # Run inference
-                raw_predictions = self.inference_strategy.predict(
-                    self.model, images
-                )
+                raw_predictions = self.inference_strategy.predict(self.model, images)
                 processed = self.inference_strategy.post_process(raw_predictions)
 
                 all_predictions.append(processed)
@@ -399,11 +409,7 @@ class TestPipeline:
             raise ValueError(f"Checkpoint path is not a file: {checkpoint_path}")
 
         # Load checkpoint with weights_only=True for security
-        checkpoint = torch.load(
-            checkpoint_path,
-            map_location=self.device,
-            weights_only=True
-        )
+        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=True)
 
         # Load model weights - model implements ModelInterface
         self.model.load_state_dict(checkpoint["model_state_dict"])
@@ -459,16 +465,12 @@ class LightningTrainingPipeline:
         self.optimizer_factory = optimizer_factory
 
         if device is None:
-            self.device = torch.device(
-                "cuda" if torch.cuda.is_available() else "cpu"
-            )
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = device
 
         # Create optimizer
-        self.optimizer = self.optimizer_factory.create(
-            self.model.parameters()
-        )
+        self.optimizer = self.optimizer_factory.create(self.model.parameters())
 
     def training_step(
         self,
@@ -477,9 +479,7 @@ class LightningTrainingPipeline:
     ) -> Dict[str, torch.Tensor]:
         """Lightning-compatible training step."""
         batch = self._move_batch_to_device(batch)
-        metrics = self.training_strategy.train_step(
-            self.model, batch, self.optimizer
-        )
+        metrics = self.training_strategy.train_step(self.model, batch, self.optimizer)
         return {"loss": torch.tensor(metrics["loss"])}
 
     def validation_step(
