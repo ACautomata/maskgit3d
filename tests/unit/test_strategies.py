@@ -29,12 +29,9 @@ class TestVQGANTrainingStrategy:
         strategy = VQGANTrainingStrategy(
             codebook_weight=1.0,
             pixel_loss_weight=1.0,
-            perceptual_weight=1.0,
-            disc_weight=1.0,
-            disc_start=10000,
         )
         assert strategy.codebook_weight == 1.0
-        assert strategy.disc_start == 10000
+        assert strategy.pixel_loss_weight == 1.0
 
     def test_vqgan_train_step_with_mock_model(self):
         """Test training step with mock model."""
@@ -43,7 +40,7 @@ class TestVQGANTrainingStrategy:
 
         # Mock model output: (reconstructed, quantizer_loss)
         # Use tensors that require grad for backward compatibility
-        mock_model.return_value = (
+        mock_model.forward_with_loss.return_value = (
             torch.randn(2, 1, 8, 8, 8, requires_grad=True),  # xrec
             torch.tensor(0.1, requires_grad=True),  # qloss
         )
@@ -65,7 +62,7 @@ class TestVQGANTrainingStrategy:
         strategy = VQGANTrainingStrategy()
         mock_model = MagicMock()
 
-        mock_model.return_value = (
+        mock_model.forward_with_loss.return_value = (
             torch.randn(2, 1, 8, 8, 8),
             torch.tensor(0.1),
         )
@@ -79,35 +76,6 @@ class TestVQGANTrainingStrategy:
         assert "val_codebook_loss" in metrics
         # Metrics should be Python floats
         assert isinstance(metrics["val_loss"], float)
-
-
-class TestVQGANOptimizerFactory:
-    """Tests for VQGANOptimizerFactory."""
-
-    def test_vqgan_optimizer_factory_creation(self):
-        """Test creating VQGANOptimizerFactory."""
-        factory = VQGANOptimizerFactory(
-            lr_g=1e-4,
-            lr_d=1e-4,
-            betas=(0.5, 0.9),
-        )
-        assert factory.lr_g == 1e-4
-        assert factory.lr_d == 1e-4
-
-    def test_vqgan_optimizer_factory_create(self):
-        """Test creating optimizers."""
-        factory = VQGANOptimizerFactory()
-
-        # Create mock parameters
-        params_g = [torch.randn(10, 10)]
-        params_d = [torch.randn(10, 10)]
-
-        opt_g, opt_d = factory.create(iter(params_g), iter(params_d))
-
-        assert opt_g is not None
-        assert opt_d is not None
-        assert opt_g.param_groups[0]["lr"] == factory.lr_g
-        assert opt_d.param_groups[0]["lr"] == factory.lr_d
 
 
 class TestVQGANInference:
@@ -271,6 +239,47 @@ class TestAdamWOptimizerFactory:
 
         assert optimizer.param_groups[0]["lr"] == 1e-3
         assert optimizer.param_groups[0]["weight_decay"] == 0.01
+
+
+class TestVQGANOptimizerFactory:
+    """Tests for VQGANOptimizerFactory."""
+
+    def test_vqgan_optimizer_factory_creation(self):
+        """Test creating VQGANOptimizerFactory."""
+        factory = VQGANOptimizerFactory(
+            lr_g=1e-4,
+            lr_d=2e-4,
+            weight_decay=0.01,
+            betas=(0.9, 0.999),
+        )
+        assert factory.lr_g == 1e-4
+        assert factory.lr_d == 2e-4
+
+    def test_vqgan_optimizer_factory_implements_gan_optimizer_factory(self):
+        """VQGANOptimizerFactory must implement GANOptimizerFactory."""
+        from maskgit3d.domain.interfaces import GANOptimizerFactory
+        from maskgit3d.infrastructure.training.strategies import VQGANOptimizerFactory
+        factory = VQGANOptimizerFactory()
+        assert isinstance(factory, GANOptimizerFactory)
+
+    def test_vqgan_optimizer_factory_creates_dual_optimizers(self):
+        """VQGANOptimizerFactory.create() must return two optimizers."""
+        from maskgit3d.infrastructure.training.strategies import VQGANOptimizerFactory
+        factory = VQGANOptimizerFactory(lr_g=1e-4, lr_d=2e-4)
+        params_g = [torch.nn.Parameter(torch.randn(10, 10))]
+        params_d = [torch.nn.Parameter(torch.randn(5, 5))]
+        opt_g, opt_d = factory.create(iter(params_g), iter(params_d))
+        assert opt_g.param_groups[0]["lr"] == 1e-4
+        assert opt_d.param_groups[0]["lr"] == 2e-4
+
+    def test_vqgan_optimizer_factory_creates_generator_only(self):
+        """VQGANOptimizerFactory.create() can return just generator optimizer."""
+        from maskgit3d.infrastructure.training.strategies import VQGANOptimizerFactory
+        factory = VQGANOptimizerFactory(lr_g=1e-4)
+        params_g = [torch.nn.Parameter(torch.randn(10, 10))]
+        opt_g, opt_d = factory.create(iter(params_g), None)
+        assert opt_g.param_groups[0]["lr"] == 1e-4
+        assert opt_d is None
 
 
 class TestMaskGITTrainingStrategy:

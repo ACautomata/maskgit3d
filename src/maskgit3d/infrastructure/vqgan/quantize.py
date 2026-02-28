@@ -28,6 +28,9 @@ class VectorQuantizer(nn.Module, QuantizerInterface):
         n_embed: int,
         embed_dim: int,
         beta: float = 0.25,
+        use_ema: bool = False,
+        decay: float = 0.99,
+        eps: float = 1e-5,
         remap: Optional[str] = None,
         sane_index_shape: bool = False,
     ):
@@ -36,6 +39,9 @@ class VectorQuantizer(nn.Module, QuantizerInterface):
             n_embed: Number of embeddings in codebook
             embed_dim: Dimension of each embedding
             beta: Commitment cost weight
+            use_ema: Use exponential moving average for codebook updates
+            decay: EMA decay rate
+            eps: EMA epsilon
             remap: Path to remapping file for index reduction
             sane_index_shape: Return indices as BHW format
         """
@@ -43,6 +49,9 @@ class VectorQuantizer(nn.Module, QuantizerInterface):
         self.n_e = n_embed
         self.e_dim = embed_dim
         self.beta = beta
+        self.use_ema = use_ema
+        self.decay = decay
+        self.eps = eps
 
         self.embedding = nn.Embedding(self.n_e, self.e_dim)
         self.embedding.weight.data.uniform_(-1.0 / self.n_e, 1.0 / self.n_e)

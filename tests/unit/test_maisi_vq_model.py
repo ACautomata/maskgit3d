@@ -62,7 +62,7 @@ class TestMaisyVQModel3D:
         quant, vq_loss, info = model.encode(x)
 
         # Check quantized output has correct channels
-        assert quant.shape[1] == model._embed_dim
+        assert quant.shape[1] == model.embed_dim
 
         # Decode
         recon = model.decode(quant)

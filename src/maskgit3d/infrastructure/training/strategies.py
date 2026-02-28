@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from maskgit3d.domain.interfaces import (
+    GANOptimizerFactory,
     InferenceStrategy,
     Metrics,
     ModelInterface,
@@ -211,6 +212,44 @@ class AdamWOptimizerFactory(OptimizerFactory):
             weight_decay=self.weight_decay,
             betas=self.betas,
         )
+
+
+class VQGANOptimizerFactory(GANOptimizerFactory):
+    """Factory for VQGAN optimizer with separate G/D optimizers."""
+
+    def __init__(
+        self,
+        lr_g: float = 1e-4,
+        lr_d: float = 2e-4,
+        weight_decay: float = 0.01,
+        betas: Tuple[float, float] = (0.9, 0.999),
+    ):
+        self.lr_g = lr_g
+        self.lr_d = lr_d
+        self.weight_decay = weight_decay
+        self.betas = betas
+
+    def create(
+        self,
+        gen_params: Iterator[torch.Tensor],
+        disc_params: Optional[Iterator[torch.Tensor]] = None,
+    ) -> Tuple[torch.optim.Optimizer, Optional[torch.optim.Optimizer]]:
+        opt_g = torch.optim.AdamW(
+            gen_params,
+            lr=self.lr_g,
+            weight_decay=self.weight_decay,
+            betas=self.betas,
+        )
+        if disc_params is not None:
+            opt_d = torch.optim.AdamW(
+                disc_params,
+                lr=self.lr_d,
+                weight_decay=self.weight_decay,
+                betas=self.betas,
+            )
+        else:
+            opt_d = None
+        return opt_g, opt_d
 
 
 # =============================================================================

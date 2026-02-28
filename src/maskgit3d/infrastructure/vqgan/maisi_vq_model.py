@@ -222,6 +222,18 @@ class MaisiVQModel3D(nn.Module, VQModelInterface):
         dec = self.decode(quant)
         return dec, diff
 
+    def forward_with_loss(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Forward pass returning reconstruction and quantization loss.
+
+        Args:
+            x: Input tensor
+
+        Returns:
+            Tuple of (reconstructed, quantization_loss)
+        """
+        return self.forward(x)
+
     def save_checkpoint(self, path: str) -> None:
         """Save model checkpoint."""
         torch.save(self.state_dict(), path)

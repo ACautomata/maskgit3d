@@ -218,6 +218,32 @@ class OptimizerFactory(ABC):
         pass
 
 
+class GANOptimizerFactory(ABC):
+    """
+    Interface for GAN-style optimizer creation with separate G/D optimizers.
+
+    Used for VQGAN which requires separate optimizers for generator and discriminator.
+    """
+
+    @abstractmethod
+    def create(
+        self,
+        gen_params: Iterator[torch.Tensor],
+        disc_params: Optional[Iterator[torch.Tensor]] = None,
+    ) -> Tuple[torch.optim.Optimizer, Optional[torch.optim.Optimizer]]:
+        """
+        Create optimizer instances for generator and discriminator.
+
+        Args:
+            gen_params: Iterator of generator parameters
+            disc_params: Iterator of discriminator parameters (optional)
+
+        Returns:
+            Tuple of (generator_optimizer, discriminator_optimizer or None)
+        """
+        pass
+
+
 # =============================================================================
 # Inference Interfaces
 # =============================================================================

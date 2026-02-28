@@ -13,7 +13,6 @@ from injector import Module, provider, singleton
 from maskgit3d.domain.interfaces import (
     DataProvider,
     InferenceStrategy,
-    LRSchedulerFactory,
     MaskGITModelInterface,
     Metrics,
     ModelInterface,
