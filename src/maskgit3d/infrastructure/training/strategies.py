@@ -221,18 +221,14 @@ class VQGANTrainingStrategy(TrainingStrategy):
     """
     Training strategy for VQGAN models.
 
-    Supports dual optimizer training (generator + discriminator)
-    with optional adversarial loss and mixed precision training.
+    Supports VQ-VAE training with codebook commitment loss
+    and mixed precision training.
     """
 
     def __init__(
         self,
         codebook_weight: float = 1.0,
         pixel_loss_weight: float = 1.0,
-        perceptual_weight: float = 1.0,
-        disc_weight: float = 1.0,
-        disc_start: int = 10000,
-        disc_loss_type: str = "hinge",
         mixed_precision: bool = False,
         amp_dtype: str = "float16",
         grad_clip: Optional[float] = None,
@@ -243,20 +239,12 @@ class VQGANTrainingStrategy(TrainingStrategy):
         Args:
             codebook_weight: Weight for codebook commitment loss
             pixel_loss_weight: Weight for pixel reconstruction loss
-            perceptual_weight: Weight for perceptual (LPIPS) loss
-            disc_weight: Weight for discriminator loss
-            disc_start: Global step to start discriminator training
-            disc_loss_type: Type of GAN loss ("hinge" or "vanilla")
             mixed_precision: Enable automatic mixed precision training
             amp_dtype: Mixed precision dtype ("float16" or "bfloat16")
             grad_clip: Maximum gradient norm for clipping
         """
         self.codebook_weight = codebook_weight
         self.pixel_loss_weight = pixel_loss_weight
-        self.perceptual_weight = perceptual_weight
-        self.disc_weight = disc_weight
-        self.disc_start = disc_start
-        self.disc_loss_type = disc_loss_type
 
         # Mixed precision
         self.mixed_precision = MixedPrecisionTrainer(
@@ -269,17 +257,15 @@ class VQGANTrainingStrategy(TrainingStrategy):
         self,
         model: ModelInterface,
         batch: Tuple[torch.Tensor, ...],
-        optimizer: Any,
+        optimizer: torch.optim.Optimizer,
     ) -> Dict[str, float]:
         """
         Execute one training step.
 
-        For VQGAN, this handles both generator and discriminator updates.
-
         Args:
             model: VQModel instance
             batch: Tuple of (input_images,)
-            optimizer: Tuple of (gen_optimizer, disc_optimizer) or single optimizer
+            optimizer: Optimizer for parameter updates
 
         Returns:
             Dictionary of training metrics
@@ -290,35 +276,24 @@ class VQGANTrainingStrategy(TrainingStrategy):
         else:
             x = batch
 
-        # Handle different optimizer formats
-        if isinstance(optimizer, tuple):
-            opt_g, opt_d = optimizer
-        else:
-            opt_g = optimizer
-            opt_d = None
-
-        # Get model for encoding/decoding
         model.train()
 
         # Forward pass with mixed precision
         with self.mixed_precision.autocast_context():
             xrec, qloss = model(x)
             rec_loss = torch.abs(x - xrec)
-            g_loss = rec_loss.mean() + self.codebook_weight * qloss.mean()
+            loss = self.pixel_loss_weight * rec_loss.mean() + self.codebook_weight * qloss.mean()
 
-        # Backward generator
-        if opt_g is not None:
-            scaled_loss = self.mixed_precision.scale_loss(g_loss)
-            scaled_loss.backward()
-            self.mixed_precision.step_optimizer(opt_g, g_loss)
+        # Backward
+        scaled_loss = self.mixed_precision.scale_loss(loss)
+        scaled_loss.backward()
+        self.mixed_precision.step_optimizer(optimizer, loss)
 
-        metrics = {
-            "loss": g_loss.item(),
+        return {
+            "loss": loss.item(),
             "rec_loss": rec_loss.mean().item(),
             "codebook_loss": qloss.mean().item(),
         }
-
-        return metrics
 
     def validate_step(
         self,
@@ -410,7 +385,6 @@ class VQGANOptimizerFactory:
             weight_decay=self.weight_decay,
         )
         return opt_g, opt_d
-
 
 # =============================================================================
 # VQGAN Inference Strategies

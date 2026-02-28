@@ -8,12 +8,14 @@ import inspect
 
 import pytest
 from maskgit3d.config.modules import (
+    MaisiVQModule,
     _validate_param,
     _validate_float_param,
     create_vqgan_module,
     create_maskgit_module,
 )
 from maskgit3d.infrastructure.maskgit.maskgit_model import MaskGITModel
+from maskgit3d.infrastructure.vqgan import MaisiVQModel3D
 
 
 class TestParameterValidation:
@@ -187,3 +189,10 @@ class TestMaskGITModuleInstantiation:
         assert "self.vqgan.quantize(" in source
         assert "self.vqgan.quantize.get_codebook_entry" in source
         assert "self.vqgan.quantizer" not in source
+
+
+def test_maisi_vq_module_binds_maisi_class_name():
+    """Guard: MaisiVQModule must bind MaisiVQModel3D, not a typo variant."""
+    module = MaisiVQModule(model_config={"type": "maisi_vq", "params": {}})
+    model = module.model_module.provide_maisi_vq_model()
+    assert model.__class__ is MaisiVQModel3D
