@@ -69,9 +69,8 @@ class TrainingPipeline:
         else:
             self.device = device
 
-        # Move model to device
-        self.model.model.to(self.device) if hasattr(self.model, "model") \
-            else self.model.to(self.device)
+        # Move model to device - model already implements ModelInterface
+        self.model.to(self.device)
 
         # Create optimizer
         self.optimizer = self.optimizer_factory.create(
@@ -151,8 +150,7 @@ class TrainingPipeline:
 
     def _train_epoch(self, epoch: int) -> Dict[str, List[float]]:
         """Run one training epoch."""
-        self.model.model.train() if hasattr(self.model, "model") \
-            else self.model.train()
+        self.model.train()
 
         losses = []
         dice_scores = []
@@ -183,8 +181,7 @@ class TrainingPipeline:
 
     def _validate_epoch(self, epoch: int) -> Dict[str, List[float]]:
         """Run one validation epoch."""
-        self.model.model.eval() if hasattr(self.model, "model") \
-            else self.model.eval()
+        self.model.eval()
 
         losses = []
         dice_scores = []
@@ -228,11 +225,8 @@ class TrainingPipeline:
         """Save model checkpoint."""
         checkpoint_path = self.checkpoint_dir / f"checkpoint_epoch_{epoch + 1}.pth"
 
-        # Get model state dict
-        if hasattr(self.model, "model"):
-            model_state = self.model.model.state_dict()
-        else:
-            model_state = self.model.state_dict()
+        # Get model state dict - model implements ModelInterface
+        model_state = self.model.state_dict()
 
         torch.save(
             {
@@ -253,13 +247,22 @@ class TrainingPipeline:
 
     def _load_checkpoint(self, checkpoint_path: str) -> int:
         """Load model checkpoint and return starting epoch."""
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        # Validate checkpoint file exists and is accessible
+        checkpoint_path_obj = Path(checkpoint_path)
+        if not checkpoint_path_obj.exists():
+            raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
+        if not checkpoint_path_obj.is_file():
+            raise ValueError(f"Checkpoint path is not a file: {checkpoint_path}")
 
-        # Load model weights
-        if hasattr(self.model, "model"):
-            self.model.model.load_state_dict(checkpoint["model_state_dict"])
-        else:
-            self.model.load_state_dict(checkpoint["model_state_dict"])
+        # Load checkpoint with weights_only=True for security
+        checkpoint = torch.load(
+            checkpoint_path,
+            map_location=self.device,
+            weights_only=True
+        )
+
+        # Load model weights - model implements ModelInterface
+        self.model.load_state_dict(checkpoint["model_state_dict"])
 
         # Load optimizer state
         if "optimizer_state_dict" in checkpoint:
@@ -313,11 +316,9 @@ class TestPipeline:
         else:
             self.device = device
 
-        # Move model to device and set to eval mode
-        self.model.model.to(self.device) if hasattr(self.model, "model") \
-            else self.model.to(self.device)
-        self.model.model.eval() if hasattr(self.model, "model") \
-            else self.model.eval()
+        # Move model to device and set to eval mode - model implements ModelInterface
+        self.model.to(self.device)
+        self.model.eval()
 
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -390,12 +391,22 @@ class TestPipeline:
 
     def _load_checkpoint(self, checkpoint_path: str) -> None:
         """Load model checkpoint."""
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        # Validate checkpoint file exists and is accessible
+        checkpoint_path_obj = Path(checkpoint_path)
+        if not checkpoint_path_obj.exists():
+            raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
+        if not checkpoint_path_obj.is_file():
+            raise ValueError(f"Checkpoint path is not a file: {checkpoint_path}")
 
-        if hasattr(self.model, "model"):
-            self.model.model.load_state_dict(checkpoint["model_state_dict"])
-        else:
-            self.model.load_state_dict(checkpoint["model_state_dict"])
+        # Load checkpoint with weights_only=True for security
+        checkpoint = torch.load(
+            checkpoint_path,
+            map_location=self.device,
+            weights_only=True
+        )
+
+        # Load model weights - model implements ModelInterface
+        self.model.load_state_dict(checkpoint["model_state_dict"])
 
         print(f"Loaded checkpoint from {checkpoint_path}")
 

@@ -8,6 +8,7 @@ import math
 from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
+from torch.utils.checkpoint import checkpoint
 
 
 def get_timestep_embedding_3d(timesteps: torch.Tensor, embedding_dim: int) -> torch.Tensor:
@@ -231,6 +232,17 @@ class Encoder3d(nn.Module):
         self.norm_out = Normalize3d(block_in)
         self.conv_out = nn.Conv3d(block_in, hidden_channels, kernel_size=3, stride=1, padding=1)
 
+        # Gradient checkpointing flag
+        self.gradient_checkpointing = False
+
+    def enable_gradient_checkpointing(self) -> None:
+        """Enable gradient checkpointing to save memory."""
+        self.gradient_checkpointing = True
+
+    def disable_gradient_checkpointing(self) -> None:
+        """Disable gradient checkpointing."""
+        self.gradient_checkpointing = False
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Encode volumes to latent space.
@@ -241,6 +253,13 @@ class Encoder3d(nn.Module):
         Returns:
             Latent representations [B, z_channels, D//downsample, H//downsample, W//downsample]
         """
+        if self.gradient_checkpointing:
+            return self._forward_checkpoint(x)
+        else:
+            return self._forward_impl(x)
+
+    def _forward_impl(self, x: torch.Tensor) -> torch.Tensor:
+        """Actual forward implementation without gradient checkpointing."""
         # Input convolution
         h = self.conv_in(x)
 
@@ -265,6 +284,35 @@ class Encoder3d(nn.Module):
         h = self.norm_out(h)
         h = nonlinearity(h)
         h = self.conv_out(h)
+
+        return h
+
+    def _forward_checkpoint(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward implementation with gradient checkpointing."""
+        # Input convolution
+        h = checkpoint(self.conv_in, x, use_reentrant=False)
+
+        # Downsampling - checkpoint each level
+        for i_level in range(len(self.down)):
+            for block in self.down[i_level].block:
+                h = checkpoint(block, h, use_reentrant=False)
+
+            if hasattr(self.down[i_level], 'downsample'):
+                h = checkpoint(self.down[i_level].downsample, h, use_reentrant=False)
+
+            if len(self.down[i_level].attn) > 0:
+                for attn in self.down[i_level].attn:
+                    h = checkpoint(attn, h, use_reentrant=False)
+
+        # Middle - checkpoint each block
+        h = checkpoint(self.mid_block_1, h, use_reentrant=False)
+        h = checkpoint(self.mid_attn, h, use_reentrant=False)
+        h = checkpoint(self.mid_block_2, h, use_reentrant=False)
+
+        # Output
+        h = checkpoint(self.norm_out, h, use_reentrant=False)
+        h = nonlinearity(h)
+        h = checkpoint(self.conv_out, h, use_reentrant=False)
 
         return h
 
@@ -342,6 +390,17 @@ class Decoder3d(nn.Module):
         self.norm_out = Normalize3d(block_in)
         self.conv_out = nn.Conv3d(block_in, out_channels, kernel_size=3, stride=1, padding=1)
 
+        # Gradient checkpointing flag
+        self.gradient_checkpointing = False
+
+    def enable_gradient_checkpointing(self) -> None:
+        """Enable gradient checkpointing to save memory."""
+        self.gradient_checkpointing = True
+
+    def disable_gradient_checkpointing(self) -> None:
+        """Disable gradient checkpointing."""
+        self.gradient_checkpointing = False
+
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         """
         Decode latents to volumes.
@@ -352,6 +411,13 @@ class Decoder3d(nn.Module):
         Returns:
             Reconstructed volumes [B, C, D', H', W']
         """
+        if self.gradient_checkpointing:
+            return self._forward_checkpoint(z)
+        else:
+            return self._forward_impl(z)
+
+    def _forward_impl(self, z: torch.Tensor) -> torch.Tensor:
+        """Actual forward implementation without gradient checkpointing."""
         # Input convolution
         h = self.conv_in(z)
 
@@ -376,6 +442,35 @@ class Decoder3d(nn.Module):
         h = self.norm_out(h)
         h = nonlinearity(h)
         h = self.conv_out(h)
+
+        return h
+
+    def _forward_checkpoint(self, z: torch.Tensor) -> torch.Tensor:
+        """Forward implementation with gradient checkpointing."""
+        # Input convolution
+        h = checkpoint(self.conv_in, z, use_reentrant=False)
+
+        # Middle
+        h = checkpoint(self.mid_block_1, h, use_reentrant=False)
+        h = checkpoint(self.mid_attn, h, use_reentrant=False)
+        h = checkpoint(self.mid_block_2, h, use_reentrant=False)
+
+        # Upsampling
+        for i_level in reversed(range(len(self.up))):
+            if hasattr(self.up[i_level], 'upsample'):
+                h = checkpoint(self.up[i_level].upsample, h, use_reentrant=False)
+
+            for block in self.up[i_level].block:
+                h = checkpoint(block, h, use_reentrant=False)
+
+            if len(self.up[i_level].attn) > 0:
+                for attn in self.up[i_level].attn:
+                    h = checkpoint(attn, h, use_reentrant=False)
+
+        # Output
+        h = checkpoint(self.norm_out, h, use_reentrant=False)
+        h = nonlinearity(h)
+        h = checkpoint(self.conv_out, h, use_reentrant=False)
 
         return h
 

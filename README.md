@@ -16,15 +16,16 @@ pip install -e .
 
 ```python
 from injector import Injector
-from maskgit3d.config.modules import create_segmentation_module
+from maskgit3d.config.modules import create_maskgit_module
 from maskgit3d.application.pipeline import TrainingPipeline
 
 # Create module with default config
-module = create_segmentation_module(
+module = create_maskgit_module(
     in_channels=1,
-    out_channels=2,
-    spatial_size=(64, 64, 64),
-    batch_size=4,
+    image_size=64,
+    codebook_size=1024,
+    embed_dim=256,
+    latent_channels=256,
     lr=1e-4,
 )
 

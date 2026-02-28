@@ -4,6 +4,7 @@ Configuration layer - Dependency injection modules.
 This module provides Injector modules that bind interfaces
 to concrete implementations for the application.
 """
+
 from typing import Any, Dict, List, Optional, Tuple, Union
 import torch
 
@@ -32,10 +33,35 @@ from maskgit3d.infrastructure.training.strategies import (
 )
 from maskgit3d.infrastructure.vqgan import (
     VQModel3D,
+    MaisiVQModel3D,
     NLayerDiscriminator,
     VectorQuantizer2,
     get_encoder_decoder_config_3d,
+    get_maisi_vq_config,
 )
+
+
+# =============================================================================
+# Parameter Validation
+# =============================================================================
+
+
+def _validate_param(name: str, value: int, min_val: int = None, max_val: int = None) -> None:
+    """Validate integer parameter with optional min/max bounds."""
+    if min_val is not None and value < min_val:
+        raise ValueError(f"{name} must be >= {min_val}, got {value}")
+    if max_val is not None and value > max_val:
+        raise ValueError(f"{name} must be <= {max_val}, got {value}")
+
+
+def _validate_float_param(
+    name: str, value: float, min_val: float = None, max_val: float = None
+) -> None:
+    """Validate float parameter with optional min/max bounds."""
+    if min_val is not None and value < min_val:
+        raise ValueError(f"{name} must be >= {min_val}, got {value}")
+    if max_val is not None and value > max_val:
+        raise ValueError(f"{name} must be <= {max_val}, got {value}")
 
 
 # =============================================================================
@@ -77,6 +103,7 @@ class ModelModule(Module):
 
         if model_type == "maskgit":
             from maskgit3d.infrastructure.maskgit import MaskGITModel
+
             return MaskGITModel(**model_params)
         raise ValueError(f"Unknown model type: {model_type}")
 
@@ -111,6 +138,7 @@ class DataModule(Module):
         """
         # Default to simple data provider
         from maskgit3d.infrastructure.data.dataset import SimpleDataProvider
+
         data_type = self.data_config.get("type", "simple")
         data_params = self.data_config.get("params", {})
 
@@ -119,10 +147,7 @@ class DataModule(Module):
         }
 
         if data_type not in providers:
-            raise ValueError(
-                f"Unknown data type: {data_type}. "
-                f"Available: {list(providers.keys())}"
-            )
+            raise ValueError(f"Unknown data type: {data_type}. Available: {list(providers.keys())}")
 
         return providers[data_type](**data_params)
 
@@ -168,8 +193,7 @@ class TrainingModule(Module):
 
         if strategy_type not in strategies:
             raise ValueError(
-                f"Unknown strategy type: {strategy_type}. "
-                f"Available: {list(strings.keys())}"
+                f"Unknown strategy type: {strategy_type}. Available: {list(strategies.keys())}"
             )
 
         return strategies[strategy_type](**strategy_params)
@@ -194,8 +218,7 @@ class TrainingModule(Module):
 
         if optimizer_type not in optimizers:
             raise ValueError(
-                f"Unknown optimizer type: {optimizer_type}. "
-                f"Available: {list(optimizers.keys())}"
+                f"Unknown optimizer type: {optimizer_type}. Available: {list(optimizers.keys())}"
             )
 
         return optimizers[optimizer_type](**optimizer_params)
@@ -242,8 +265,7 @@ class InferenceModule(Module):
 
         if inference_type not in strategies:
             raise ValueError(
-                f"Unknown inference type: {inference_type}. "
-                f"Available: {list(strategies.keys())}"
+                f"Unknown inference type: {inference_type}. Available: {list(strategies.keys())}"
             )
 
         return strategies[inference_type](**inference_params)
@@ -269,8 +291,7 @@ class InferenceModule(Module):
 
         if metrics_type not in metrics:
             raise ValueError(
-                f"Unknown metrics type: {metrics_type}. "
-                f"Available: {list(metrics.keys())}"
+                f"Unknown metrics type: {metrics_type}. Available: {list(metrics.keys())}"
             )
 
         return metrics[metrics_type](**metrics_params)
@@ -292,9 +313,7 @@ class SystemModule(Module):
         Returns:
             torch.device
         """
-        return torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # =============================================================================
@@ -370,7 +389,10 @@ class VQGANModule(Module):
         binder.bind(TrainingStrategy, to=lambda: VQGANTrainingStrategy(**strategy_params))
 
         # Optimizer Factory
-        binder.bind(VQGANOptimizerFactory, to=lambda: VQGANOptimizerFactory(**self.optimizer_config.get("params", {})))
+        binder.bind(
+            VQGANOptimizerFactory,
+            to=lambda: VQGANOptimizerFactory(**self.optimizer_config.get("params", {})),
+        )
 
         # Inference Strategy
         inf_type = self.inference_config.get("type", "vqgan")
@@ -411,21 +433,43 @@ def create_vqgan_module(
     Returns:
         Configured VQGANModule
     """
-    # Get 3D encoder/decoder config
+    # Validate parameters
+    _validate_param("image_size", image_size, min_val=8)
+    _validate_param("in_channels", in_channels, min_val=1)
+    _validate_param("n_embed", n_embed, min_val=1)
+    _validate_param("embed_dim", embed_dim, min_val=1)
+    _validate_param("latent_channels", latent_channels, min_val=1)
+    _validate_float_param("lr", lr, min_val=1e-10)
+    _validate_param("batch_size", batch_size, min_val=1)
+    _validate_param("num_train", num_train, min_val=1)
+    _validate_param("num_val", num_val, min_val=1)
+
+    # Derive channel and attention settings compatible with VQModel3D
     ddconfig = get_encoder_decoder_config_3d(
-        image_size=image_size,
+        volume_size=image_size,
         in_channels=in_channels,
         out_channels=in_channels,
         latent_channels=latent_channels,
     )["ddconfig"]
 
+    channel_multipliers = tuple(ddconfig["channel_multipliers"])
+    num_res_blocks = ddconfig["num_res_blocks"]
+    attn_resolutions = tuple(ddconfig["attn_resolutions"])
+    dropout = ddconfig["dropout"]
+
     # Model config
     model_config = {
         "type": "vqgan3d",
         "params": {
-            "ddconfig": ddconfig,
-            "n_embed": n_embed,
+            "in_channels": in_channels,
+            "codebook_size": n_embed,
             "embed_dim": embed_dim,
+            "latent_channels": latent_channels,
+            "resolution": image_size,
+            "channel_multipliers": channel_multipliers,
+            "num_res_blocks": num_res_blocks,
+            "attn_resolutions": attn_resolutions,
+            "dropout": dropout,
         },
     }
 
@@ -477,6 +521,185 @@ def create_vqgan_module(
 
 
 # =============================================================================
+# MAISI VQGAN Modules
+# =============================================================================
+
+
+class MaisiVQModelModule(Module):
+    """MAISI VQGAN model configuration module."""
+
+    def __init__(
+        self,
+        model_config: Optional[Dict[str, Any]] = None,
+    ):
+        self.model_config = model_config or {}
+
+    @singleton
+    @provider
+    def provide_maisi_vq_model(self) -> MaisiVQModel3D:
+        """Provide MAISI VQGAN model instance."""
+        model_type = self.model_config.get("type", "maisi_vq")
+        model_params = self.model_config.get("params", {})
+
+        if model_type == "maisi_vq":
+            return MaisiVQModel3D(**model_params)
+        raise ValueError(f"Unknown MAISI VQ model type: {model_type}")
+
+
+class MaisiVQModule(Module):
+    """
+    Composite module for MAISI VQGAN tasks.
+
+    Provides MAISI VQGAN-specific bindings for model, training, and inference.
+    """
+
+    def __init__(
+        self,
+        model_config: Optional[Dict[str, Any]] = None,
+        data_config: Optional[Dict[str, Any]] = None,
+        training_config: Optional[Dict[str, Any]] = None,
+        optimizer_config: Optional[Dict[str, Any]] = None,
+        inference_config: Optional[Dict[str, Any]] = None,
+        metrics_config: Optional[Dict[str, Any]] = None,
+    ):
+        self.model_module = MaisiVQModelModule(model_config)
+        self.model_config = model_config or {}
+        self.training_config = training_config or {}
+        self.optimizer_config = optimizer_config or {}
+        self.inference_config = inference_config or {}
+        self.metrics_config = metrics_config or {}
+
+    def configure(self, binder):
+        """Configure MAISI VQGAN bindings."""
+        # Bind MAISI VQ Model
+        maisi_model = self.model_module.provide_maisi_vq_model()
+        binder.bind(MaisyVQModel3D, to=lambda: maisi_model)
+        binder.bind(ModelInterface, to=lambda: maisi_model)
+
+        # Training Strategy (reuse VQGAN strategy)
+        strategy_type = self.training_config.get("type", "vqgan")
+        strategy_params = self.training_config.get("params", {})
+        binder.bind(TrainingStrategy, to=lambda: VQGANTrainingStrategy(**strategy_params))
+
+        # Optimizer Factory
+        binder.bind(
+            VQGANOptimizerFactory,
+            to=lambda: VQGANOptimizerFactory(**self.optimizer_config.get("params", {})),
+        )
+
+        # Inference Strategy
+        inf_type = self.inference_config.get("type", "vqgan")
+        inf_params = self.inference_config.get("params", {})
+        binder.bind(InferenceStrategy, to=lambda: VQGANInference(**inf_params))
+
+        # Metrics
+        metrics_type = self.metrics_config.get("type")
+        if metrics_type == "vqgan":
+            binder.bind(Metrics, to=lambda: VQGANMetrics(**self.metrics_config.get("params", {})))
+
+
+def create_maisi_vq_module(
+    image_size: int = 64,
+    in_channels: int = 1,
+    codebook_size: int = 1024,
+    embed_dim: int = 256,
+    latent_channels: int = 4,
+    num_channels: Tuple[int, ...] = (64, 128, 256),
+    num_res_blocks: Tuple[int, ...] = (2, 2, 2),
+    attention_levels: Tuple[bool, ...] = (False, False, False),
+    lr: float = 1e-4,
+    batch_size: int = 1,
+) -> MaisiVQModule:
+    """
+    Factory function to create a MAISI VQGAN module with sensible defaults.
+
+    Args:
+        image_size: Input volume size (for reference)
+        in_channels: Number of input channels
+        codebook_size: Number of codebook entries
+        embed_dim: Codebook embedding dimension
+        latent_channels: Number of latent channels (encoder output)
+        num_channels: Channel numbers for each level
+        num_res_blocks: Number of residual blocks per level
+        attention_levels: Whether to use attention at each level
+        lr: Learning rate
+        batch_size: Batch size
+
+    Returns:
+        Configured MaisiVQModule
+    """
+    # Validate parameters
+    _validate_param("image_size", image_size, min_val=8)
+    _validate_param("in_channels", in_channels, min_val=1)
+    _validate_param("codebook_size", codebook_size, min_val=1)
+    _validate_param("embed_dim", embed_dim, min_val=1)
+    _validate_param("latent_channels", latent_channels, min_val=1)
+    _validate_float_param("lr", lr, min_val=1e-10)
+    _validate_param("batch_size", batch_size, min_val=1)
+
+    # Model config
+    model_config = {
+        "type": "maisi_vq",
+        "params": get_maisi_vq_config(
+            image_size=image_size,
+            in_channels=in_channels,
+            codebook_size=codebook_size,
+            embed_dim=embed_dim,
+            latent_channels=latent_channels,
+            num_channels=num_channels,
+            num_res_blocks=num_res_blocks,
+            attention_levels=attention_levels,
+        ),
+    }
+
+    # Training config
+    training_config = {
+        "type": "vqgan",
+        "params": {
+            "codebook_weight": 1.0,
+            "pixel_loss_weight": 1.0,
+            "perceptual_weight": 0.3,
+            "disc_weight": 0.1,
+            "disc_start": 10000,
+        },
+    }
+
+    optimizer_config = {
+        "type": "vqgan",
+        "params": {
+            "lr_g": lr,
+            "lr_d": lr,
+            "betas": (0.5, 0.9),
+        },
+    }
+
+    # Inference config
+    inference_config = {
+        "type": "vqgan",
+        "params": {
+            "mode": "reconstruct",
+        },
+    }
+
+    # Metrics config
+    metrics_config = {
+        "type": "vqgan",
+        "params": {
+            "data_range": 1.0,
+            "spatial_dims": 3,
+        },
+    }
+
+    return MaisiVQModule(
+        model_config=model_config,
+        training_config=training_config,
+        optimizer_config=optimizer_config,
+        inference_config=inference_config,
+        metrics_config=metrics_config,
+    )
+
+
+# =============================================================================
 # MaskGIT Modules
 # =============================================================================
 
@@ -499,6 +722,7 @@ class MaskGITModelModule(Module):
 
         if model_type == "maskgit":
             from maskgit3d.infrastructure.maskgit import MaskGITModel
+
             return MaskGITModel(**model_params)
         raise ValueError(f"Unknown MaskGIT model type: {model_type}")
 
@@ -601,6 +825,21 @@ def create_maskgit_module(
     Returns:
         Configured MaskGITModule
     """
+    # Validate parameters
+    _validate_param("image_size", image_size, min_val=8)
+    _validate_param("in_channels", in_channels, min_val=1)
+    _validate_param("codebook_size", codebook_size, min_val=1)
+    _validate_param("embed_dim", embed_dim, min_val=1)
+    _validate_param("latent_channels", latent_channels, min_val=1)
+    _validate_param("transformer_hidden", transformer_hidden, min_val=1)
+    _validate_param("transformer_layers", transformer_layers, min_val=1)
+    _validate_param("transformer_heads", transformer_heads, min_val=1)
+    _validate_float_param("mask_ratio", mask_ratio, min_val=0.0, max_val=1.0)
+    _validate_float_param("lr", lr, min_val=1e-10)
+    _validate_param("batch_size", batch_size, min_val=1)
+    _validate_param("num_train", num_train, min_val=1)
+    _validate_param("num_val", num_val, min_val=1)
+
     # Model config
     model_config = {
         "type": "maskgit",

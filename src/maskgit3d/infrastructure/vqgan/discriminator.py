@@ -73,16 +73,16 @@ class NLayerDiscriminator(nn.Module, DiscriminatorInterface):
         """
         super().__init__()
         if not use_actnorm:
-            norm_layer = nn.BatchNorm2d
+            norm_layer = nn.BatchNorm3d
         else:
             norm_layer = ActNorm
 
-        use_bias = norm_layer != nn.BatchNorm2d
+        use_bias = norm_layer != nn.BatchNorm3d
 
         kw = 4
         padw = 1
         sequence = [
-            nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw),
+            nn.Conv3d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw),
             nn.LeakyReLU(0.2, True)
         ]
 
@@ -92,7 +92,7 @@ class NLayerDiscriminator(nn.Module, DiscriminatorInterface):
             nf_mult_prev = nf_mult
             nf_mult = min(2 ** n, 8)
             sequence += [
-                nn.Conv2d(
+                nn.Conv3d(
                     ndf * nf_mult_prev, ndf * nf_mult,
                     kernel_size=kw, stride=2, padding=padw, bias=use_bias
                 ),
@@ -103,7 +103,7 @@ class NLayerDiscriminator(nn.Module, DiscriminatorInterface):
         nf_mult_prev = nf_mult
         nf_mult = min(2 ** n_layers, 8)
         sequence += [
-            nn.Conv2d(
+            nn.Conv3d(
                 ndf * nf_mult_prev, ndf * nf_mult,
                 kernel_size=kw, stride=1, padding=padw, bias=use_bias
             ),
@@ -113,7 +113,7 @@ class NLayerDiscriminator(nn.Module, DiscriminatorInterface):
 
         # Output: 1 channel prediction map
         sequence += [
-            nn.Conv2d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)
+            nn.Conv3d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)
         ]
 
         self.main = nn.Sequential(*sequence)
@@ -123,10 +123,10 @@ class NLayerDiscriminator(nn.Module, DiscriminatorInterface):
         Run discriminator forward pass.
 
         Args:
-            x: Input images [B, C, H, W]
+            x: Input volumes [B, C, D, H, W]
 
         Returns:
-            Discrimination logits [B, 1, H', W']
+            Discrimination logits [B, 1, D', H', W']
         """
         return self.main(x)
 

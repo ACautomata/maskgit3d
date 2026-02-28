@@ -65,13 +65,13 @@ class VectorQuantizer(nn.Module, QuantizerInterface):
         Quantize latent codes.
 
         Args:
-            z: Latent from encoder [B, C, H, W]
+            z: Latent from encoder [B, C, D, H, W]
 
         Returns:
             Tuple of (z_q, loss, info)
         """
-        # Reshape: (B, C, H, W) -> (B, H, W, C)
-        z = rearrange(z, 'b c h w -> b h w c').contiguous()
+        # Reshape: (B, C, D, H, W) -> (B, D, H, W, C)
+        z = rearrange(z, 'b c d h w -> b d h w c').contiguous()
         z_flattened = z.view(-1, self.e_dim)
 
         # Compute distances to codebook entries
@@ -90,13 +90,13 @@ class VectorQuantizer(nn.Module, QuantizerInterface):
         # Preserve gradients
         z_q = z + (z_q - z).detach()
 
-        # Reshape back: (B, H, W, C) -> (B, C, H, W)
-        z_q = rearrange(z_q, 'b h w c -> b c h w').contiguous()
+        # Reshape back: (B, D, H, W, C) -> (B, C, D, H, W)
+        z_q = rearrange(z_q, 'b d h w c -> b c d h w').contiguous()
 
         # Handle index shape
         if self.sane_index_shape:
             min_encoding_indices = min_encoding_indices.reshape(
-                z_q.shape[0], z_q.shape[2], z_q.shape[3])
+                z_q.shape[0], z_q.shape[2], z_q.shape[3], z_q.shape[4])
 
         # Compute perplexity
         with torch.no_grad():
@@ -118,16 +118,16 @@ class VectorQuantizer(nn.Module, QuantizerInterface):
 
         Args:
             indices: Codebook indices
-            shape: Optional shape hint (B, H, W, C)
+            shape: Optional shape hint (B, D, H, W, C)
 
         Returns:
             Quantized latents
         """
         if shape is not None:
-            b, h, w, c = shape
-            indices = rearrange(indices, '(b h w) -> b h w', b=b, h=h, w=w)
+            b, d, h, w, c = shape
+            indices = rearrange(indices, '(b d h w) -> b d h w', b=b, d=d, h=h, w=w)
             z_q = self.embedding(indices)
-            z_q = rearrange(z_q, 'b h w c -> b c h w').contiguous()
+            z_q = rearrange(z_q, 'b d h w c -> b c d h w').contiguous()
         else:
             z_q = self.embedding(indices)
 
@@ -174,7 +174,7 @@ class VectorQuantizer2(nn.Module, QuantizerInterface):
         self, z: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, Tuple]:
         """Quantize latent codes."""
-        z = rearrange(z, 'b c h w -> b h w c').contiguous()
+        z = rearrange(z, 'b c d h w -> b d h w c').contiguous()
         z_flattened = z.view(-1, self.e_dim)
 
         d = torch.sum(z_flattened ** 2, dim=1, keepdim=True) + \
@@ -195,11 +195,11 @@ class VectorQuantizer2(nn.Module, QuantizerInterface):
 
         # Preserve gradients
         z_q = z + (z_q - z).detach()
-        z_q = rearrange(z_q, 'b h w c -> b c h w').contiguous()
+        z_q = rearrange(z_q, 'b d h w c -> b c d h w').contiguous()
 
         if self.sane_index_shape:
             min_encoding_indices = min_encoding_indices.reshape(
-                z_q.shape[0], z_q.shape[2], z_q.shape[3])
+                z_q.shape[0], z_q.shape[2], z_q.shape[3], z_q.shape[4])
 
         return z_q, loss, (None, None, min_encoding_indices)
 
@@ -210,9 +210,11 @@ class VectorQuantizer2(nn.Module, QuantizerInterface):
     ) -> torch.Tensor:
         """Get quantized latents from indices."""
         if shape is not None:
-            b, h, w, c = shape
-            z_q = self.embedding(indices)
-            z_q = rearrange(z_q, 'b h w c -> b c h w').contiguous()
+            b, d, h, w, c = shape
+            # Reshape indices to (B, D, H, W) first
+            indices = indices.view(b, d, h, w)
+            z_q = self.embedding(indices)  # (B, D, H, W, C)
+            z_q = rearrange(z_q, 'b d h w c -> b c d h w').contiguous()
         else:
             z_q = self.embedding(indices)
         return z_q
@@ -260,7 +262,7 @@ class EMAVectorQuantizer(nn.Module, QuantizerInterface):
         self, z: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, Tuple]:
         """Quantize with EMA updates."""
-        z = rearrange(z, 'b c h w -> b h w c').contiguous()
+        z = rearrange(z, 'b c d h w -> b d h w c').contiguous()
         z_flattened = z.reshape(-1, self.e_dim)
 
         # Compute distances
@@ -296,7 +298,7 @@ class EMAVectorQuantizer(nn.Module, QuantizerInterface):
 
         # Preserve gradients
         z_q = z + (z_q - z).detach()
-        z_q = rearrange(z_q, 'b h w c -> b c h w').contiguous()
+        z_q = rearrange(z_q, 'b d h w c -> b c d h w').contiguous()
 
         return z_q, loss, (perplexity, encodings, encoding_indices)
 
@@ -307,10 +309,10 @@ class EMAVectorQuantizer(nn.Module, QuantizerInterface):
     ) -> torch.Tensor:
         """Get quantized latents from indices."""
         if shape is not None:
-            b, h, w, c = shape
-            indices = rearrange(indices, '(b h w) -> b h w', b=b, h=h, w=w)
+            b, d, h, w, c = shape
+            indices = rearrange(indices, '(b d h w) -> b d h w', b=b, d=d, h=h, w=w)
             z_q = self.embedding(indices)
-            z_q = rearrange(z_q, 'b h w c -> b c h w').contiguous()
+            z_q = rearrange(z_q, 'b d h w c -> b c d h w').contiguous()
         else:
             z_q = self.embedding(indices)
         return z_q

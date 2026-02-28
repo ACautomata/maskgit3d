@@ -3,6 +3,7 @@
 
 This module provides the 3D version of VQGAN for volumetric medical images.
 """
+
 from typing import Dict, Optional, Tuple
 import torch
 import torch.nn as nn
@@ -49,7 +50,7 @@ class VQModel3D(nn.Module, VQModelInterface):
         super().__init__()
 
         self.in_channels = in_channels
-        self.codebook_size = codebook_size
+        self._codebook_size = codebook_size
         self.embed_dim = embed_dim
         self.resolution = resolution
 
@@ -135,7 +136,7 @@ class VQModel3D(nn.Module, VQModelInterface):
             code_flat = code
             # Try to infer D, H, W from latent shape
             N = code_flat.shape[1]
-            latent_res = round(N ** (1/3))
+            latent_res = round(N ** (1 / 3))
             D = H = W = latent_res
 
         # Get quantized latents from indices
@@ -177,14 +178,16 @@ class VQModel3D(nn.Module, VQModelInterface):
     @property
     def codebook_size(self) -> int:
         """Get the number of codes in the codebook."""
-        return self.quantize.n_e
+        return self._codebook_size
 
     @property
     def latent_shape(self) -> Tuple[int, int, int]:
         """Get the shape of latent representations (C, D, H, W)."""
         # Infer from encoder output
         with torch.no_grad():
-            dummy = torch.zeros(1, self.in_channels, self.resolution, self.resolution, self.resolution)
+            dummy = torch.zeros(
+                1, self.in_channels, self.resolution, self.resolution, self.resolution
+            )
             h = self.encoder(dummy)
             _, _, info = self.quantize(h)
             indices = info[2]

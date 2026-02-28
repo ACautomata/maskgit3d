@@ -5,14 +5,13 @@ Complete MaskGIT model combining:
 - VQGAN tokenizer (Encoder + Quantizer + Decoder)
 - Bidirectional Transformer for masked token prediction
 """
-from typing import Dict, Optional, Tuple, Any
+
+from typing import Any, Dict, Optional, Tuple
 import torch
 import torch.nn as nn
 
 from maskgit3d.domain.interfaces import MaskGITModelInterface
-from maskgit3d.infrastructure.vqgan.vqgan_model import VQModel
-from maskgit3d.infrastructure.vqgan.quantize import VectorQuantizer2
-from maskgit3d.infrastructure.vqgan.encoder_decoder_3d import Encoder3d, Decoder3d
+from maskgit3d.infrastructure.vqgan.vqgan_model_3d import VQModel3D
 from maskgit3d.infrastructure.maskgit.transformer import MaskGITTransformer
 from maskgit3d.infrastructure.maskgit.sampling import MaskGITSampler
 
@@ -28,7 +27,7 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
 
     def __init__(
         self,
-        vqgan: Optional[VQModel] = None,
+        vqgan: Optional[VQModel3D] = None,
         transformer: Optional[MaskGITTransformer] = None,
         # VQGAN config
         in_channels: int = 1,
@@ -62,7 +61,7 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
         super().__init__()
 
         self.in_channels = in_channels
-        self.codebook_size = codebook_size
+        self._codebook_size = codebook_size
         self.embed_dim = embed_dim
         self.mask_ratio = mask_ratio
 
@@ -126,7 +125,7 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
         """Compute latent shape after VQGAN encoding."""
         # Each downsampling step halves the resolution
         num_downsamples = len(channel_multipliers) - 1
-        latent_res = resolution // (2 ** num_downsamples)
+        latent_res = resolution // (2**num_downsamples)
         return (1, latent_res, latent_res, latent_res)
 
     @property
@@ -138,6 +137,11 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
     def num_tokens(self) -> int:
         """Total number of tokens (codebook_size + 1 for mask)."""
         return self.codebook_size + 1
+
+    @property
+    def codebook_size(self) -> int:
+        """Get configured codebook size."""
+        return self._codebook_size
 
     @property
     def latent_shape(self) -> Tuple[int, int, int, int]:
@@ -172,7 +176,7 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
         # Encode through VQGAN
         z, _, info = self.vqgan.encode(x)
         # Get quantized latents
-        quant, _, _ = self.vqgan.quantizer(z)
+        quant, _, _ = self.vqgan.quantize(z)
         # Get indices
         indices = info[2]  # Codebook indices
         return indices
@@ -191,13 +195,15 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
         if tokens.dim() == 4:  # [B, D, H, W]
             B, D, H, W = tokens.shape
             tokens_flat = tokens.view(B, -1)
+            shape = (B, D, H, W)
         else:
             tokens_flat = tokens
             B = tokens_flat.shape[0]
+            _, D, H, W = self._latent_shape
+            shape = (B, D, H, W)
 
         # Get quantized latents from indices
-        shape = (B, D, H, W) if tokens.dim() == 4 else None
-        quant = self.vqgan.quantizer.get_codebook_entry(tokens_flat, shape)
+        quant = self.vqgan.quantize.get_codebook_entry(tokens_flat, shape)
 
         # Decode through VQGAN
         return self.vqgan.decode(quant)
@@ -229,6 +235,8 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
             latent_shape = self._latent_shape
             B = 1
             shape = (B,) + latent_shape[1:]
+        elif len(shape) != 4:
+            raise ValueError("shape must be a 4D tuple: (B, D, H, W)")
 
         B, D, H, W = shape
 
@@ -296,10 +304,13 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
 
     def save_checkpoint(self, path: str) -> None:
         """Save model checkpoint."""
-        torch.save({
-            "vqgan": self.vqgan.state_dict(),
-            "transformer": self.transformer.state_dict(),
-        }, path)
+        torch.save(
+            {
+                "vqgan": self.vqgan.state_dict(),
+                "transformer": self.transformer.state_dict(),
+            },
+            path,
+        )
 
     def load_checkpoint(self, path: str) -> None:
         """Load model checkpoint."""

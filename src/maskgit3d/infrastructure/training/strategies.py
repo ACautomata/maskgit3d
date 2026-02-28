@@ -4,7 +4,7 @@ Training strategy implementations for VQGAN and MaskGIT models.
 This module provides concrete implementations of TrainingStrategy
 including loss functions, optimization, and metrics computation.
 """
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -16,6 +16,122 @@ from maskgit3d.domain.interfaces import (
     OptimizerFactory,
     TrainingStrategy,
 )
+
+
+# =============================================================================
+# Mixed Precision Training
+# =============================================================================
+
+
+class MixedPrecisionTrainer:
+    """
+    Mixed precision training helper for FP16/BF16.
+
+    Provides automatic mixed precision (AMP) support for training
+    to reduce memory usage and improve throughput.
+    """
+
+    def __init__(
+        self,
+        enabled: bool = True,
+        dtype: str = "float16",
+        grad_clip: Optional[float] = None,
+    ):
+        """
+        Initialize mixed precision trainer.
+
+        Args:
+            enabled: Whether to enable mixed precision
+            dtype: Precision type ("float16" or "bfloat16")
+            grad_clip: Maximum gradient norm for clipping
+        """
+        self.enabled = enabled and torch.cuda.is_available()
+        self.dtype = dtype
+        self.grad_clip = grad_clip
+
+        if self.enabled:
+            if dtype == "float16":
+                self.scaler = torch.cuda.amp.GradScaler()
+            else:
+                self.scaler = None  # BF16 doesn't need scaler
+
+    def autocast_context(self):
+        """Get autocast context for forward pass."""
+        if not self.enabled:
+            return torch.amp.autocast(device_type='cuda', dtype=torch.float32, enabled=False)
+
+        dtype = torch.float16 if self.dtype == "float16" else torch.bfloat16
+        return torch.amp.autocast(device_type='cuda', dtype=dtype, enabled=True)
+
+    def scale_loss(self, loss: torch.Tensor) -> torch.Tensor:
+        """
+        Scale loss for backward pass.
+
+        Args:
+            loss: Computed loss tensor
+
+        Returns:
+            Scaled loss (if FP16), original loss otherwise
+        """
+        if not self.enabled or self.dtype == "bfloat16":
+            return loss
+        return self.scaler.scale(loss)
+
+    def step_optimizer(
+        self,
+        optimizer: torch.optim.Optimizer,
+        loss: torch.Tensor,
+    ) -> None:
+        """
+        Step optimizer with gradient scaling.
+
+        Args:
+            optimizer: Optimizer to step
+            loss: Loss tensor for backward
+        """
+        if not self.enabled:
+            optimizer.step()
+            optimizer.zero_grad()
+            return
+
+        if self.dtype == "float16":
+            # Unscale gradients
+            self.scaler.unscale_(optimizer)
+
+            # Clip gradients
+            if self.grad_clip is not None:
+                torch.nn.utils.clip_grad_norm_(
+                    optimizer.param_groups[0]["params"],
+                    self.grad_clip
+                )
+
+            # Step with scaler
+            self.scaler.step(optimizer)
+            self.scaler.update()
+        else:
+            # BF16 - just clip and step
+            if self.grad_clip is not None:
+                torch.nn.utils.clip_grad_norm_(
+                    optimizer.param_groups[0]["params"],
+                    self.grad_clip
+                )
+            optimizer.step()
+
+        optimizer.zero_grad()
+
+    def state_dict(self) -> Dict[str, Any]:
+        """Get state dict for checkpointing."""
+        state = {"enabled": self.enabled, "dtype": self.dtype}
+        if self.enabled and self.scaler is not None:
+            state["scaler"] = self.scaler.state_dict()
+        return state
+
+    def load_state_dict(self, state: Dict[str, Any]) -> None:
+        """Load state dict from checkpoint."""
+        self.enabled = state.get("enabled", self.enabled)
+        self.dtype = state.get("dtype", self.dtype)
+        if self.enabled and self.scaler is not None and "scaler" in state:
+            self.scaler.load_state_dict(state["scaler"])
 
 
 # =============================================================================
@@ -111,7 +227,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
     Training strategy for VQGAN models.
 
     Supports dual optimizer training (generator + discriminator)
-    with optional adversarial loss.
+    with optional adversarial loss and mixed precision training.
     """
 
     def __init__(
@@ -122,6 +238,9 @@ class VQGANTrainingStrategy(TrainingStrategy):
         disc_weight: float = 1.0,
         disc_start: int = 10000,
         disc_loss_type: str = "hinge",
+        mixed_precision: bool = False,
+        amp_dtype: str = "float16",
+        grad_clip: Optional[float] = None,
     ):
         """
         Initialize VQGAN training strategy.
@@ -133,6 +252,9 @@ class VQGANTrainingStrategy(TrainingStrategy):
             disc_weight: Weight for discriminator loss
             disc_start: Global step to start discriminator training
             disc_loss_type: Type of GAN loss ("hinge" or "vanilla")
+            mixed_precision: Enable automatic mixed precision training
+            amp_dtype: Mixed precision dtype ("float16" or "bfloat16")
+            grad_clip: Maximum gradient norm for clipping
         """
         self.codebook_weight = codebook_weight
         self.pixel_loss_weight = pixel_loss_weight
@@ -140,6 +262,13 @@ class VQGANTrainingStrategy(TrainingStrategy):
         self.disc_weight = disc_weight
         self.disc_start = disc_start
         self.disc_loss_type = disc_loss_type
+
+        # Mixed precision
+        self.mixed_precision = MixedPrecisionTrainer(
+            enabled=mixed_precision,
+            dtype=amp_dtype,
+            grad_clip=grad_clip,
+        )
 
     def train_step(
         self,
@@ -176,20 +305,17 @@ class VQGANTrainingStrategy(TrainingStrategy):
         # Get model for encoding/decoding
         model.train()
 
-        # Encode-decode
-        xrec, qloss = model(x)
-
-        # Compute reconstruction loss
-        rec_loss = torch.abs(x - xrec)
-
-        # Generator loss
-        g_loss = rec_loss.mean() + self.codebook_weight * qloss.mean()
+        # Forward pass with mixed precision
+        with self.mixed_precision.autocast_context():
+            xrec, qloss = model(x)
+            rec_loss = torch.abs(x - xrec)
+            g_loss = rec_loss.mean() + self.codebook_weight * qloss.mean()
 
         # Backward generator
         if opt_g is not None:
-            opt_g.zero_grad()
-            g_loss.backward()
-            opt_g.step()
+            scaled_loss = self.mixed_precision.scale_loss(g_loss)
+            scaled_loss.backward()
+            self.mixed_precision.step_optimizer(opt_g, g_loss)
 
         metrics = {
             "loss": g_loss.item(),
@@ -518,12 +644,16 @@ class MaskGITTrainingStrategy(TrainingStrategy):
 
     Uses BERT-style masked token prediction where a portion of
     tokens are randomly masked and the Transformer learns to predict them.
+    Supports mixed precision training.
     """
 
     def __init__(
         self,
         mask_ratio: float = 0.5,
         reconstruction_weight: float = 1.0,
+        mixed_precision: bool = False,
+        amp_dtype: str = "float16",
+        grad_clip: Optional[float] = None,
     ):
         """
         Initialize MaskGIT training strategy.
@@ -531,9 +661,19 @@ class MaskGITTrainingStrategy(TrainingStrategy):
         Args:
             mask_ratio: Ratio of tokens to mask during training
             reconstruction_weight: Weight for reconstruction loss
+            mixed_precision: Enable automatic mixed precision training
+            amp_dtype: Mixed precision dtype ("float16" or "bfloat16")
+            grad_clip: Maximum gradient norm for clipping
         """
         self.mask_ratio = mask_ratio
         self.reconstruction_weight = reconstruction_weight
+
+        # Mixed precision
+        self.mixed_precision = MixedPrecisionTrainer(
+            enabled=mixed_precision,
+            dtype=amp_dtype,
+            grad_clip=grad_clip,
+        )
 
     def train_step(
         self,
@@ -560,43 +700,39 @@ class MaskGITTrainingStrategy(TrainingStrategy):
 
         model.train()
 
-        # Forward pass with masking
-        optimizer.zero_grad()
+        # Forward pass with masking and mixed precision
+        with self.mixed_precision.autocast_context():
+            # Use model's train_step method
+            if hasattr(model, 'train_step'):
+                metrics = model.train_step(x)
+            else:
+                # Manual implementation for compatibility
+                tokens = model.encode_tokens(x)
+                B, D, H, W = tokens.shape
+                tokens_flat = tokens.view(B, -1)
 
-        # Use model's train_step method
-        if hasattr(model, 'train_step'):
-            metrics = model.train_step(x)
-        else:
-            # Manual implementation for compatibility
-            tokens = model.encode_tokens(x)
-            B, D, H, W = tokens.shape
-            tokens_flat = tokens.view(B, -1)
+                # Random masking
+                mask = torch.rand(B, D * H * W, device=tokens.device) < self.mask_ratio
 
-            # Random masking
-            mask = torch.rand(B, D * H * W, device=tokens.device) < self.mask_ratio
+                # Get predictions
+                logits = model.transformer.forward(tokens_flat, mask_indices=mask)
 
-            # Get predictions
-            logits = model.transformer.forward(tokens_flat, mask_indices=mask)
+                # Compute loss only on masked positions
+                masked_logits = logits[mask]
+                masked_targets = tokens_flat[mask]
 
-            # Compute loss only on masked positions
-            masked_logits = logits[mask]
-            masked_targets = tokens_flat[mask]
+                loss = F.cross_entropy(masked_logits, masked_targets)
 
-            loss = F.cross_entropy(masked_logits, masked_targets)
+                metrics = {
+                    "loss": loss.item(),
+                }
 
-            metrics = {
-                "loss": loss.item(),
-            }
-
-        # Backward
+        # Backward with mixed precision
         if "loss" in metrics:
-            # Get loss tensor and backward
-            loss_val = model.vqgan.quantizer.embedding.weight.sum() * 0  # Dummy for backward
-            # Actually compute backward on the loss
             loss_tensor = torch.tensor(metrics["loss"], device=x.device, requires_grad=True)
-            loss_tensor.backward()
-
-        optimizer.step()
+            scaled_loss = self.mixed_precision.scale_loss(loss_tensor)
+            scaled_loss.backward()
+            self.mixed_precision.step_optimizer(optimizer, loss_tensor)
 
         return metrics
 
