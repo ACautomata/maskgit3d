@@ -11,6 +11,14 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 
+# Try importing pytorch_lightning, handle gracefully if not available
+try:
+    import pytorch_lightning as pl
+    PL_AVAILABLE = True
+except ImportError:
+    pl = None  # type: ignore
+    PL_AVAILABLE = False
+
 from maskgit3d.domain.interfaces import (
     DataProvider,
     InferenceStrategy,
@@ -433,7 +441,7 @@ class TestPipeline:
         np.save(probs_path, predictions["probs"])
 
 
-class LightningTrainingPipeline:
+class LightningTrainingPipeline(pl.LightningModule):
     """
     Wrapper for PyTorch Lightning training.
 
@@ -459,18 +467,19 @@ class LightningTrainingPipeline:
             optimizer_factory: Optimizer factory
             device: Device to use
         """
+        super().__init__()
         self.model = model
         self.data_provider = data_provider
         self.training_strategy = training_strategy
         self.optimizer_factory = optimizer_factory
 
         if device is None:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
-            self.device = device
+            self._device = device
 
-        # Create optimizer
-        self.optimizer = self.optimizer_factory.create(self.model.parameters())
+        # Create optimizer - will be recreated in configure_optimizers
+        # self.optimizer = self.optimizer_factory.create(self.model.parameters())
 
     def training_step(
         self,
@@ -479,7 +488,8 @@ class LightningTrainingPipeline:
     ) -> Dict[str, torch.Tensor]:
         """Lightning-compatible training step."""
         batch = self._move_batch_to_device(batch)
-        metrics = self.training_strategy.train_step(self.model, batch, self.optimizer)
+        optimizer = self.optimizers()
+        metrics = self.training_strategy.train_step(self.model, batch, optimizer)
         return {"loss": torch.tensor(metrics["loss"])}
 
     def validation_step(
@@ -500,8 +510,8 @@ class LightningTrainingPipeline:
         batch: Tuple[torch.Tensor, ...],
     ) -> Tuple[torch.Tensor, ...]:
         """Move batch to device."""
-        return tuple(item.to(self.device) for item in batch)
+        return tuple(item.to(self._device) for item in batch)
 
     def configure_optimizers(self):
         """Configure Lightning optimizers."""
-        return self.optimizer
+        return self.optimizer_factory.create(self.model.parameters())
