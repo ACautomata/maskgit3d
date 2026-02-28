@@ -13,6 +13,7 @@ import torch.nn.functional as F
 from maskgit3d.domain.interfaces import (
     GANOptimizerFactory,
     InferenceStrategy,
+    MaskGITModelInterface,
     Metrics,
     ModelInterface,
     OptimizerFactory,
@@ -295,7 +296,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
 
     def train_step(
         self,
-        model: ModelInterface,
+        model: VQModelInterface,
         batch: Tuple[torch.Tensor, ...],
         optimizer: torch.optim.Optimizer,
     ) -> Dict[str, float]:
@@ -634,7 +635,7 @@ class MaskGITTrainingStrategy(TrainingStrategy):
 
     def train_step(
         self,
-        model: ModelInterface,
+        model: MaskGITModelInterface,
         batch: Tuple[torch.Tensor, ...],
         optimizer: torch.optim.Optimizer,
     ) -> Dict[str, float]:

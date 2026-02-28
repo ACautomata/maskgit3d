@@ -93,7 +93,18 @@ class TestVQGANInference:
 
     def test_vqgan_inference_reconstruct(self):
         """Test reconstruction mode."""
-        pytest.skip("VQGANInference has latent shape issues with 3D")
+        inference = VQGANInference(mode="reconstruct")
+        mock_model = MagicMock()
+
+        # VQGANInference.reconstruct calls model(batch)[0]
+        # It expects the model to return a tuple where first element is the reconstruction
+        mock_model.return_value = (torch.randn(2, 1, 8, 8, 8),)
+
+        batch = torch.randn(2, 1, 8, 8, 8)
+        result = inference.predict(mock_model, batch)
+
+        assert result.shape == batch.shape
+        mock_model.assert_called_once()
 
     def test_vqgan_inference_post_process(self):
         """Test post-processing."""
