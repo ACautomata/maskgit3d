@@ -138,7 +138,25 @@ class TestNLayerDiscriminator:
 
     def test_discriminator_with_actnorm(self):
         """Test discriminator with ActNorm."""
-        pytest.skip("ActNorm has 3D compatibility issues")
+        disc = NLayerDiscriminator(
+            input_nc=1,
+            ndf=64,
+            n_layers=3,
+            use_actnorm=True,
+        )
+        # Input: [B, C, D, H, W] for 3D
+        x = torch.randn(2, 1, 64, 64, 64)
+
+        output = disc(x)
+
+        # Output should be [B, 1, D', H', W']
+        assert output.shape[0] == 2
+        assert output.shape[1] == 1
+        # Spatial dims should be reduced
+        assert output.shape[2] < 64
+        assert output.shape[3] < 64
+        # ActNorm should be initialized after first forward
+        assert disc.main[3].initialized  # First ActNorm layer
 
 
 class TestIdentityDiscriminator:
@@ -166,11 +184,29 @@ class TestActNorm:
 
     def test_actnorm_forward(self):
         """Test forward pass through ActNorm."""
-        pytest.skip("ActNorm has 3D compatibility issues")
+        actnorm = ActNorm(num_channels=64)
+        # Input: [B, C, D, H, W] for 3D
+        x = torch.randn(2, 64, 8, 8, 8)
+
+        output = actnorm(x)
+
+        # Output shape should match input
+        assert output.shape == x.shape
+        # Should be initialized after first forward
+        assert actnorm.initialized
 
     def test_actnorm_initialization(self):
         """Test ActNorm initialization on first forward."""
-        pytest.skip("ActNorm has 3D compatibility issues")
+        actnorm = ActNorm(num_channels=64)
+        # Input: [B, C, D, H, W] for 3D
+        x = torch.randn(2, 64, 8, 8, 8)
+
+        output = actnorm(x)
+
+        # Output shape should match input
+        assert output.shape == x.shape
+        # Should be initialized after first forward
+        assert actnorm.initialized
 
 
 class TestDiscriminatorInterface:
