@@ -11,8 +11,6 @@ from unittest.mock import MagicMock, patch
 
 from maskgit3d.infrastructure.vqgan.quantize import (
     VectorQuantizer,
-    VectorQuantizer2,
-    EMAVectorQuantizer,
 )
 from maskgit3d.infrastructure.vqgan.discriminator import (
     NLayerDiscriminator,
@@ -70,70 +68,30 @@ class TestVectorQuantizer:
         assert z_q.shape == (2, 32, 4, 4, 4)
 
 
-class TestVectorQuantizer2:
-    """Tests for VectorQuantizer2."""
-
-    def test_vector_quantizer2_creation(self):
-        """Test creating VectorQuantizer2."""
-        quantizer = VectorQuantizer2(
-            n_embed=256,
-            embed_dim=32,
-            beta=0.25,
-            legacy=True,
-        )
-        assert quantizer.n_e == 256
-        assert quantizer.e_dim == 32
-        assert quantizer.legacy is True
-
-    def test_vector_quantizer2_forward(self):
-        """Test forward pass through VectorQuantizer2."""
-        quantizer = VectorQuantizer2(
-            n_embed=256,
-            embed_dim=32,
-            beta=0.25,
-        )
-        z = torch.randn(2, 32, 4, 4, 4)
-
-        z_q, loss, info = quantizer(z)
-
-        assert z_q.shape == z.shape
-        assert loss.shape == ()
-
-    def test_vector_quantizer2_legacy_mode(self):
-        """Test VectorQuantizer2 with legacy=False."""
-        quantizer = VectorQuantizer2(
-            n_embed=256,
-            embed_dim=32,
-            beta=0.25,
-            legacy=False,
-        )
-        z = torch.randn(2, 32, 4, 4, 4)
-
-        z_q, loss, info = quantizer(z)
-
-        assert z_q.shape == z.shape
-
-
-class TestEMAVectorQuantizer:
-    """Tests for EMAVectorQuantizer."""
+class TestVectorQuantizerEMA:
+    """Tests for VectorQuantizer with EMA mode (replaces VectorQuantizer2/EMAVectorQuantizer)."""
 
     def test_ema_quantizer_creation(self):
-        """Test creating EMAVectorQuantizer."""
-        quantizer = EMAVectorQuantizer(
+        """Test creating VectorQuantizer with EMA enabled."""
+        quantizer = VectorQuantizer(
             n_embed=256,
             embed_dim=32,
             beta=0.25,
+            use_ema=True,
             decay=0.99,
         )
         assert quantizer.n_e == 256
+        assert quantizer.e_dim == 32
+        assert quantizer.use_ema is True
         assert quantizer.decay == 0.99
 
     def test_ema_quantizer_forward(self):
-        """Test forward pass through EMAVectorQuantizer."""
-        quantizer = EMAVectorQuantizer(
+        """Test forward pass through VectorQuantizer with EMA."""
+        quantizer = VectorQuantizer(
             n_embed=256,
             embed_dim=32,
             beta=0.25,
+            use_ema=True,
             decay=0.99,
         )
         z = torch.randn(2, 32, 4, 4, 4)
@@ -142,8 +100,8 @@ class TestEMAVectorQuantizer:
         z_q, loss, info = quantizer(z)
 
         assert z_q.shape == z.shape
-        # Perplexity should be computed during training
-        assert info[0] is not None
+        assert loss.shape == ()
+        assert info[0] is not None  # Perplexity
 
 
 class TestNLayerDiscriminator:
@@ -243,18 +201,11 @@ class TestQuantizerInterface:
         quantizer = VectorQuantizer(n_embed=256, embed_dim=32)
         assert isinstance(quantizer, QuantizerInterface)
 
-    def test_vector_quantizer2_interface(self):
-        """Test VectorQuantizer2 implements QuantizerInterface."""
-        from maskgit3d.domain.interfaces import QuantizerInterface
-
-        quantizer = VectorQuantizer2(n_embed=256, embed_dim=32)
-        assert isinstance(quantizer, QuantizerInterface)
-
     def test_ema_quantizer_interface(self):
-        """Test EMAVectorQuantizer implements QuantizerInterface."""
+        """Test VectorQuantizer with EMA implements QuantizerInterface."""
         from maskgit3d.domain.interfaces import QuantizerInterface
 
-        quantizer = EMAVectorQuantizer(n_embed=256, embed_dim=32)
+        quantizer = VectorQuantizer(n_embed=256, embed_dim=32, use_ema=True)
         assert isinstance(quantizer, QuantizerInterface)
 
 

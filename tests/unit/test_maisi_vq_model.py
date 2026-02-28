@@ -43,7 +43,7 @@ class TestMaisyVQModel3D:
         spatial_size = 32
 
         x = torch.randn(batch_size, in_channels, spatial_size, spatial_size, spatial_size)
-        recon, vq_loss = model(x)
+        recon, vq_loss = model.forward_with_loss(x)
 
         # Check output shape matches input
         assert recon.shape == x.shape
@@ -62,7 +62,7 @@ class TestMaisyVQModel3D:
         quant, vq_loss, info = model.encode(x)
 
         # Check quantized output has correct channels
-        assert quant.shape[1] == model.embed_dim
+        assert quant.shape[1] == model._embed_dim
 
         # Decode
         recon = model.decode(quant)
@@ -128,7 +128,7 @@ class TestMaisyVQModel3D:
         """Test gradients flow through the model."""
         x = torch.randn(1, 1, 32, 32, 32, requires_grad=True)
 
-        recon, vq_loss = model(x)
+        recon, vq_loss = model.forward_with_loss(x)
         loss = recon.mean() + vq_loss
         loss.backward()
 
@@ -155,7 +155,7 @@ class TestMaisyVQModel3D:
 
         # Test with 32x32x32 input
         x = torch.randn(1, 1, 32, 32, 32)
-        recon, _ = model(x)
+        recon, _ = model.forward_with_loss(x)
         assert recon.shape == x.shape
 
     def test_batch_processing(self, model):
@@ -164,7 +164,7 @@ class TestMaisyVQModel3D:
 
         for bs in batch_sizes:
             x = torch.randn(bs, 1, 32, 32, 32)
-            recon, _ = model(x)
+            recon, _ = model.forward_with_loss(x)
             assert recon.shape[0] == bs
 
 
@@ -231,7 +231,7 @@ class TestMaisyVQModel3DIntegration:
     def test_reconstruction_quality(self, model):
         """Test reconstruction has reasonable quality."""
         x = torch.randn(1, 1, 32, 32, 32)
-        recon, _ = model(x)
+        recon, _ = model.forward_with_loss(x)
 
         # MSE should be bounded (not perfect, but not random)
         mse = torch.nn.functional.mse_loss(recon, x)
