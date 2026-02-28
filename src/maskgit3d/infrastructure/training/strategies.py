@@ -500,8 +500,8 @@ class VQGANMetrics(Metrics):
                 reduction="mean",
             )
             self.ssim_metric = SSIMMetric(
-                max_val=data_range,
                 spatial_dims=spatial_dims,
+                data_range=data_range,
                 reduction="mean",
             )
         except ImportError:

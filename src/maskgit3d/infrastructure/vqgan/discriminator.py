@@ -4,6 +4,7 @@ PatchGAN Discriminator for VQGAN.
 This discriminator is based on the Pix2Pix architecture and is used
 for adversarial training of the VQVAE.
 """
+
 import functools
 from typing import Optional
 import torch
@@ -15,9 +16,9 @@ from maskgit3d.domain.interfaces import DiscriminatorInterface
 def weights_init(m):
     """Initialize network weights."""
     classname = m.__class__.__name__
-    if classname.find('Conv') != -1:
+    if classname.find("Conv") != -1:
         nn.init.normal_(m.weight.data, 0.0, 0.02)
-    elif classname.find('BatchNorm') != -1:
+    elif classname.find("BatchNorm") != -1:
         nn.init.normal_(m.weight.data, 1.0, 0.02)
         nn.init.constant_(m.bias.data, 0)
 
@@ -35,8 +36,10 @@ class ActNorm(nn.Module):
     def initialize(self, x: torch.Tensor):
         """Initialize statistics from first batch."""
         with torch.no_grad():
-            bias = -x.flatten(1).mean(1)
-            var = ((x.flatten(1) - bias.unsqueeze(1)) ** 2).mean(1)
+            # Compute per-channel statistics: mean and variance over batch and spatial dims
+            # x shape: [B, C, D, H, W]
+            bias = -x.mean(dim=[0, 2, 3, 4])  # [C]
+            var = ((x - bias.view(1, -1, 1, 1, 1)) ** 2).mean(dim=[0, 2, 3, 4])  # [C]
             weight = 1.0 / (torch.sqrt(var) + 1e-6)
             self.bias.data.copy_(bias)
             self.weight.data.copy_(weight)
@@ -45,7 +48,8 @@ class ActNorm(nn.Module):
     def forward(self, x: torch.Tensor):
         if not self.initialized:
             self.initialize(x)
-        return self.weight.unsqueeze(0).unsqueeze(2) * x + self.bias.unsqueeze(0).unsqueeze(2)
+        # Reshape for 3D: [B, C, D, H, W] -> weight/bias shape [1, C, 1, 1, 1]
+        return self.weight.view(1, -1, 1, 1, 1) * x + self.bias.view(1, -1, 1, 1, 1)
 
 
 class NLayerDiscriminator(nn.Module, DiscriminatorInterface):
@@ -83,38 +87,44 @@ class NLayerDiscriminator(nn.Module, DiscriminatorInterface):
         padw = 1
         sequence = [
             nn.Conv3d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw),
-            nn.LeakyReLU(0.2, True)
+            nn.LeakyReLU(0.2, True),
         ]
 
         nf_mult = 1
         nf_mult_prev = 1
         for n in range(1, n_layers):
             nf_mult_prev = nf_mult
-            nf_mult = min(2 ** n, 8)
+            nf_mult = min(2**n, 8)
             sequence += [
                 nn.Conv3d(
-                    ndf * nf_mult_prev, ndf * nf_mult,
-                    kernel_size=kw, stride=2, padding=padw, bias=use_bias
+                    ndf * nf_mult_prev,
+                    ndf * nf_mult,
+                    kernel_size=kw,
+                    stride=2,
+                    padding=padw,
+                    bias=use_bias,
                 ),
                 norm_layer(ndf * nf_mult),
-                nn.LeakyReLU(0.2, True)
+                nn.LeakyReLU(0.2, True),
             ]
 
         nf_mult_prev = nf_mult
-        nf_mult = min(2 ** n_layers, 8)
+        nf_mult = min(2**n_layers, 8)
         sequence += [
             nn.Conv3d(
-                ndf * nf_mult_prev, ndf * nf_mult,
-                kernel_size=kw, stride=1, padding=padw, bias=use_bias
+                ndf * nf_mult_prev,
+                ndf * nf_mult,
+                kernel_size=kw,
+                stride=1,
+                padding=padw,
+                bias=use_bias,
             ),
             norm_layer(ndf * nf_mult),
-            nn.LeakyReLU(0.2, True)
+            nn.LeakyReLU(0.2, True),
         ]
 
         # Output: 1 channel prediction map
-        sequence += [
-            nn.Conv3d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)
-        ]
+        sequence += [nn.Conv3d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]
 
         self.main = nn.Sequential(*sequence)
 
