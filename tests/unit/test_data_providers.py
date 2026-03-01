@@ -529,7 +529,7 @@ class TestBraTS2023Provider:
             provider = BraTSDataProvider(data_dir=root, tumor_types=["GLI"])
 
             assert len(provider._all_samples) == 1
-            assert provider._all_samples[0]["tumor_type"]  # type: ignore[index] == TUMOR_TYPE_MAP["GLI"]
+            assert provider._all_samples[0]["tumor_type"] == 0  # type: ignore[index]
 
 
 class TestBraTS2023StratifiedSplit:
