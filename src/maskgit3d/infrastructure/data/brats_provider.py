@@ -11,8 +11,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
 
-import numpy as np
 import nibabel as nib
+import numpy as np
 import torch
 from monai.transforms.compose import Compose
 from torch.utils.data import DataLoader, Dataset
@@ -243,15 +243,15 @@ class BraTS2023Dataset(Dataset):
             # Transform can return various types - extract image and handle ndarray
             if isinstance(transformed, dict):
                 data = transformed
-            else:
+            data = transformed if isinstance(transformed, dict) else dict(data)
                 # Transform may return a modified dict structure
-                data = dict(data)
+            data = transformed if isinstance(transformed, dict) else dict(data)
 
         # Use type: ignore for dict access since MONAI transforms modify dict structure
         image: torch.Tensor = data["image"]  # type: ignore[assignment]
         if isinstance(image, np.ndarray):
             image = torch.from_numpy(image)
-        
+
         tumor_type = torch.tensor(data["tumor_type"], dtype=torch.long)
 
         if self.task == "segmentation":

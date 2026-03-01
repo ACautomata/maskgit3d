@@ -295,10 +295,10 @@ class EMAVectorQuantizer(nn.Module, QuantizerInterface):
             # Get buffers - pyright needs explicit typing
             cs: torch.Tensor = self.cluster_size  # type: ignore[assignment]
             ea: torch.Tensor = self.embed_avg  # type: ignore[assignment]
-            
+
             # Update cluster size using in-place operations
             cs.data.mul_(self.decay).add_(encodings.sum(0), alpha=1 - self.decay)
-            
+
             # Update embed average
             embed_sum = encodings.transpose(0, 1) @ z_flattened
             ea.data.mul_(self.decay).add_(embed_sum, alpha=1 - self.decay)

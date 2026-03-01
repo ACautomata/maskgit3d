@@ -1,4 +1,4 @@
-from typing import Optional
+
 """
 MaskGIT Transformer implementation.
 
@@ -151,7 +151,7 @@ class MaskGITTransformer(nn.Module):
         nn.init.normal_(self.mask_token, std=0.02)
 
         # Positional encoding (will be initialized based on actual sequence)
-        self.pos_encoding: Optional[PositionalEncoding3D] = None
+        self.pos_encoding: PositionalEncoding3D | None = None
 
         # Transformer blocks
         self.blocks = nn.ModuleList([
@@ -170,7 +170,7 @@ class MaskGITTransformer(nn.Module):
 
     def _init_pos_encoding(self, seq_len: int, device: torch.device):
         """Initialize positional encoding if needed."""
-        pos_enc: Optional[PositionalEncoding3D] = self.pos_encoding  # type: ignore[assignment]
+        pos_enc: PositionalEncoding3D | None = self.pos_encoding  # type: ignore[assignment]
         if pos_enc is None or pos_enc.shape[1] < seq_len:  # type: ignore[union-attr]
             pos_enc = PositionalEncoding3D(seq_len, self.hidden_size)
             self.pos_encoding = pos_enc.to(device)

@@ -169,8 +169,8 @@ class TestBraTSDataProvider:
 
             data = np.random.rand(10, 10, 10).astype(np.float32)
             affine = np.eye(4)
-            img = nibabel.Nifti1Image  # type: ignore[attr-defined](data, affine)
-            nibabel.save  # type: ignore[attr-defined](img, str(patient_dir / "BraTS2021_00001_t1.nii.gz"))
+            img = nibabel.Nifti1Image(data, affine)  # type: ignore[attr-defined]
+            nibabel.save(img, str(patient_dir / "BraTS2021_00001_t1.nii.gz"))  # type: ignore[attr-defined]
 
             with pytest.raises(ValueError, match="Ratios must sum to 1.0"):
                 BraTSDataProvider(
@@ -194,8 +194,8 @@ class TestBraTSDataProvider:
 
             data = np.random.rand(10, 10, 10).astype(np.float32)
             affine = np.eye(4)
-            img = nibabel.Nifti1Image  # type: ignore[attr-defined](data, affine)
-            nibabel.save  # type: ignore[attr-defined](img, str(patient_dir / "BraTS2021_00001_t1.nii.gz"))
+            img = nibabel.Nifti1Image(data, affine)  # type: ignore[attr-defined]
+            nibabel.save(img, str(patient_dir / "BraTS2021_00001_t1.nii.gz"))  # type: ignore[attr-defined]
 
             provider = BraTSDataProvider(
                 data_dir=tmpdir,
@@ -297,8 +297,8 @@ class TestBraTSDataset:
 
             data = np.random.rand(10, 10, 10).astype(np.float32)
             affine = np.eye(4)
-            img = nibabel.Nifti1Image  # type: ignore[attr-defined](data, affine)
-            nibabel.save  # type: ignore[attr-defined](img, str(patient_dir / "BraTS2021_00001_t1.nii.gz"))
+            img = nibabel.Nifti1Image(data, affine)  # type: ignore[attr-defined]
+            nibabel.save(img, str(patient_dir / "BraTS2021_00001_t1.nii.gz"))  # type: ignore[attr-defined]
 
             dataset = BraTSDataset(
                 data_dir=Path(tmpdir),
@@ -326,12 +326,12 @@ def _create_brats2023_patient(
     data = np.random.rand(4, 4, 4).astype(np.float32)
     affine = np.eye(4)
 
-    for suffix in ["-t1n.nii.gz", "-t1c.nii.gz", "-t2w.nii.gz", "-t2f.nii.gz"]:
-        nibabel.save  # type: ignore[attr-defined](nibabel.Nifti1Image  # type: ignore[attr-defined](data, affine), str(patient_dir / f"{patient_id}{suffix}"))
+    for _suffix in ["-t1n.nii.gz", "-t1c.nii.gz", "-t2w.nii.gz", "-t2f.nii.gz"]:
+        nibabel.save(nibabel.Nifti1Image(data, affine), str(patient_dir / f"{patient_id}{_suffix}"))  # type: ignore[attr-defined]
 
     if include_seg:
         seg_data = np.random.randint(0, 4, size=(4, 4, 4)).astype(np.float32)
-        nibabel.save  # type: ignore[attr-defined](nibabel.Nifti1Image  # type: ignore[attr-defined](seg_data, affine), str(patient_dir / f"{patient_id}-seg.nii.gz"))
+        nibabel.save(nibabel.Nifti1Image(seg_data, affine), str(patient_dir / f"{patient_id}-seg.nii.gz"))  # type: ignore[attr-defined]
 
     return patient_dir
 
@@ -519,10 +519,7 @@ class TestBraTS2023Provider:
 
     def test_tumor_type_filtering(self):
         """Test tumor type filtering during discovery."""
-        from maskgit3d.infrastructure.data.brats_provider import (
-            TUMOR_TYPE_MAP,
-            BraTSDataProvider,
-        )
+        from maskgit3d.infrastructure.data.brats_provider import BraTSDataProvider
 
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -715,7 +712,7 @@ class TestBraTS2023BackwardCompat:
 
             data = np.random.rand(6, 6, 6).astype(np.float32)
             affine = np.eye(4)
-            nibabel.save  # type: ignore[attr-defined](nibabel.Nifti1Image  # type: ignore[attr-defined](data, affine), str(patient_dir / f"{patient_id}_t1.nii.gz"))
+            nibabel.save(nibabel.Nifti1Image(data, affine), str(patient_dir / f"{patient_id}_t1.nii.gz"))  # type: ignore[attr-defined]
 
             provider = BraTSDataProvider(
                 data_dir=tmpdir,
@@ -743,7 +740,7 @@ class TestBraTS2023BackwardCompat:
 
             data = np.random.rand(6, 6, 6).astype(np.float32)
             affine = np.eye(4)
-            nibabel.save  # type: ignore[attr-defined](nibabel.Nifti1Image  # type: ignore[attr-defined](data, affine), str(patient_dir / f"{patient_id}_t1.nii.gz"))
+            nibabel.save(nibabel.Nifti1Image(data, affine), str(patient_dir / f"{patient_id}_t1.nii.gz"))  # type: ignore[attr-defined]
 
             dataset = BraTS2021Dataset(
                 data_dir=Path(tmpdir),

@@ -313,7 +313,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
             Dictionary of training metrics
         """
         # Unpack batch
-        x = batch[0] if isinstance(batch, (tuple, list)) else batch
+        x = batch[0] if isinstance(batch, tuple | list) else batch
 
         model.train()
         vq_model = cast(VQModelInterface, model)
@@ -353,7 +353,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
         model.eval()
         vq_model = cast(VQModelInterface, model)
 
-        x = batch[0] if isinstance(batch, (tuple, list)) else batch
+        x = batch[0] if isinstance(batch, tuple | list) else batch
 
         with torch.no_grad():
             xrec, qloss = vq_model.forward_with_loss(x)
@@ -652,7 +652,7 @@ class MaskGITTrainingStrategy(TrainingStrategy):
             Dictionary of training metrics
         """
         # Unpack batch
-        x = batch[0] if isinstance(batch, (tuple, list)) else batch
+        x = batch[0] if isinstance(batch, tuple | list) else batch
 
         model.train()
         maskgit_model = cast(MaskGITModelInterface, model)
@@ -725,7 +725,7 @@ class MaskGITTrainingStrategy(TrainingStrategy):
         model.eval()
         maskgit_model = cast(MaskGITModelInterface, model)
 
-        x = batch[0] if isinstance(batch, (tuple, list)) else batch
+        x = batch[0] if isinstance(batch, tuple | list) else batch
 
         with torch.no_grad():
             # Reconstruction

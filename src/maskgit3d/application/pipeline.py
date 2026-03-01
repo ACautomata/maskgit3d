@@ -6,7 +6,7 @@ the training, validation, and testing workflows.
 """
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import torch
 from tqdm import tqdm
@@ -181,7 +181,7 @@ class TrainingPipeline:
             # Dynamically collect all metrics from strategy
             for key, value in metrics.items():
                 # Skip non-numeric values
-                if not isinstance(value, (int, float)):
+                if not isinstance(value, int | float):
                     continue
                 # Prefix with train_ if not already prefixed
                 prefixed_key = key if key.startswith("train_") else f"train_{key}"
@@ -219,7 +219,7 @@ class TrainingPipeline:
                 # Dynamically collect all metrics from strategy
                 for key, value in metrics.items():
                     # Skip non-numeric values
-                    if not isinstance(value, (int, float)):
+                    if not isinstance(value, int | float):
                         continue
                     # Use val_ prefix if not already prefixed
                     prefixed_key = key if key.startswith("val_") else f"val_{key}"
@@ -372,7 +372,7 @@ class TestPipeline:
         with torch.no_grad():
             for batch_idx, batch in enumerate(pbar):
                 # Move batch to device
-                if isinstance(batch, (tuple, list)):
+                if isinstance(batch, tuple | list):
                     images = batch[0].to(self.device)
                     targets = batch[1].to(self.device) if len(batch) > 1 else None
                 else:
@@ -483,11 +483,11 @@ class LightningTrainingPipeline(pl.LightningModule):  # type: ignore[misc]
         lightning_opt = self.optimizers()
         # LightningOptimizer is a wrapper around torch.optim.Optimizer
         # Cast to the expected type for compatibility with TrainingStrategy
-        optimizer: torch.optim.Optimizer
+        optimizer: torch.optim.Optimizer = lightning_opt[0] if isinstance(lightning_opt, list) else lightning_opt  # type: ignore[assignment]
         if isinstance(lightning_opt, list):
             optimizer = lightning_opt[0]  # type: ignore[assignment]
-        else:
-            optimizer = lightning_opt  # type: ignore[assignment]
+        optimizer: torch.optim.Optimizer = lightning_opt[0] if isinstance(lightning_opt, list) else lightning_opt  # type: ignore[assignment]
+        optimizer: torch.optim.Optimizer = lightning_opt[0] if isinstance(lightning_opt, list) else lightning_opt  # type: ignore[assignment]
         metrics = self.training_strategy.train_step(self.model, batch, optimizer)
         return {"loss": torch.tensor(metrics["loss"])}
 

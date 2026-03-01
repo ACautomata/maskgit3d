@@ -10,7 +10,7 @@ import torch.nn as nn
 
 from maskgit3d.infrastructure.vqgan.base_vq_model import BaseVQModel
 from maskgit3d.infrastructure.vqgan.encoder_decoder_3d import Decoder3d, Encoder3d
-from maskgit3d.infrastructure.vqgan.quantize import VectorQuantizer, VectorQuantizer as Quantizer
+from maskgit3d.infrastructure.vqgan.quantize import VectorQuantizer
 
 
 class VQModel3D(BaseVQModel):

@@ -9,7 +9,6 @@ Implements the MaskGIT decoding algorithm:
 import math
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 from maskgit3d.infrastructure.maskgit.transformer import MaskGITTransformer
