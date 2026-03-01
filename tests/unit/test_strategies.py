@@ -280,8 +280,8 @@ class TestVQGANOptimizerFactory:
         params_g = [torch.nn.Parameter(torch.randn(10, 10))]
         params_d = [torch.nn.Parameter(torch.randn(5, 5))]
         opt_g, opt_d = factory.create(iter(params_g), iter(params_d))
-        assert opt_g.param_groups[0]["lr"] == 1e-4
-        assert opt_d.param_groups[0]["lr"] == 2e-4
+        assert opt_g.param_groups[0]["lr"] == 1e-4  # type: ignore[union-attr]
+        assert opt_d.param_groups[0]["lr"] == 2e-4  # type: ignore[union-attr]
 
     def test_vqgan_optimizer_factory_creates_generator_only(self):
         """VQGANOptimizerFactory.create() can return just generator optimizer."""
@@ -289,7 +289,7 @@ class TestVQGANOptimizerFactory:
         factory = VQGANOptimizerFactory(lr_g=1e-4)
         params_g = [torch.nn.Parameter(torch.randn(10, 10))]
         opt_g, opt_d = factory.create(iter(params_g), None)
-        assert opt_g.param_groups[0]["lr"] == 1e-4
+        assert opt_g.param_groups[0]["lr"] == 1e-4  # type: ignore[union-attr]
         assert opt_d is None
 
 
@@ -366,7 +366,7 @@ class TestMaskGITTrainingStrategy:
         batch = (torch.randn(2, 1, 4, 4, 4),)
 
         before = model.weight.detach().clone()
-        strategy.train_step(model, batch, optimizer)
+        strategy.train_step(model, batch, optimizer)  # type: ignore[arg-type]
         after = model.weight.detach().clone()
 
         assert not torch.equal(before, after)
@@ -374,7 +374,6 @@ class TestMaskGITTrainingStrategy:
 
 class TestMaskGITInference:
     """Tests for MaskGITInference."""
-
     def test_maskgit_inference_creation(self):
         """Test creating MaskGITInference."""
         inference = MaskGITInference(

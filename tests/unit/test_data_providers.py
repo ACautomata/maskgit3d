@@ -164,13 +164,13 @@ class TestBraTSDataProvider:
             patient_dir.mkdir()
 
             # Create a dummy NIfTI file
-            import nibabel as nib
+            import nibabel
             import numpy as np
 
             data = np.random.rand(10, 10, 10).astype(np.float32)
             affine = np.eye(4)
-            img = nib.Nifti1Image(data, affine)
-            nib.save(img, str(patient_dir / "BraTS2021_00001_t1.nii.gz"))
+            img = nibabel.Nifti1Image  # type: ignore[attr-defined](data, affine)
+            nibabel.save  # type: ignore[attr-defined](img, str(patient_dir / "BraTS2021_00001_t1.nii.gz"))
 
             with pytest.raises(ValueError, match="Ratios must sum to 1.0"):
                 BraTSDataProvider(
@@ -189,13 +189,13 @@ class TestBraTSDataProvider:
             patient_dir = Path(tmpdir) / "BraTS2021_00001"
             patient_dir.mkdir()
 
-            import nibabel as nib
+            import nibabel
             import numpy as np
 
             data = np.random.rand(10, 10, 10).astype(np.float32)
             affine = np.eye(4)
-            img = nib.Nifti1Image(data, affine)
-            nib.save(img, str(patient_dir / "BraTS2021_00001_t1.nii.gz"))
+            img = nibabel.Nifti1Image  # type: ignore[attr-defined](data, affine)
+            nibabel.save  # type: ignore[attr-defined](img, str(patient_dir / "BraTS2021_00001_t1.nii.gz"))
 
             provider = BraTSDataProvider(
                 data_dir=tmpdir,
@@ -292,13 +292,13 @@ class TestBraTSDataset:
             patient_dir.mkdir()
 
             # Create only T1 modality
-            import nibabel as nib
+            import nibabel
             import numpy as np
 
             data = np.random.rand(10, 10, 10).astype(np.float32)
             affine = np.eye(4)
-            img = nib.Nifti1Image(data, affine)
-            nib.save(img, str(patient_dir / "BraTS2021_00001_t1.nii.gz"))
+            img = nibabel.Nifti1Image  # type: ignore[attr-defined](data, affine)
+            nibabel.save  # type: ignore[attr-defined](img, str(patient_dir / "BraTS2021_00001_t1.nii.gz"))
 
             dataset = BraTSDataset(
                 data_dir=Path(tmpdir),
@@ -317,7 +317,7 @@ def _create_brats2023_patient(
     include_seg: bool = True,
 ) -> Path:
     """Create a fake BraTS2023 patient directory with minimal NIfTI files."""
-    import nibabel as nib
+    import nibabel
     import numpy as np
 
     patient_dir = parent_dir / patient_id
@@ -327,11 +327,11 @@ def _create_brats2023_patient(
     affine = np.eye(4)
 
     for suffix in ["-t1n.nii.gz", "-t1c.nii.gz", "-t2w.nii.gz", "-t2f.nii.gz"]:
-        nib.save(nib.Nifti1Image(data, affine), str(patient_dir / f"{patient_id}{suffix}"))
+        nibabel.save  # type: ignore[attr-defined](nibabel.Nifti1Image  # type: ignore[attr-defined](data, affine), str(patient_dir / f"{patient_id}{suffix}"))
 
     if include_seg:
         seg_data = np.random.randint(0, 4, size=(4, 4, 4)).astype(np.float32)
-        nib.save(nib.Nifti1Image(seg_data, affine), str(patient_dir / f"{patient_id}-seg.nii.gz"))
+        nibabel.save  # type: ignore[attr-defined](nibabel.Nifti1Image  # type: ignore[attr-defined](seg_data, affine), str(patient_dir / f"{patient_id}-seg.nii.gz"))
 
     return patient_dir
 
@@ -435,7 +435,7 @@ class TestBraTS2023Provider:
             provider = BraTSDataProvider(data_dir=root, tumor_types=["GLI"])
 
             assert len(provider._all_samples) == 2
-            assert all(len(sample["image"]) == 4 for sample in provider._all_samples)
+            assert all(len(sample["image"]) == 4 for sample in provider._all_samples)  # type: ignore[index]
 
     def test_v2023_discovery_with_data_dirs(self):
         """Test BraTS 2023 patient discovery using data_dirs mapping."""
@@ -459,7 +459,7 @@ class TestBraTS2023Provider:
             )
 
             assert len(provider._all_samples) == 3
-            assert all(len(sample["image"]) == 4 for sample in provider._all_samples)
+            assert all(len(sample["image"]) == 4 for sample in provider._all_samples)  # type: ignore[index]
 
     def test_v2023_no_patients_found(self):
         """Test empty directory raises FileNotFoundError for BraTS 2023."""
@@ -488,7 +488,7 @@ class TestBraTS2023Provider:
 
             assert len(provider._all_samples) == 1
             only_sample = provider._all_samples[0]
-            assert "BraTS-GLI-00001-000" in only_sample["image"][0]
+            assert "BraTS-GLI-00001-000" in only_sample["image"][0]  # type: ignore[index]
 
     def test_v2023_segmentation_requires_label(self):
         """Test segmentation task skips patient without label."""
@@ -532,7 +532,7 @@ class TestBraTS2023Provider:
             provider = BraTSDataProvider(data_dir=root, tumor_types=["GLI"])
 
             assert len(provider._all_samples) == 1
-            assert provider._all_samples[0]["tumor_type"] == TUMOR_TYPE_MAP["GLI"]
+            assert provider._all_samples[0]["tumor_type"]  # type: ignore[index] == TUMOR_TYPE_MAP["GLI"]
 
 
 class TestBraTS2023StratifiedSplit:
@@ -710,12 +710,12 @@ class TestBraTS2023BackwardCompat:
             patient_dir = Path(tmpdir) / patient_id
             patient_dir.mkdir()
 
-            import nibabel as nib
+            import nibabel
             import numpy as np
 
             data = np.random.rand(6, 6, 6).astype(np.float32)
             affine = np.eye(4)
-            nib.save(nib.Nifti1Image(data, affine), str(patient_dir / f"{patient_id}_t1.nii.gz"))
+            nibabel.save  # type: ignore[attr-defined](nibabel.Nifti1Image  # type: ignore[attr-defined](data, affine), str(patient_dir / f"{patient_id}_t1.nii.gz"))
 
             provider = BraTSDataProvider(
                 data_dir=tmpdir,
@@ -738,12 +738,12 @@ class TestBraTS2023BackwardCompat:
             patient_dir = Path(tmpdir) / patient_id
             patient_dir.mkdir()
 
-            import nibabel as nib
+            import nibabel
             import numpy as np
 
             data = np.random.rand(6, 6, 6).astype(np.float32)
             affine = np.eye(4)
-            nib.save(nib.Nifti1Image(data, affine), str(patient_dir / f"{patient_id}_t1.nii.gz"))
+            nibabel.save  # type: ignore[attr-defined](nibabel.Nifti1Image  # type: ignore[attr-defined](data, affine), str(patient_dir / f"{patient_id}_t1.nii.gz"))
 
             dataset = BraTS2021Dataset(
                 data_dir=Path(tmpdir),

@@ -42,7 +42,7 @@ from maskgit3d.infrastructure.vqgan import (
 # =============================================================================
 
 
-def _validate_param(name: str, value: int, min_val: int = None, max_val: int = None) -> None:
+def _validate_param(name: str, value: int, min_val: int | None = None, max_val: int | None = None) -> None:
     """Validate integer parameter with optional min/max bounds."""
     if min_val is not None and value < min_val:
         raise ValueError(f"{name} must be >= {min_val}, got {value}")
@@ -51,7 +51,7 @@ def _validate_param(name: str, value: int, min_val: int = None, max_val: int = N
 
 
 def _validate_float_param(
-    name: str, value: float, min_val: float = None, max_val: float = None
+    name: str, value: float, min_val: float | None = None, max_val: float | None = None
 ) -> None:
     """Validate float parameter with optional min/max bounds."""
     if min_val is not None and value < min_val:

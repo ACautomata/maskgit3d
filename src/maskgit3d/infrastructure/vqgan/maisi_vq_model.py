@@ -6,6 +6,7 @@ architecture with vector quantization, without KL regularization.
 """
 
 from collections.abc import Sequence
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -18,7 +19,7 @@ from maskgit3d.domain.interfaces import VQModelInterface
 from maskgit3d.infrastructure.vqgan.quantize import VectorQuantizer2
 
 
-class MaisiVQModel3D(nn.Module, VQModelInterface):
+class MaisiVQModel3D(nn.Module, VQModelInterface):  # type: ignore[misc]
     """
     MAISI-based VQGAN Model for volumetric medical images.
 
@@ -208,19 +209,19 @@ class MaisiVQModel3D(nn.Module, VQModelInterface):
         dec = self.decode(quant_b)
         return dec
 
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Full encode-decode forward pass.
+        Forward pass returning only reconstruction (ModelInterface contract).
 
         Args:
             x: Input volumes [B, C, D, H, W]
 
         Returns:
-            Tuple of (reconstructed_volumes, quantization_loss)
+            Reconstructed volumes [B, C, D', H', W']
         """
         quant, diff, _ = self.encode(x)
         dec = self.decode(quant)
-        return dec, diff
+        return dec
 
     def forward_with_loss(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -232,7 +233,9 @@ class MaisiVQModel3D(nn.Module, VQModelInterface):
         Returns:
             Tuple of (reconstructed, quantization_loss)
         """
-        return self.forward(x)
+        quant, diff, _ = self.encode(x)
+        dec = self.decode(quant)
+        return dec, diff
 
     def save_checkpoint(self, path: str) -> None:
         """Save model checkpoint."""
@@ -253,7 +256,7 @@ class MaisiVQModel3D(nn.Module, VQModelInterface):
         return self._codebook_size
 
     @property
-    def latent_shape(self) -> tuple[int, int, int]:
+    def latent_shape(self) -> tuple[int, int, int, int]:
         """
         Get the shape of latent representations (C, D, H, W).
 
@@ -261,6 +264,23 @@ class MaisiVQModel3D(nn.Module, VQModelInterface):
         The spatial dimensions depend on input size and network structure.
         """
         return (self.latent_channels, -1, -1, -1)  # Dynamic spatial dims
+
+    # Workaround for type checking: these methods exist on nn.Module
+    # but have incompatible signatures with VQModelInterface
+    def to(self, *args: Any, **kwargs: Any) -> "MaisiVQModel3D":
+        """Move model to device - delegates to nn.Module.to"""
+        super().to(*args, **kwargs)  # type: ignore[return-value]
+        return self
+
+    def train(self, mode: bool = True) -> "MaisiVQModel3D":
+        """Set training mode - delegates to nn.Module.train"""
+        super().train(mode)  # type: ignore[return-value]
+        return self
+
+    def eval(self) -> "MaisiVQModel3D":
+        """Set eval mode - delegates to nn.Module.eval"""
+        super().eval()  # type: ignore[return-value]
+        return self
 
 
 def get_maisi_vq_config(

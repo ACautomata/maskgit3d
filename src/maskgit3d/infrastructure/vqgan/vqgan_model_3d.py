@@ -10,7 +10,7 @@ import torch.nn as nn
 
 from maskgit3d.infrastructure.vqgan.base_vq_model import BaseVQModel
 from maskgit3d.infrastructure.vqgan.encoder_decoder_3d import Decoder3d, Encoder3d
-from maskgit3d.infrastructure.vqgan.quantize import VectorQuantizer
+from maskgit3d.infrastructure.vqgan.quantize import VectorQuantizer, VectorQuantizer as Quantizer
 
 
 class VQModel3D(BaseVQModel):
@@ -115,7 +115,7 @@ class VQModel3D(BaseVQModel):
         """
         h = self.encoder(x)
         h = self.quant_conv(h)
-        quant, emb_loss, info = self.quantize(h)
+        quant, emb_loss, info = self.quantize(h)  # type: ignore[operator]
         return quant, emb_loss, info
 
     def decode(self, quant: torch.Tensor) -> torch.Tensor:

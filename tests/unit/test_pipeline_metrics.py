@@ -26,13 +26,12 @@ class TestDynamicPipelineMetrics:
         mock_model.to = MagicMock()
 
         # Create a strategy that returns custom metrics (not just dice)
-        class CustomStrategy:
+        class CustomStrategy:  # type: ignore[misc]
             def train_step(self, model, batch, optimizer):
                 return {"loss": 1.0, "token_acc": 0.8}
 
             def validate_step(self, model, batch):
                 return {"val_loss": 0.9, "val_token_acc": 0.81}
-
         # Create mock data provider with one batch
         mock_data_provider = MagicMock()
         mock_train_loader = MagicMock()
@@ -56,13 +55,12 @@ class TestDynamicPipelineMetrics:
         pipeline = TrainingPipeline(
             model=mock_model,
             data_provider=mock_data_provider,
-            training_strategy=CustomStrategy(),
+            training_strategy=CustomStrategy(),  # type: ignore[arg-type]
             optimizer_factory=MagicMock(create=MagicMock(return_value=mock_optimizer)),
             device=torch.device("cpu"),
             checkpoint_dir="/tmp/test_checkpoints",
             log_interval=1,
         )
-
         # Mock _save_checkpoint to avoid pickling issues with mock model
         pipeline._save_checkpoint = MagicMock()
 

@@ -37,7 +37,8 @@ def test_lightning_training_pipeline_is_lightning_module():
     )
 
     # Assert it's a LightningModule
-    assert isinstance(pipeline, pl.LightningModule)
+    assert isinstance(pipeline, pl.LightningModule)  # type: ignore[union-attr]
+    assert isinstance(pipeline, pl.LightningModule)  # type: ignore[union-attr]
 
 
 def test_lightning_training_pipeline_has_required_methods():

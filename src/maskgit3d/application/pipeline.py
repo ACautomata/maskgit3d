@@ -6,7 +6,7 @@ the training, validation, and testing workflows.
 """
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 from tqdm import tqdm
@@ -16,9 +16,12 @@ from maskgit3d.infrastructure.checkpoints import load_checkpoint as load_ckpt
 # Try importing pytorch_lightning, handle gracefully if not available
 try:
     import pytorch_lightning as pl
+    from pytorch_lightning.core.optimizer import LightningOptimizer
+
     PL_AVAILABLE = True
 except ImportError:
     pl = None  # type: ignore
+    LightningOptimizer = None  # type: ignore
     PL_AVAILABLE = False
 
 from maskgit3d.domain.interfaces import (
@@ -429,7 +432,7 @@ class TestPipeline:
         np.save(probs_path, predictions["probs"])
 
 
-class LightningTrainingPipeline(pl.LightningModule):
+class LightningTrainingPipeline(pl.LightningModule):  # type: ignore[misc]
     """
     Wrapper for PyTorch Lightning training.
 
@@ -476,7 +479,15 @@ class LightningTrainingPipeline(pl.LightningModule):
     ) -> dict[str, torch.Tensor]:
         """Lightning-compatible training step."""
         batch = self._move_batch_to_device(batch)
-        optimizer = self.optimizers()
+        # Get Lightning optimizer and cast to torch.optim.Optimizer for type compatibility
+        lightning_opt = self.optimizers()
+        # LightningOptimizer is a wrapper around torch.optim.Optimizer
+        # Cast to the expected type for compatibility with TrainingStrategy
+        optimizer: torch.optim.Optimizer
+        if isinstance(lightning_opt, list):
+            optimizer = lightning_opt[0]  # type: ignore[assignment]
+        else:
+            optimizer = lightning_opt  # type: ignore[assignment]
         metrics = self.training_strategy.train_step(self.model, batch, optimizer)
         return {"loss": torch.tensor(metrics["loss"])}
 

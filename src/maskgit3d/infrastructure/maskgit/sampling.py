@@ -12,6 +12,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from maskgit3d.infrastructure.maskgit.transformer import MaskGITTransformer
+from maskgit3d.infrastructure.vqgan.vqgan_model_3d import VQModel3D
+
 
 class MaskGITSampler:
     """
@@ -55,10 +58,10 @@ class MaskGITSampler:
 
     def sample(
         self,
-        model: nn.Module,
+        model: MaskGITTransformer,
         shape: tuple[int, int, int, int],
         device: torch.device,
-        vqgan_model: nn.Module | None = None,
+        vqgan_model: VQModel3D | None = None,
         cond_tokens: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
@@ -197,8 +200,8 @@ class MaskGITSamplerWithVQGAN:
 
     def sample(
         self,
-        maskgit_model: nn.Module,
-        vqgan_model: nn.Module,
+        maskgit_model: MaskGITTransformer,
+        vqgan_model: VQModel3D,
         shape: tuple[int, int, int, int],
         device: torch.device,
     ) -> torch.Tensor:

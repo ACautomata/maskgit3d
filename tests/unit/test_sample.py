@@ -24,7 +24,7 @@ class TestModelInterface:
     def test_model_interface_is_abstract(self):
         """Verify ModelInterface cannot be instantiated directly."""
         with pytest.raises(TypeError):
-            ModelInterface()
+            ModelInterface()  # type: ignore[abstract]
 
     def test_model_interface_declares_module_runtime_methods(self):
         """ModelInterface must declare nn.Module runtime methods used by pipelines."""
@@ -66,7 +66,7 @@ class TestTrainingStrategy:
     def test_training_strategy_is_abstract(self):
         """Verify TrainingStrategy cannot be instantiated directly."""
         with pytest.raises(TypeError):
-            TrainingStrategy()
+            TrainingStrategy()  # type: ignore[abstract]
 
     def test_mock_training_step(self):
         """Test training step with mock strategy."""
@@ -123,7 +123,7 @@ class TestDataProvider:
     def test_data_provider_is_abstract(self):
         """Verify DataProvider cannot be instantiated directly."""
         with pytest.raises(TypeError):
-            DataProvider()
+            DataProvider()  # type: ignore[abstract]
 
     def test_mock_data_provider(self):
         """Test data provider with mocks."""
@@ -161,7 +161,7 @@ class TestInferenceStrategy:
     def test_inference_strategy_is_abstract(self):
         """Verify InferenceStrategy cannot be instantiated directly."""
         with pytest.raises(TypeError):
-            InferenceStrategy()
+            InferenceStrategy()  # type: ignore[abstract]
 
     def test_mock_inference(self):
         """Test inference with mock strategy."""
@@ -200,7 +200,7 @@ class TestMetrics:
     def test_metrics_is_abstract(self):
         """Verify Metrics cannot be instantiated directly."""
         with pytest.raises(TypeError):
-            Metrics()
+            Metrics()  # type: ignore[abstract]
 
     def test_mock_metrics(self):
         """Test metrics with mocks."""
@@ -232,7 +232,7 @@ class TestOptimizerFactory:
     def test_optimizer_factory_is_abstract(self):
         """Verify OptimizerFactory cannot be instantiated directly."""
         with pytest.raises(TypeError):
-            OptimizerFactory()
+            OptimizerFactory()  # type: ignore[abstract]
 
     def test_mock_optimizer_creation(self):
         """Test optimizer creation with mock factory."""

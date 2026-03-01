@@ -8,9 +8,10 @@ datasets with automatic download and preprocessing capabilities.
 
 from collections.abc import Iterator
 from enum import Enum
+from typing import Any, cast
 
 import torch
-from monai.transforms import Compose
+from monai.transforms.compose import Compose
 from torch.utils.data import DataLoader, Dataset
 
 from maskgit3d.domain.interfaces import DataProvider
@@ -94,7 +95,7 @@ class MedMNIST3DDatasetWrapper(Dataset):
 
     def __init__(
         self,
-        dataset: Dataset,
+        dataset: Dataset[Any],
         transform: Compose | None = None,
         spatial_size: tuple[int, int, int] = (64, 64, 64),
     ):
@@ -112,7 +113,7 @@ class MedMNIST3DDatasetWrapper(Dataset):
 
     def __len__(self) -> int:
         """Return the number of samples in the dataset."""
-        return len(self.dataset)
+        return len(self.dataset)  # type: ignore[arg-type]
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -134,14 +135,20 @@ class MedMNIST3DDatasetWrapper(Dataset):
         if not isinstance(image, torch.Tensor):
             image = torch.from_numpy(image)
 
+        # Ensure image is a Tensor after conversion
+        image = cast(torch.Tensor, image)
+
         # Apply preprocessing transforms
         if self.transform is not None:
             image = self.transform(image)
 
+        # Ensure image is a Tensor after transforms (MONAI transforms return Tensor)
+        image = cast(torch.Tensor, image)
+
         # Ensure image has channel dimension [C, D, H, W]
-        if image.dim() == 3:
+        if image.dim() == 3:  # type: ignore[union-attr]
             # Add channel dimension: (D, H, W) -> (1, D, H, W)
-            image = image.unsqueeze(0)
+            image = image.unsqueeze(0)  # type: ignore[union-attr]
 
         # Convert label to tensor
         if not isinstance(label, torch.Tensor):

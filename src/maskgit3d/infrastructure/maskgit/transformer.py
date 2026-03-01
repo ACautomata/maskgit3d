@@ -1,3 +1,4 @@
+from typing import Optional
 """
 MaskGIT Transformer implementation.
 
@@ -150,7 +151,7 @@ class MaskGITTransformer(nn.Module):
         nn.init.normal_(self.mask_token, std=0.02)
 
         # Positional encoding (will be initialized based on actual sequence)
-        self.pos_encoding = None
+        self.pos_encoding: Optional[PositionalEncoding3D] = None
 
         # Transformer blocks
         self.blocks = nn.ModuleList([
@@ -169,9 +170,12 @@ class MaskGITTransformer(nn.Module):
 
     def _init_pos_encoding(self, seq_len: int, device: torch.device):
         """Initialize positional encoding if needed."""
-        if self.pos_encoding is None or self.pos_encoding.shape[1] < seq_len:
-            self.pos_encoding = PositionalEncoding3D(seq_len, self.hidden_size)
-            self.pos_encoding = self.pos_encoding.to(device)
+        pos_enc: Optional[PositionalEncoding3D] = self.pos_encoding  # type: ignore[assignment]
+        if pos_enc is None or pos_enc.shape[1] < seq_len:  # type: ignore[union-attr]
+            pos_enc = PositionalEncoding3D(seq_len, self.hidden_size)
+            self.pos_encoding = pos_enc.to(device)
+        # Assert for type checker - pos_encoding is guaranteed non-None after this
+        assert self.pos_encoding is not None
 
     def encode(
         self,
@@ -198,6 +202,7 @@ class MaskGITTransformer(nn.Module):
         x = self.token_embed(tokens)
 
         # Add positional encoding
+        assert self.pos_encoding is not None
         x = self.pos_encoding(x)
 
         # Apply transformer blocks
@@ -246,6 +251,7 @@ class MaskGITTransformer(nn.Module):
 
         # Get embeddings
         x = self.token_embed(input_tokens)
+        assert self.pos_encoding is not None
         x = self.pos_encoding(x)
 
         # Apply transformer blocks

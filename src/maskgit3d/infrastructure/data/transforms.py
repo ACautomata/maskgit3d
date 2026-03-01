@@ -6,30 +6,22 @@ various medical imaging datasets (BraTS, MedMnist3D, etc.).
 """
 
 
-from monai.transforms import (
-    Compose,
+from monai.transforms.compose import Compose
+from monai.transforms.croppad.array import DivisiblePad, RandSpatialCrop, SpatialPad
+from monai.transforms.croppad.dictionary import DivisiblePadd, RandSpatialCropd, SpatialPadd
+from monai.transforms.spatial.dictionary import Resized
+from monai.transforms.intensity.array import NormalizeIntensity, ScaleIntensity, ScaleIntensityRange
+from monai.transforms.intensity.dictionary import NormalizeIntensityd, ScaleIntensityd
+from monai.transforms.io.dictionary import LoadImaged
+from monai.transforms.spatial.array import Resize
+from monai.transforms.transform import MapTransform
+from monai.transforms.utility.array import EnsureChannelFirst, EnsureType
+from monai.transforms.utility.dictionary import (
     ConcatItemsd,
     ConvertToMultiChannelBasedOnBratsClassesd,
     DeleteItemsd,
-    DivisiblePad,
-    DivisiblePadd,
-    EnsureChannelFirst,
     EnsureChannelFirstd,
-    EnsureType,
     Lambdad,
-    LoadImaged,
-    MapTransform,
-    NormalizeIntensity,
-    NormalizeIntensityd,
-    RandSpatialCrop,
-    RandSpatialCropd,
-    Resize,
-    Resized,
-    ScaleIntensity,
-    ScaleIntensityd,
-    ScaleIntensityRange,
-    SpatialPad,
-    SpatialPadd,
 )
 
 from maskgit3d.infrastructure.data.padding import (

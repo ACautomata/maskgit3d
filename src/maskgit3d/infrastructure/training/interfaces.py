@@ -20,8 +20,8 @@ class MaskGITTrainingStrategyInterface(TrainingStrategy):
     tokens are masked and the Transformer learns to predict them.
     """
 
-    @abstractmethod
-    def train_step(
+    @abstractmethod  # type: ignore[override]
+    def train_step(  # type: ignore[override]
         self,
         model: MaskGITModelInterface,
         batch: tuple[torch.Tensor, ...],

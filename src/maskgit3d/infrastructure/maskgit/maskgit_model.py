@@ -15,7 +15,7 @@ from maskgit3d.infrastructure.maskgit.transformer import MaskGITTransformer
 from maskgit3d.infrastructure.vqgan.vqgan_model_3d import VQModel3D
 
 
-class MaskGITModel(nn.Module, MaskGITModelInterface):
+class MaskGITModel(nn.Module, MaskGITModelInterface):  # type: ignore[misc]
     """
     Complete MaskGIT model for 3D medical image generation.
 
@@ -73,6 +73,7 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
         """Shape of latent representations (B, D, H, W)."""
         return self._latent_shape
 
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass (reconstruction).
@@ -101,7 +102,7 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
         # Encode through VQGAN
         z, _, info = self.vqgan.encode(x)
         # Get quantized latents
-        quant, _, _ = self.vqgan.quantize(z)
+        quant, _, _ = self.vqgan.quantize(z)  # type: ignore[operator]
         # Get indices
         indices = info[2]  # Codebook indices
         return indices

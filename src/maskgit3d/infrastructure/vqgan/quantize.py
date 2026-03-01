@@ -58,9 +58,10 @@ class VectorQuantizer(nn.Module, QuantizerInterface):
 
         self.remap = remap
         if self.remap is not None:
-            self.register_buffer("used", torch.tensor(torch.from_numpy(
-                torch.load(self.remap)).long()))
-            self.re_embed = self.used.shape[0]
+            loaded = torch.load(self.remap)
+            self.register_buffer("used", loaded.long())
+            # pyright doesn't understand registered buffers - use type: ignore
+            self.re_embed: int = int(self.used.shape[0])  # type: ignore[union-attr]
             print(f"Remapping {self.n_e} indices to {self.re_embed} indices.")
         else:
             self.re_embed = n_embed
@@ -170,9 +171,10 @@ class VectorQuantizer2(nn.Module, QuantizerInterface):
 
         self.remap = remap
         if self.remap is not None:
-            self.register_buffer("used", torch.tensor(torch.from_numpy(
-                torch.load(self.remap)).long()))
-            self.re_embed = self.used.shape[0]
+            loaded = torch.load(self.remap)
+            self.register_buffer("used", loaded.long())
+            # pyright doesn't understand registered buffers - use type: ignore
+            self.re_embed: int = int(self.used.shape[0])  # type: ignore[union-attr]
             print(f"Remapping {self.n_e} to {self.re_embed} indices.")
         else:
             self.re_embed = n_embed
@@ -221,8 +223,8 @@ class VectorQuantizer2(nn.Module, QuantizerInterface):
         if shape is not None:
             b, d, h, w, c = shape
             # Reshape indices to (B, D, H, W) first
-            indices = indices.view(b, d, h, w)
-            z_q = self.embedding(indices)  # (B, D, H, W, C)
+            indices_view = indices.view(b, d, h, w)
+            z_q = self.embedding(indices_view)  # (B, D, H, W, C)
             z_q = rearrange(z_q, 'b d h w c -> b c d h w').contiguous()
         else:
             z_q = self.embedding(indices)
@@ -261,9 +263,10 @@ class EMAVectorQuantizer(nn.Module, QuantizerInterface):
 
         self.remap = remap
         if self.remap is not None:
-            self.register_buffer("used", torch.tensor(torch.from_numpy(
-                torch.load(self.remap)).long()))
-            self.re_embed = self.used.shape[0]
+            loaded = torch.load(self.remap)
+            self.register_buffer("used", loaded.long())
+            # pyright doesn't understand registered buffers - use type: ignore
+            self.re_embed: int = int(self.used.shape[0])  # type: ignore[union-attr]
         else:
             self.re_embed = n_embed
 
@@ -289,17 +292,21 @@ class EMAVectorQuantizer(nn.Module, QuantizerInterface):
 
         # EMA updates
         if self.training:
-            self.cluster_size.data.mul_(self.decay).add_(
-                encodings.sum(0), alpha=1 - self.decay)
+            # Get buffers - pyright needs explicit typing
+            cs: torch.Tensor = self.cluster_size  # type: ignore[assignment]
+            ea: torch.Tensor = self.embed_avg  # type: ignore[assignment]
+            
+            # Update cluster size using in-place operations
+            cs.data.mul_(self.decay).add_(encodings.sum(0), alpha=1 - self.decay)
+            
+            # Update embed average
             embed_sum = encodings.transpose(0, 1) @ z_flattened
-            self.embed_avg.data.mul_(self.decay).add_(embed_sum, alpha=1 - self.decay)
+            ea.data.mul_(self.decay).add_(embed_sum, alpha=1 - self.decay)
 
             # Update embeddings
-            n = self.cluster_size.sum()
-            smoothed_cluster_size = (
-                (self.cluster_size + self.eps) / (n + self.n_e * self.eps) * n
-            )
-            embed_normalized = self.embed_avg / smoothed_cluster_size.unsqueeze(1)
+            n = cs.sum()
+            smoothed_cs = (cs + self.eps) / (n + self.n_e * self.eps) * n
+            embed_normalized = ea / smoothed_cs.unsqueeze(1)
             self.embedding.weight.data.copy_(embed_normalized)
 
         # Commitment loss

@@ -10,10 +10,10 @@ from abc import abstractmethod
 import torch
 import torch.nn as nn
 
-from maskgit3d.domain.interfaces import VQModelInterface
+from maskgit3d.domain.interfaces import QuantizerInterface, VQModelInterface
 
 
-class BaseVQModel(nn.Module, VQModelInterface):
+class BaseVQModel(nn.Module, VQModelInterface):  # type: ignore[misc]
     """
     Abstract base class for VQGAN/VQVAE models.
 
@@ -23,6 +23,9 @@ class BaseVQModel(nn.Module, VQModelInterface):
     - Checkpoint saving/loading
     - Device management
     """
+
+    # Type annotation for quantize module - subclasses will override
+    quantize: QuantizerInterface
 
     def __init__(
         self,
@@ -158,6 +161,6 @@ class BaseVQModel(nn.Module, VQModelInterface):
 
     @property
     @abstractmethod
-    def latent_shape(self) -> tuple[int, int, int]:
+    def latent_shape(self) -> tuple[int, int, int, int]:
         """Get the shape of latent representations (C, D, H, W)."""
         pass

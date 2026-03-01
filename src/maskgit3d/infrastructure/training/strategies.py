@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from typing import Any, cast
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 from maskgit3d.domain.interfaces import (
@@ -62,10 +63,10 @@ class MixedPrecisionTrainer:
     def autocast_context(self):
         """Get autocast context for forward pass."""
         if not self.enabled:
-            return torch.amp.autocast(device_type="cuda", dtype=torch.float32, enabled=False)
+            return torch.autocast(device_type="cuda", dtype=torch.float32, enabled=False)
 
         dtype = torch.float16 if self.dtype == "float16" else torch.bfloat16
-        return torch.amp.autocast(device_type="cuda", dtype=dtype, enabled=True)
+        return torch.autocast(device_type="cuda", dtype=dtype, enabled=True)
 
     def scale_loss(self, loss: torch.Tensor) -> torch.Tensor:
         """
@@ -77,7 +78,7 @@ class MixedPrecisionTrainer:
         Returns:
             Scaled loss (if FP16), original loss otherwise
         """
-        if not self.enabled or self.dtype == "bfloat16":
+        if not self.enabled or self.dtype == "bfloat16" or self.scaler is None:
             return loss
         return self.scaler.scale(loss)
 
@@ -98,7 +99,7 @@ class MixedPrecisionTrainer:
             optimizer.zero_grad()
             return
 
-        if self.dtype == "float16":
+        if self.dtype == "float16" and self.scaler is not None:
             # Unscale gradients
             self.scaler.unscale_(optimizer)
 
@@ -294,7 +295,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
             grad_clip=grad_clip,
         )
 
-    def train_step(
+    def train_step(  # type: ignore[override]
         self,
         model: VQModelInterface,
         batch: tuple[torch.Tensor, ...],
@@ -414,29 +415,31 @@ class VQGANInference(InferenceStrategy):
             Model outputs (reconstructed or generated images)
         """
         model.eval()
+        vq_model = cast(VQModelInterface, model)
 
         if self.mode == "reconstruct":
             with torch.no_grad():
-                return model(batch)[0]
+                quantized, _, _ = vq_model.encode(x=batch)
+                return vq_model.decode(quantized)
 
         elif self.mode == "generate":
             with torch.no_grad():
                 # Generate random codes
                 # latent_shape is (C, D, H, W) for 3D
-                latent_shape = model.latent_shape
+                latent_shape = vq_model.latent_shape
                 dd, hh, ww = latent_shape[1], latent_shape[2], latent_shape[3]
                 codes = torch.randint(
                     0,
-                    model.codebook_size,
+                    vq_model.codebook_size,
                     (batch.shape[0], dd, hh, ww),
                     device=batch.device,
                 )
-                return model.decode_code(codes)
+                return vq_model.decode_code(codes)
 
         elif self.mode == "decode_code":
             with torch.no_grad():
                 # batch contains codebook indices
-                return model.decode_code(batch)
+                return vq_model.decode_code(batch)
 
         raise ValueError(f"Unknown mode: {self.mode}")
 
@@ -487,13 +490,13 @@ class VQGANMetrics(Metrics):
 
         # Use MONAI for PSNR and SSIM
         try:
-            from monai.metrics import PSNRMetric, SSIMMetric
+            from monai.metrics.regression import PSNRMetric, SSIMMetric
 
-            self.psnr_metric = PSNRMetric(
+            self.psnr_metric: PSNRMetric | None = PSNRMetric(
                 max_val=data_range,
                 reduction="mean",
             )
-            self.ssim_metric = SSIMMetric(
+            self.ssim_metric: SSIMMetric | None = SSIMMetric(
                 spatial_dims=spatial_dims,
                 data_range=data_range,
                 reduction="mean",
@@ -511,8 +514,8 @@ class VQGANMetrics(Metrics):
             self.psnr_metric.reset()
         if self.ssim_metric:
             self.ssim_metric.reset()
-        self.psnr_values = []
-        self.ssim_values = []
+        self.psnr_values: list[float] = []
+        self.ssim_values: list[float] = []
 
     def update(
         self,
@@ -558,11 +561,15 @@ class VQGANMetrics(Metrics):
         try:
             from torchmetrics.functional import structural_similarity_index_measure
 
-            return structural_similarity_index_measure(
+            result = structural_similarity_index_measure(
                 img1.unsqueeze(0) if img1.dim() == 3 else img1,
                 img2.unsqueeze(0) if img2.dim() == 3 else img2,
                 data_range=self.data_range,
             )
+            # Handle both single tensor and tuple returns
+            if isinstance(result, tuple):
+                return result[0]
+            return result
         except ImportError:
             # Ultimate fallback: simple correlation-based metric
             return torch.tensor(1.0 - F.mse_loss(img1, img2) / (self.data_range**2))
@@ -570,8 +577,11 @@ class VQGANMetrics(Metrics):
     def compute(self) -> dict[str, float]:
         """Compute final metrics."""
         if self.psnr_metric and self.ssim_metric:
-            psnr = self.psnr_metric.aggregate().item()
-            ssim = self.ssim_metric.aggregate().item()
+            psnr_tensor = self.psnr_metric.aggregate()
+            ssim_tensor = self.ssim_metric.aggregate()
+            # These are guaranteed to be tensors from MONAI metrics
+            psnr: float = psnr_tensor.item()  # type: ignore[union-attr]
+            ssim: float = ssim_tensor.item()  # type: ignore[union-attr]
         else:
             psnr = sum(self.psnr_values) / len(self.psnr_values) if self.psnr_values else 0.0
             ssim = sum(self.ssim_values) / len(self.ssim_values) if self.ssim_values else 0.0
@@ -624,7 +634,7 @@ class MaskGITTrainingStrategy(TrainingStrategy):
             grad_clip=grad_clip,
         )
 
-    def train_step(
+    def train_step(  # type: ignore[override]
         self,
         model: MaskGITModelInterface,
         batch: tuple[torch.Tensor, ...],
@@ -645,14 +655,17 @@ class MaskGITTrainingStrategy(TrainingStrategy):
         x = batch[0] if isinstance(batch, (tuple, list)) else batch
 
         model.train()
+        maskgit_model = cast(MaskGITModelInterface, model)
 
         # Forward pass with masking and mixed precision
         with self.mixed_precision.autocast_context():
-            if hasattr(model, "compute_maskgit_loss"):
-                loss, metrics = model.compute_maskgit_loss(x, mask_ratio=self.mask_ratio)
+            # Use getattr to safely access compute_maskgit_loss if it exists
+            compute_loss_fn = getattr(maskgit_model, "compute_maskgit_loss", None)
+            if compute_loss_fn is not None:
+                loss, metrics = compute_loss_fn(x, mask_ratio=self.mask_ratio)
             else:
                 # Manual implementation for compatibility
-                tokens = model.encode_tokens(x)
+                tokens = maskgit_model.encode_tokens(x)
                 B, D, H, W = tokens.shape
                 tokens_flat = tokens.view(B, -1)
 
@@ -664,8 +677,13 @@ class MaskGITTrainingStrategy(TrainingStrategy):
                     if not mask[i].any():
                         mask[i, torch.randint(0, D * H * W, (1,), device=tokens.device)] = True
 
-                # Get predictions
-                logits = model.transformer.forward(tokens_flat, mask_indices=mask)
+                # Get predictions - access transformer via the model
+                transformer = getattr(maskgit_model, "transformer", None)
+                if transformer is not None:
+                    logits = transformer.forward(tokens_flat, mask_indices=mask)
+                else:
+                    # Fallback: use model directly if it has forward method
+                    logits = maskgit_model.forward(tokens_flat)
 
                 # Compute loss only on masked positions
                 masked_logits = logits[mask]
@@ -705,19 +723,24 @@ class MaskGITTrainingStrategy(TrainingStrategy):
             Dictionary of validation metrics
         """
         model.eval()
+        maskgit_model = cast(MaskGITModelInterface, model)
 
         x = batch[0] if isinstance(batch, (tuple, list)) else batch
 
         with torch.no_grad():
             # Reconstruction
-            x_rec = model(x)
+            x_rec = maskgit_model.decode_tokens(maskgit_model.encode_tokens(x))
 
             # Compute reconstruction loss
             rec_loss = torch.abs(x - x_rec).mean()
 
             # Encode and compute token accuracy
-            tokens = model.encode_tokens(x)
-            tokens_pred = model.transformer.encode(tokens, return_logits=True).argmax(dim=-1)
+            tokens = maskgit_model.encode_tokens(x)
+            transformer = getattr(maskgit_model, "transformer", None)
+            if transformer is not None:
+                tokens_pred = transformer.encode(tokens, return_logits=True).argmax(dim=-1)
+            else:
+                tokens_pred = tokens.argmax(dim=1)
             token_acc = (tokens_pred == tokens.view(tokens.shape[0], -1)).float().mean()
 
         return {
@@ -769,19 +792,21 @@ class MaskGITInference(InferenceStrategy):
             Model outputs (reconstructed or generated volumes)
         """
         model.eval()
+        maskgit_model = cast(MaskGITModelInterface, model)
 
         if self.mode == "reconstruct":
             with torch.no_grad():
-                return model(batch)
+                tokens = maskgit_model.encode_tokens(batch)
+                return maskgit_model.decode_tokens(tokens)
 
         elif self.mode == "generate":
             with torch.no_grad():
                 # Get latent shape
-                latent_shape = model.latent_shape
+                latent_shape = maskgit_model.latent_shape
                 B = batch.shape[0]
 
                 # Generate
-                return model.generate(
+                return maskgit_model.generate(
                     shape=(B,) + latent_shape[1:],
                     temperature=self.temperature,
                     num_iterations=self.num_iterations,
@@ -892,17 +917,18 @@ class SlidingWindowVQGANInference(InferenceStrategy):
         Returns:
             Reconstructed volumes [B, C, D, H, W]
         """
-        from monai.inferers import sliding_window_inference
+        from monai.inferers.utils import sliding_window_inference
 
         model.eval()
         device = model.device
+        vq_model = cast(VQModelInterface, model)
 
         with torch.no_grad():
             output = sliding_window_inference(
                 inputs=batch,
                 roi_size=self.roi_size,
                 sw_batch_size=self.sw_batch_size,
-                predictor=model.forward,
+                predictor=vq_model.forward,
                 overlap=self.overlap,
                 mode=self.mode,
                 sigma_scale=self.sigma_scale,
@@ -914,13 +940,13 @@ class SlidingWindowVQGANInference(InferenceStrategy):
             if self.original_size is not None:
                 from maskgit3d.infrastructure.data.padding import compute_output_crop
 
-                padded_size = tuple(batch.shape[2:])
+                padded_size = (batch.shape[2], batch.shape[3], batch.shape[4])
                 crop_slices = compute_output_crop(self.original_size, padded_size)
-                output = output[
-                    (slice(None), slice(None), *crop_slices)
-                ]
+                # crop_slices is a tuple of 3 slices for (D, H, W)
+                d_slice, h_slice, w_slice = crop_slices
+                output = output[:, :, d_slice, h_slice, w_slice]  # type: ignore[index]
 
-        return output
+        return output  # type: ignore[return-value]
 
     def post_process(
         self,
@@ -942,8 +968,6 @@ class SlidingWindowVQGANInference(InferenceStrategy):
         return {
             "images": images.numpy(),
         }
-
-
 
 
 class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
@@ -1002,9 +1026,18 @@ class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
         Returns:
             Tuple of (quantized_latent, indices)
         """
-        h = model.encoder(patch)
-        h = model.quant_conv(h)
-        quant, _, info = model.quantize(h)
+        # Access internal components using getattr with type assertion
+        encoder = cast(nn.Module, getattr(model, "encoder", None))
+        quant_conv = cast(nn.Module, getattr(model, "quant_conv", None))
+        quantize = cast(nn.Module, getattr(model, "quantize", None))
+
+        assert encoder is not None, "Model must have encoder attribute"
+        assert quant_conv is not None, "Model must have quant_conv attribute"
+        assert quantize is not None, "Model must have quantize attribute"
+
+        h = encoder(patch)
+        h = quant_conv(h)
+        quant, _, info = quantize(h)
         indices = info[2]  # min_encoding_indices
         return quant, indices
 
@@ -1023,16 +1056,22 @@ class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
         Returns:
             Codebook indices [B, D', H', W'] where D', H', W' are latent dimensions
         """
-        from monai.inferers import sliding_window_inference
+        from monai.inferers.utils import sliding_window_inference
 
         model.eval()
         device = model.device
         vq_model = cast(VQModelInterface, model)
 
+        # Get encoder and quant_conv for shape inspection
+        encoder = cast(nn.Module, getattr(vq_model, "encoder", None))
+        quant_conv = cast(nn.Module, getattr(vq_model, "quant_conv", None))
+        quantize = cast(nn.Module, getattr(vq_model, "quantize", None))
+
+        assert encoder is not None and quant_conv is not None and quantize is not None
+
         with torch.no_grad():
             # Test with a dummy to get actual latent size
-            dummy_out = vq_model.encoder(batch[:1])
-            dummy_out = vq_model.quant_conv(dummy_out)
+            dummy_out = quant_conv(encoder(batch[:1]))
             _, d_latent, h_latent, w_latent = dummy_out.shape
 
         B = batch.shape[0]
@@ -1046,6 +1085,7 @@ class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
         with torch.no_grad():
             # Get quantized latents via sliding window
             quantized_latent = sliding_window_inference(
+  # type: ignore[assignment]
                 inputs=batch,
                 roi_size=self.roi_size,
                 sw_batch_size=self.sw_batch_size,
@@ -1060,12 +1100,15 @@ class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
 
             # Now get indices from the quantized latent
             # Reshape for quantize: (B, C, D, H, W) -> (B, D, H, W, C)
-            quant_flat = quantized_latent.permute(0, 2, 3, 4, 1).reshape(-1, c_latent)
+            quant_flat = cast(torch.Tensor, quantized_latent).permute(0, 2, 3, 4, 1).reshape(-1, c_latent)
 
             # Get indices by finding nearest codebook entry
-            dist = torch.sum(quant_flat ** 2, dim=1, keepdim=True) + \
-                   torch.sum(vq_model.quantize.embedding.weight ** 2, dim=1) - \
-                   2 * torch.matmul(quant_flat, vq_model.quantize.embedding.weight.t())
+            embedding = cast(nn.Embedding, getattr(quantize, "embedding", None))
+            assert embedding is not None, "quantize must have embedding attribute"
+
+            dist = torch.sum(quant_flat**2, dim=1, keepdim=True) + torch.sum(
+                embedding.weight**2, dim=1
+            ) - 2 * torch.matmul(quant_flat, embedding.weight.t())
             indices = torch.argmin(dist, dim=1)
 
             # Reshape indices to spatial
@@ -1090,29 +1133,30 @@ class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
             - quantized_latent: [B, C', D', H', W']
             - indices: [B, D', H', W']
         """
-        from monai.inferers import sliding_window_inference
+        from monai.inferers.utils import sliding_window_inference
 
         model.eval()
         device = model.device
         vq_model = cast(VQModelInterface, model)
 
+        # Get internal components
+        encoder = cast(nn.Module, getattr(vq_model, "encoder", None))
+        quant_conv = cast(nn.Module, getattr(vq_model, "quant_conv", None))
+        quantize = cast(nn.Module, getattr(vq_model, "quantize", None))
+
+        assert encoder is not None and quant_conv is not None and quantize is not None
+
         with torch.no_grad():
             # Get latent shape
-            dummy_out = vq_model.encoder(batch[:1])
-            dummy_out = vq_model.quant_conv(dummy_out)
+            dummy_out = quant_conv(encoder(batch[:1]))
             c_latent, d_latent, h_latent, w_latent = dummy_out.shape[1:]
 
         B = batch.shape[0]
 
-        # Store indices from each patch for later combination
-        # We need a custom approach to get indices without re-running inference
-        # The issue: sliding window blends latents, but we need original indices
-        # Solution: run encoder-only sliding window, then quantize the blended result
-
         def encode_predictor(x: torch.Tensor) -> torch.Tensor:
             """Returns encoder output (before quantization) for blending."""
-            h = vq_model.encoder(x)
-            h = vq_model.quant_conv(h)
+            h = encoder(x)
+            h = quant_conv(h)
             return h
 
         with torch.no_grad():
@@ -1131,7 +1175,7 @@ class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
             )
 
             # Quantize the blended encoder output
-            quantized_latent, _, info = vq_model.quantize(encoder_output)
+            quantized_latent, _, info = quantize(encoder_output)
 
             # Get indices from the quantized result
             # Note: This gives indices for the blended latent, which is a reasonable approximation

@@ -81,3 +81,13 @@ python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
+
+
+[tool.pyright]
+pythonVersion = "3.10"
+venvPath = "/opt/homebrew/anaconda3/envs"
+venv = "maskgit3d"
+include = ["src", "tests"]
+exclude = ["**/__pycache__"]
+reportMissingImports = "error"
+reportMissingTypeStubs = "warning"

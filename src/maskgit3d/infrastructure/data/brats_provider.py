@@ -9,11 +9,12 @@ import logging
 import random
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+import numpy as np
 import nibabel as nib
 import torch
-from monai.transforms import Compose
+from monai.transforms.compose import Compose
 from torch.utils.data import DataLoader, Dataset
 
 from maskgit3d.domain.interfaces import DataProvider
@@ -179,12 +180,17 @@ class BraTS2021Dataset(Dataset):
 
         # Apply transforms if available
         if self.transform is not None:
-            input_tensor = self.transform(input_tensor)
+            transformed = self.transform(input_tensor)
+            # Transform can return ndarray or Tensor - ensure we have a Tensor
+            if isinstance(transformed, np.ndarray):
+                input_tensor = torch.from_numpy(transformed)
+            else:
+                input_tensor = transformed  # type: ignore[assignment]
 
         # For reconstruction tasks, target = input
-        target_tensor = input_tensor.clone()
+        target_tensor = input_tensor.clone()  # type: ignore[union-attr]
 
-        return input_tensor, target_tensor
+        return input_tensor, target_tensor  # type: ignore[return-value]
 
     def _load_nifti(self, file_path: Path) -> torch.Tensor:
         """
@@ -196,8 +202,8 @@ class BraTS2021Dataset(Dataset):
         Returns:
             Tensor with shape [D, H, W]
         """
-        nifti_img = nib.load(str(file_path))
-        data = nifti_img.get_fdata()
+        nifti_img = nib.load(str(file_path))  # type: ignore[union-attr]
+        data = nifti_img.get_fdata()  # type: ignore[attr-defined]
         return torch.from_numpy(data).float()
 
 
@@ -233,12 +239,31 @@ class BraTS2023Dataset(Dataset):
         data = dict(self.data_dicts[idx])
 
         if self.transform is not None:
-            data = self.transform(data)
+            transformed = self.transform(data)
+            # Transform can return various types - extract image and handle ndarray
+            if isinstance(transformed, dict):
+                data = transformed
+            else:
+                # Transform may return a modified dict structure
+                data = dict(data)
 
-        image = data["image"]
+        # Use type: ignore for dict access since MONAI transforms modify dict structure
+        image: torch.Tensor = data["image"]  # type: ignore[assignment]
+        if isinstance(image, np.ndarray):
+            image = torch.from_numpy(image)
+        
         tumor_type = torch.tensor(data["tumor_type"], dtype=torch.long)
 
-        target = data["label"] if self.task == "segmentation" else image.clone()
+        if self.task == "segmentation":
+            target = data["label"]  # type: ignore[assignment]
+            if isinstance(target, np.ndarray):
+                target = torch.from_numpy(target)
+        else:
+            # For reconstruction, target = input
+            if isinstance(image, np.ndarray):
+                target = torch.from_numpy(image.clone())
+            else:
+                target = image.clone()
 
         return image, target, tumor_type
 
@@ -350,7 +375,9 @@ class BraTSDataProvider(DataProvider):
                 spatial_size=spatial_size,
                 normalize_mode=normalize_mode,
             )
-            self._all_samples: list[str | dict[str, Any]] = self._discover_patients_2021()
+            self._all_samples: list[str | dict[str, Any]] = cast(
+                list[str | dict[str, Any]], self._discover_patients_2021()
+            )
             self._train_samples, self._val_samples, self._test_samples = self._split_patients(
                 [sample for sample in self._all_samples if isinstance(sample, str)]
             )
@@ -360,7 +387,7 @@ class BraTSDataProvider(DataProvider):
                 normalize_mode=normalize_mode,
                 task=self.task,
             )
-            self._all_samples = self._discover_patients_2023()
+            self._all_samples = cast(list[str | dict[str, Any]], self._discover_patients_2023())
             self._train_samples, self._val_samples, self._test_samples = (
                 self._split_patients_stratified(
                     [sample for sample in self._all_samples if isinstance(sample, dict)]
@@ -623,16 +650,17 @@ class BraTSDataProvider(DataProvider):
         """Get or create training dataset."""
         if self._train_dataset is None:
             if self.version == "2021":
+                # data_dir is guaranteed to be non-None for version 2021
                 self._train_dataset = BraTS2021Dataset(
-                    data_dir=self.data_dir,
-                    patient_ids=self._train_samples,
+                    data_dir=cast(Path, self.data_dir),
+                    patient_ids=cast(list[str], self._train_samples),
                     modalities=self.modalities,
                     transform=self.transform,
                     spatial_size=self.spatial_size,
                 )
             else:
                 self._train_dataset = BraTS2023Dataset(
-                    data_dicts=self._train_samples,
+                    data_dicts=cast(list[dict[str, Any]], self._train_samples),
                     transform=self.transform,
                     task=self.task,
                 )
@@ -643,16 +671,17 @@ class BraTSDataProvider(DataProvider):
         """Get or create validation dataset."""
         if self._val_dataset is None:
             if self.version == "2021":
+                # data_dir is guaranteed to be non-None for version 2021
                 self._val_dataset = BraTS2021Dataset(
-                    data_dir=self.data_dir,
-                    patient_ids=self._val_samples,
+                    data_dir=cast(Path, self.data_dir),
+                    patient_ids=cast(list[str], self._val_samples),
                     modalities=self.modalities,
                     transform=self.transform,
                     spatial_size=self.spatial_size,
                 )
             else:
                 self._val_dataset = BraTS2023Dataset(
-                    data_dicts=self._val_samples,
+                    data_dicts=cast(list[dict[str, Any]], self._val_samples),
                     transform=self.transform,
                     task=self.task,
                 )
@@ -663,16 +692,17 @@ class BraTSDataProvider(DataProvider):
         """Get or create test dataset."""
         if self._test_dataset is None:
             if self.version == "2021":
+                # data_dir is guaranteed to be non-None for version 2021
                 self._test_dataset = BraTS2021Dataset(
-                    data_dir=self.data_dir,
-                    patient_ids=self._test_samples,
+                    data_dir=cast(Path, self.data_dir),
+                    patient_ids=cast(list[str], self._test_samples),
                     modalities=self.modalities,
                     transform=self.transform,
                     spatial_size=self.spatial_size,
                 )
             else:
                 self._test_dataset = BraTS2023Dataset(
-                    data_dicts=self._test_samples,
+                    data_dicts=cast(list[dict[str, Any]], self._test_samples),
                     transform=self.transform,
                     task=self.task,
                 )
