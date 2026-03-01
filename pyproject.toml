@@ -70,11 +70,17 @@ line-length = 100
 target-version = ["py310", "py311", "py312"]
 
 [tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --cov=maskgit3d --cov-report=term-missing --cov-report=xml"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "gpu: marks tests that require a GPU (deselect with '-m \"not gpu\"')",
+    "integration: marks tests as integration tests",
+]
 
 [tool.mypy]
 python_version = "3.10"
@@ -91,3 +97,19 @@ include = ["src", "tests"]
 exclude = ["**/__pycache__"]
 reportMissingImports = "error"
 reportMissingTypeStubs = "warning"
+
+[tool.coverage.run]
+branch = true
+source = ["src/maskgit3d"]
+omit = ["tests/*", "**/__init__.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "pass",
+    "except ImportError:",
+]
