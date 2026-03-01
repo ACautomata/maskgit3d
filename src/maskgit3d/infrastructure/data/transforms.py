@@ -24,6 +24,8 @@ from monai.transforms import (
     RandSpatialCropd,
     Resize,
     Resized,
+    ScaleIntensity,
+    ScaleIntensityd,
     ScaleIntensityRange,
     ScaleIntensityRanged,
     SpatialPad,
@@ -66,16 +68,17 @@ def create_3d_preprocessing(
     ]
 
     if normalize_mode == "minmax":
-        # Scale intensity to [0, 1] first, then to output range
-        transforms.append(
+        # Scale whatever intensity range to [0, 1] then to output range
+        transforms.extend([
+            ScaleIntensity(),
             ScaleIntensityRange(
-                a_min=None,
-                a_max=None,
+                a_min=0.0,
+                a_max=1.0,
                 b_min=output_range[0],
                 b_max=output_range[1],
                 clip=True,
             )
-        )
+        ])
     else:  # zscore
         transforms.append(NormalizeIntensity())
 
@@ -121,7 +124,7 @@ def create_brats_preprocessing(
         # Normalize intensity (z-score is common for MRI)
         NormalizeIntensity()
         if normalize_mode == "zscore"
-        else ScaleIntensityRange(a_min=None, a_max=None, b_min=-1.0, b_max=1.0, clip=True),
+        else ScaleIntensity(minv=-1.0, maxv=1.0),
         # Resize to target size
         Resize(spatial_size=spatial_size, mode="trilinear"),
     ]
@@ -150,7 +153,7 @@ def create_medmnist_preprocessing(
         EnsureType(),
         EnsureChannelFirst(channel_dim="no_channel"),
         # Scale from [0, 255] to [-1, 1]
-        ScaleIntensityRange(a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0, clip=True),
+        ScaleIntensity(minv=-1.0, maxv=1.0),
         # Resize if target size differs from input
         Resize(spatial_size=spatial_size, mode="trilinear")
         if spatial_size != (input_size, input_size, input_size)
@@ -199,13 +202,10 @@ def create_brats2023_preprocessing(
         transforms.append(NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True))
     else:
         transforms.append(
-            ScaleIntensityRanged(
+            ScaleIntensityd(
                 keys="image",
-                a_min=None,
-                a_max=None,
-                b_min=-1.0,
-                b_max=1.0,
-                clip=True,
+                minv=-1.0,
+                maxv=1.0,
             )
         )
 
@@ -247,7 +247,7 @@ def create_brats_training_preprocessing(
         EnsureChannelFirst(channel_dim="no_channel"),
         NormalizeIntensity()
         if normalize_mode == "zscore"
-        else ScaleIntensityRange(a_min=None, a_max=None, b_min=-1.0, b_max=1.0, clip=True),
+        else ScaleIntensity(minv=-1.0, maxv=1.0),
         # Pad if image smaller than crop size, then random crop
         SpatialPad(spatial_size=crop_size, mode="constant"),
         RandSpatialCrop(roi_size=crop_size, random_center=True, random_size=False),
@@ -274,7 +274,7 @@ def create_brats_inference_preprocessing(
         EnsureChannelFirst(channel_dim="no_channel"),
         NormalizeIntensity()
         if normalize_mode == "zscore"
-        else ScaleIntensityRange(a_min=None, a_max=None, b_min=-1.0, b_max=1.0, clip=True),
+        else ScaleIntensity(minv=-1.0, maxv=1.0),
     ]
     return Compose(transforms)
 
@@ -296,7 +296,7 @@ def create_medmnist_training_preprocessing(
     transforms = [
         EnsureType(),
         EnsureChannelFirst(channel_dim="no_channel"),
-        ScaleIntensityRange(a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0, clip=True),
+        ScaleIntensity(minv=-1.0, maxv=1.0),
         # Pad if smaller than crop size, then random crop
         SpatialPad(spatial_size=crop_size, mode="constant"),
         RandSpatialCrop(roi_size=crop_size, random_center=True, random_size=False),
@@ -316,7 +316,7 @@ def create_medmnist_inference_preprocessing() -> Compose:
     transforms = [
         EnsureType(),
         EnsureChannelFirst(channel_dim="no_channel"),
-        ScaleIntensityRange(a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0, clip=True),
+        ScaleIntensity(minv=-1.0, maxv=1.0),
     ]
     return Compose(transforms)
 
@@ -357,13 +357,10 @@ def create_brats2023_training_preprocessing(
         transforms.append(NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True))
     else:
         transforms.append(
-            ScaleIntensityRanged(
+            ScaleIntensityd(
                 keys="image",
-                a_min=None,
-                a_max=None,
-                b_min=-1.0,
-                b_max=1.0,
-                clip=True,
+                minv=-1.0,
+                maxv=1.0,
             )
         )
 
@@ -413,13 +410,10 @@ def create_brats2023_inference_preprocessing(
         transforms.append(NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True))
     else:
         transforms.append(
-            ScaleIntensityRanged(
+            ScaleIntensityd(
                 keys="image",
-                a_min=None,
-                a_max=None,
-                b_min=-1.0,
-                b_max=1.0,
-                clip=True,
+                minv=-1.0,
+                maxv=1.0,
             )
         )
 
