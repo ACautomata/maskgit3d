@@ -96,7 +96,10 @@ class TestVQGANInference:
         inference = VQGANInference(mode="reconstruct")
         mock_model = MagicMock()
 
-        # VQGANInference.reconstruct calls model(batch)[0]
+        # VQGANInference.reconstruct calls vq_model.encode(x=batch) which returns (quantized, _, _)
+        # Then calls vq_model.decode(quantized)
+        mock_model.encode.return_value = (torch.randn(2, 1, 8, 8, 8), None, None)
+        mock_model.decode.return_value = torch.randn(2, 1, 8, 8, 8)
         # It expects the model to return a tuple where first element is the reconstruction
         mock_model.return_value = (torch.randn(2, 1, 8, 8, 8),)
 
@@ -104,7 +107,7 @@ class TestVQGANInference:
         result = inference.predict(mock_model, batch)
 
         assert result.shape == batch.shape
-        mock_model.assert_called_once()
+        mock_model.encode.assert_called_once()
 
     def test_vqgan_inference_post_process(self):
         """Test post-processing."""
@@ -315,6 +318,11 @@ class TestMaskGITTrainingStrategy:
         # Mock model.encode_tokens(x) - returns token indices
         mock_model.encode_tokens.return_value = torch.randint(0, 1024, (2, 1, 4, 4, 4))
 
+        # Mock model.decode_tokens(tokens) - returns reconstruction
+        # validate_step calls: x_rec = decode_tokens(encode_tokens(x))
+        mock_model.decode_tokens.return_value = torch.randn(2, 1, 8, 8, 8)
+        mock_model.encode_tokens.return_value = torch.randint(0, 1024, (2, 1, 4, 4, 4))
+
         # Mock model.transformer.encode() - returns logits for token prediction
         # Shape should be (B, num_tokens, codebook_size) for argmax to work
         mock_transformer = MagicMock()
@@ -387,8 +395,10 @@ class TestMaskGITInference:
     def test_maskgit_inference_reconstruct(self):
         """Test reconstruction mode."""
         inference = MaskGITInference(mode="reconstruct")
+        # MaskGITInference.reconstruct calls encode_tokens(batch) then decode_tokens(tokens)
         mock_model = MagicMock()
-        mock_model.return_value = torch.randn(2, 1, 8, 8, 8)
+        mock_model.encode_tokens.return_value = torch.randint(0, 1024, (2, 1, 4, 4, 4))
+        mock_model.decode_tokens.return_value = torch.randn(2, 1, 8, 8, 8)
 
         batch = torch.randn(2, 1, 8, 8, 8)
         result = inference.predict(mock_model, batch)
