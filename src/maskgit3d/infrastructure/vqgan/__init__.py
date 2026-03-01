@@ -8,26 +8,26 @@ This module provides 3D VQGAN implementations including:
 - Complete VQModel3D
 - MAISI-based VQGAN model
 """
-from maskgit3d.infrastructure.vqgan.quantize import (
-    VectorQuantizer,
-    VectorQuantizer2,
-    EMAVectorQuantizer,
-)
 from maskgit3d.infrastructure.vqgan.discriminator import (
-    NLayerDiscriminator,
     IdentityDiscriminator,
+    NLayerDiscriminator,
 )
 from maskgit3d.infrastructure.vqgan.encoder_decoder_3d import (
-    Encoder3d,
     Decoder3d,
+    Encoder3d,
     get_encoder_decoder_config_3d,
-)
-from maskgit3d.infrastructure.vqgan.vqgan_model_3d import (
-    VQModel3D,
 )
 from maskgit3d.infrastructure.vqgan.maisi_vq_model import (
     MaisiVQModel3D,
     get_maisi_vq_config,
+)
+from maskgit3d.infrastructure.vqgan.quantize import (
+    EMAVectorQuantizer,
+    VectorQuantizer,
+    VectorQuantizer2,
+)
+from maskgit3d.infrastructure.vqgan.vqgan_model_3d import (
+    VQModel3D,
 )
 
 __all__ = [

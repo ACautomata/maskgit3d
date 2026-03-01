@@ -1,6 +1,7 @@
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any
 
-Registry = Dict[str, Callable[..., Any]]
+Registry = dict[str, Callable[..., Any]]
 
 
 def resolve_component(registry: Registry, name: str):

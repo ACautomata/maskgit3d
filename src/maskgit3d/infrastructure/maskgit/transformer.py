@@ -5,12 +5,8 @@ Bidirectional Transformer for masked token prediction.
 Uses BERT-style training where tokens are randomly masked and
 the model learns to predict them.
 """
-import math
-from typing import Optional, Tuple
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from einops import rearrange
 
 
 class PositionalEncoding3D(nn.Module):
@@ -85,7 +81,7 @@ class TransformerBlock(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Forward pass through transformer block.
@@ -217,7 +213,7 @@ class MaskGITTransformer(nn.Module):
     def forward(
         self,
         tokens: torch.Tensor,
-        mask_indices: Optional[torch.Tensor] = None,
+        mask_indices: torch.Tensor | None = None,
         mask_token_only: bool = True,
     ) -> torch.Tensor:
         """
@@ -265,7 +261,7 @@ class MaskGITTransformer(nn.Module):
         self,
         tokens: torch.Tensor,
         mask_ratio: float = 0.5,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Randomly mask tokens and predict them (for training).
 

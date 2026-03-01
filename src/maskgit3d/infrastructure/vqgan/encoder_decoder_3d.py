@@ -5,7 +5,7 @@ This module provides 3D versions of the encoder/decoder components
 for volumetric medical images (MRI, CT scans).
 """
 import math
-from typing import List, Optional, Tuple
+
 import torch
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
@@ -85,7 +85,7 @@ class ResBlock3d(nn.Module):
     def __init__(
         self,
         in_channels: int,
-        out_channels: Optional[int] = None,
+        out_channels: int | None = None,
         dropout: float = 0.0,
         temb_channels: int = 0,
     ):
@@ -109,7 +109,7 @@ class ResBlock3d(nn.Module):
         else:
             self.shortcut = nn.Identity()
 
-    def forward(self, x: torch.Tensor, temb: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, temb: torch.Tensor | None = None) -> torch.Tensor:
         h = self.norm1(x)
         h = nonlinearity(h)
         h = self.conv1(h)
@@ -171,10 +171,10 @@ class Encoder3d(nn.Module):
         self,
         in_channels: int = 1,
         hidden_channels: int = 128,
-        channel_multipliers: Tuple[int, ...] = (1, 1, 2, 2, 4),
+        channel_multipliers: tuple[int, ...] = (1, 1, 2, 2, 4),
         num_res_blocks: int = 2,
         resolution: int = 64,
-        attn_resolutions: Tuple[int, ...] = (8,),
+        attn_resolutions: tuple[int, ...] = (8,),
         dropout: float = 0.0,
         resamp_with_conv: bool = True,
     ):
@@ -329,10 +329,10 @@ class Decoder3d(nn.Module):
         z_channels: int = 256,
         out_channels: int = 1,
         hidden_channels: int = 128,
-        channel_multipliers: Tuple[int, ...] = (1, 1, 2, 2, 4),
+        channel_multipliers: tuple[int, ...] = (1, 1, 2, 2, 4),
         num_res_blocks: int = 2,
         resolution: int = 64,
-        attn_resolutions: Tuple[int, ...] = (8,),
+        attn_resolutions: tuple[int, ...] = (8,),
         dropout: float = 0.0,
         resamp_with_conv: bool = True,
     ):
@@ -481,8 +481,8 @@ def get_encoder_decoder_config_3d(
     out_channels: int = 1,
     latent_channels: int = 256,
     num_res_blocks: int = 2,
-    attn_resolutions: Tuple[int, ...] = (8,),
-    channel_multipliers: Tuple[int, ...] = (1, 1, 2, 2, 4),
+    attn_resolutions: tuple[int, ...] = (8,),
+    channel_multipliers: tuple[int, ...] = (1, 1, 2, 2, 4),
 ) -> dict:
     """
     Generate 3D encoder/decoder configuration.

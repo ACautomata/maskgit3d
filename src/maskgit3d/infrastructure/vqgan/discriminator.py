@@ -5,8 +5,6 @@ This discriminator is based on the Pix2Pix architecture and is used
 for adversarial training of the VQVAE.
 """
 
-import functools
-from typing import Optional
 import torch
 import torch.nn as nn
 
@@ -76,10 +74,7 @@ class NLayerDiscriminator(nn.Module, DiscriminatorInterface):
             use_actnorm: Whether to use ActNorm instead of BatchNorm
         """
         super().__init__()
-        if not use_actnorm:
-            norm_layer = nn.BatchNorm3d
-        else:
-            norm_layer = ActNorm
+        norm_layer = nn.BatchNorm3d if not use_actnorm else ActNorm
 
         use_bias = norm_layer != nn.BatchNorm3d
 

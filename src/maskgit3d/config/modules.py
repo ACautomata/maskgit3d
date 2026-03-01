@@ -5,9 +5,9 @@ This module provides Injector modules that bind interfaces
 to concrete implementations for the application.
 """
 
-from typing import Any, Dict, List, Optional, Tuple, Union
-import torch
+from typing import Any
 
+import torch
 from injector import Module, provider, singleton
 
 from maskgit3d.domain.interfaces import (
@@ -22,23 +22,20 @@ from maskgit3d.domain.interfaces import (
 from maskgit3d.infrastructure.training.strategies import (
     AdamOptimizerFactory,
     AdamWOptimizerFactory,
-    SGDOptimizerFactory,
-    VQGANTrainingStrategy,
-    VQGANInference,
-    VQGANOptimizerFactory,
-    VQGANMetrics,
-    MaskGITTrainingStrategy,
     MaskGITInference,
+    MaskGITTrainingStrategy,
+    SGDOptimizerFactory,
+    VQGANInference,
+    VQGANMetrics,
+    VQGANOptimizerFactory,
+    VQGANTrainingStrategy,
 )
 from maskgit3d.infrastructure.vqgan import (
-    VQModel3D,
     MaisiVQModel3D,
-    NLayerDiscriminator,
-    VectorQuantizer2,
+    VQModel3D,
     get_encoder_decoder_config_3d,
     get_maisi_vq_config,
 )
-
 
 # =============================================================================
 # Parameter Validation
@@ -77,7 +74,7 @@ class ModelModule(Module):
 
     def __init__(
         self,
-        model_config: Optional[Dict[str, Any]] = None,
+        model_config: dict[str, Any] | None = None,
     ):
         """
         Initialize model module.
@@ -116,7 +113,7 @@ class DataModule(Module):
 
     def __init__(
         self,
-        data_config: Optional[Dict[str, Any]] = None,
+        data_config: dict[str, Any] | None = None,
     ):
         """
         Initialize data module.
@@ -135,9 +132,9 @@ class DataModule(Module):
         Returns:
             Configured data provider
         """
+        from maskgit3d.infrastructure.data.brats_provider import BraTSDataProvider
         from maskgit3d.infrastructure.data.dataset import SimpleDataProvider
         from maskgit3d.infrastructure.data.medmnist_provider import MedMnist3DDataProvider
-        from maskgit3d.infrastructure.data.brats_provider import BraTSDataProvider
 
         data_type = self.data_config.get("type", "simple")
         data_params = self.data_config.get("params", {})
@@ -163,8 +160,8 @@ class TrainingModule(Module):
 
     def __init__(
         self,
-        training_config: Optional[Dict[str, Any]] = None,
-        optimizer_config: Optional[Dict[str, Any]] = None,
+        training_config: dict[str, Any] | None = None,
+        optimizer_config: dict[str, Any] | None = None,
     ):
         """
         Initialize training module.
@@ -235,8 +232,8 @@ class InferenceModule(Module):
 
     def __init__(
         self,
-        inference_config: Optional[Dict[str, Any]] = None,
-        metrics_config: Optional[Dict[str, Any]] = None,
+        inference_config: dict[str, Any] | None = None,
+        metrics_config: dict[str, Any] | None = None,
     ):
         """
         Initialize inference module.
@@ -274,7 +271,7 @@ class InferenceModule(Module):
 
     @singleton
     @provider
-    def provide_metrics(self) -> Optional[Metrics]:
+    def provide_metrics(self) -> Metrics | None:
         """
         Provide metrics instance.
 
@@ -328,7 +325,7 @@ class VQGANModelModule(Module):
 
     def __init__(
         self,
-        model_config: Optional[Dict[str, Any]] = None,
+        model_config: dict[str, Any] | None = None,
     ):
         self.model_config = model_config or {}
 
@@ -353,12 +350,12 @@ class VQGANModule(Module):
 
     def __init__(
         self,
-        model_config: Optional[Dict[str, Any]] = None,
-        data_config: Optional[Dict[str, Any]] = None,
-        training_config: Optional[Dict[str, Any]] = None,
-        optimizer_config: Optional[Dict[str, Any]] = None,
-        inference_config: Optional[Dict[str, Any]] = None,
-        metrics_config: Optional[Dict[str, Any]] = None,
+        model_config: dict[str, Any] | None = None,
+        data_config: dict[str, Any] | None = None,
+        training_config: dict[str, Any] | None = None,
+        optimizer_config: dict[str, Any] | None = None,
+        inference_config: dict[str, Any] | None = None,
+        metrics_config: dict[str, Any] | None = None,
     ):
         """
         Initialize VQGAN module.
@@ -386,7 +383,6 @@ class VQGANModule(Module):
         binder.bind(ModelInterface, to=lambda: vq_model)
 
         # Training Strategy
-        strategy_type = self.training_config.get("type", "vqgan")
         strategy_params = self.training_config.get("params", {})
         binder.bind(TrainingStrategy, to=lambda: VQGANTrainingStrategy(**strategy_params))
 
@@ -397,7 +393,6 @@ class VQGANModule(Module):
         )
 
         # Inference Strategy
-        inf_type = self.inference_config.get("type", "vqgan")
         inf_params = self.inference_config.get("params", {})
         binder.bind(InferenceStrategy, to=lambda: VQGANInference(**inf_params))
 
@@ -532,7 +527,7 @@ class MaisiVQModelModule(Module):
 
     def __init__(
         self,
-        model_config: Optional[Dict[str, Any]] = None,
+        model_config: dict[str, Any] | None = None,
     ):
         self.model_config = model_config or {}
 
@@ -557,12 +552,12 @@ class MaisiVQModule(Module):
 
     def __init__(
         self,
-        model_config: Optional[Dict[str, Any]] = None,
-        data_config: Optional[Dict[str, Any]] = None,
-        training_config: Optional[Dict[str, Any]] = None,
-        optimizer_config: Optional[Dict[str, Any]] = None,
-        inference_config: Optional[Dict[str, Any]] = None,
-        metrics_config: Optional[Dict[str, Any]] = None,
+        model_config: dict[str, Any] | None = None,
+        data_config: dict[str, Any] | None = None,
+        training_config: dict[str, Any] | None = None,
+        optimizer_config: dict[str, Any] | None = None,
+        inference_config: dict[str, Any] | None = None,
+        metrics_config: dict[str, Any] | None = None,
     ):
         self.model_module = MaisiVQModelModule(model_config)
         self.model_config = model_config or {}
@@ -575,11 +570,10 @@ class MaisiVQModule(Module):
         """Configure MAISI VQGAN bindings."""
         # Bind MAISI VQ Model
         maisi_model = self.model_module.provide_maisi_vq_model()
-        binder.bind(MaisyVQModel3D, to=lambda: maisi_model)
+        binder.bind(MaisiVQModel3D, to=lambda: maisi_model)
         binder.bind(ModelInterface, to=lambda: maisi_model)
 
         # Training Strategy (reuse VQGAN strategy)
-        strategy_type = self.training_config.get("type", "vqgan")
         strategy_params = self.training_config.get("params", {})
         binder.bind(TrainingStrategy, to=lambda: VQGANTrainingStrategy(**strategy_params))
 
@@ -590,7 +584,6 @@ class MaisiVQModule(Module):
         )
 
         # Inference Strategy
-        inf_type = self.inference_config.get("type", "vqgan")
         inf_params = self.inference_config.get("params", {})
         binder.bind(InferenceStrategy, to=lambda: VQGANInference(**inf_params))
 
@@ -606,9 +599,9 @@ def create_maisi_vq_module(
     codebook_size: int = 1024,
     embed_dim: int = 256,
     latent_channels: int = 4,
-    num_channels: Tuple[int, ...] = (64, 128, 256),
-    num_res_blocks: Tuple[int, ...] = (2, 2, 2),
-    attention_levels: Tuple[bool, ...] = (False, False, False),
+    num_channels: tuple[int, ...] = (64, 128, 256),
+    num_res_blocks: tuple[int, ...] = (2, 2, 2),
+    attention_levels: tuple[bool, ...] = (False, False, False),
     lr: float = 1e-4,
     batch_size: int = 1,
 ) -> MaisiVQModule:
@@ -711,7 +704,7 @@ class MaskGITModelModule(Module):
 
     def __init__(
         self,
-        model_config: Optional[Dict[str, Any]] = None,
+        model_config: dict[str, Any] | None = None,
     ):
         self.model_config = model_config or {}
 
@@ -724,8 +717,8 @@ class MaskGITModelModule(Module):
 
         if model_type == "maskgit":
             from maskgit3d.infrastructure.maskgit import MaskGITModel
-            from maskgit3d.infrastructure.vqgan.vqgan_model_3d import VQModel3D
             from maskgit3d.infrastructure.maskgit.transformer import MaskGITTransformer
+            from maskgit3d.infrastructure.vqgan.vqgan_model_3d import VQModel3D
 
             # Create VQGAN
             vqgan = VQModel3D(
@@ -762,12 +755,12 @@ class MaskGITModule(Module):
 
     def __init__(
         self,
-        model_config: Optional[Dict[str, Any]] = None,
-        data_config: Optional[Dict[str, Any]] = None,
-        training_config: Optional[Dict[str, Any]] = None,
-        optimizer_config: Optional[Dict[str, Any]] = None,
-        inference_config: Optional[Dict[str, Any]] = None,
-        metrics_config: Optional[Dict[str, Any]] = None,
+        model_config: dict[str, Any] | None = None,
+        data_config: dict[str, Any] | None = None,
+        training_config: dict[str, Any] | None = None,
+        optimizer_config: dict[str, Any] | None = None,
+        inference_config: dict[str, Any] | None = None,
+        metrics_config: dict[str, Any] | None = None,
     ):
         """
         Initialize MaskGIT module.
@@ -795,17 +788,14 @@ class MaskGITModule(Module):
         binder.bind(ModelInterface, to=lambda: maskgit_model)
 
         # Training Strategy
-        strategy_type = self.training_config.get("type", "maskgit")
         strategy_params = self.training_config.get("params", {})
         binder.bind(TrainingStrategy, to=lambda: MaskGITTrainingStrategy(**strategy_params))
 
         # Optimizer Factory
-        optimizer_type = self.optimizer_config.get("type", "adam")
         optimizer_params = self.optimizer_config.get("params", {})
         binder.bind(OptimizerFactory, to=lambda: AdamOptimizerFactory(**optimizer_params))
 
         # Inference Strategy
-        inf_type = self.inference_config.get("type", "maskgit")
         inf_params = self.inference_config.get("params", {})
         binder.bind(InferenceStrategy, to=lambda: MaskGITInference(**inf_params))
 

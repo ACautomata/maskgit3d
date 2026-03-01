@@ -6,7 +6,7 @@ This module provides different quantization strategies:
 - VectorQuantizer2: Improved version with better performance
 - EMAVectorQuantizer: EMA-based codebook updates
 """
-from typing import Optional, Tuple
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -31,7 +31,7 @@ class VectorQuantizer(nn.Module, QuantizerInterface):
         use_ema: bool = False,
         decay: float = 0.99,
         eps: float = 1e-5,
-        remap: Optional[str] = None,
+        remap: str | None = None,
         sane_index_shape: bool = False,
     ):
         """
@@ -69,7 +69,7 @@ class VectorQuantizer(nn.Module, QuantizerInterface):
 
     def forward(
         self, z: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, Tuple]:
+    ) -> tuple[torch.Tensor, torch.Tensor, tuple]:
         """
         Quantize latent codes.
 
@@ -120,7 +120,7 @@ class VectorQuantizer(nn.Module, QuantizerInterface):
     def get_codebook_entry(
         self,
         indices: torch.Tensor,
-        shape: Optional[Tuple[int, ...]] = None,
+        shape: tuple[int, ...] | None = None,
     ) -> torch.Tensor:
         """
         Get quantized latents from indices.
@@ -155,7 +155,7 @@ class VectorQuantizer2(nn.Module, QuantizerInterface):
         n_embed: int,
         embed_dim: int,
         beta: float = 0.25,
-        remap: Optional[str] = None,
+        remap: str | None = None,
         sane_index_shape: bool = False,
         legacy: bool = True,
     ):
@@ -181,7 +181,7 @@ class VectorQuantizer2(nn.Module, QuantizerInterface):
 
     def forward(
         self, z: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, Tuple]:
+    ) -> tuple[torch.Tensor, torch.Tensor, tuple]:
         """Quantize latent codes."""
         z = rearrange(z, 'b c d h w -> b d h w c').contiguous()
         z_flattened = z.view(-1, self.e_dim)
@@ -215,7 +215,7 @@ class VectorQuantizer2(nn.Module, QuantizerInterface):
     def get_codebook_entry(
         self,
         indices: torch.Tensor,
-        shape: Optional[Tuple[int, ...]] = None,
+        shape: tuple[int, ...] | None = None,
     ) -> torch.Tensor:
         """Get quantized latents from indices."""
         if shape is not None:
@@ -243,7 +243,7 @@ class EMAVectorQuantizer(nn.Module, QuantizerInterface):
         beta: float = 0.25,
         decay: float = 0.99,
         eps: float = 1e-5,
-        remap: Optional[str] = None,
+        remap: str | None = None,
     ):
         super().__init__()
         self.n_e = n_embed
@@ -269,7 +269,7 @@ class EMAVectorQuantizer(nn.Module, QuantizerInterface):
 
     def forward(
         self, z: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, Tuple]:
+    ) -> tuple[torch.Tensor, torch.Tensor, tuple]:
         """Quantize with EMA updates."""
         z = rearrange(z, 'b c d h w -> b d h w c').contiguous()
         z_flattened = z.reshape(-1, self.e_dim)
@@ -314,7 +314,7 @@ class EMAVectorQuantizer(nn.Module, QuantizerInterface):
     def get_codebook_entry(
         self,
         indices: torch.Tensor,
-        shape: Optional[Tuple[int, ...]] = None,
+        shape: tuple[int, ...] | None = None,
     ) -> torch.Tensor:
         """Get quantized latents from indices."""
         if shape is not None:

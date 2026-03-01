@@ -6,11 +6,11 @@ Implements the MaskGIT decoding algorithm:
 2. Iteratively predict and unmask a fraction of tokens
 3. Use confidence-based scheduling to determine which tokens to unmask
 """
-from typing import Optional, Tuple
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
 
 
 class MaskGITSampler:
@@ -56,10 +56,10 @@ class MaskGITSampler:
     def sample(
         self,
         model: nn.Module,
-        shape: Tuple[int, int, int, int],
+        shape: tuple[int, int, int, int],
         device: torch.device,
-        vqgan_model: Optional[nn.Module] = None,
-        cond_tokens: Optional[torch.Tensor] = None,
+        vqgan_model: nn.Module | None = None,
+        cond_tokens: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Generate samples using iterative decoding.
@@ -199,7 +199,7 @@ class MaskGITSamplerWithVQGAN:
         self,
         maskgit_model: nn.Module,
         vqgan_model: nn.Module,
-        shape: Tuple[int, int, int, int],
+        shape: tuple[int, int, int, int],
         device: torch.device,
     ) -> torch.Tensor:
         """

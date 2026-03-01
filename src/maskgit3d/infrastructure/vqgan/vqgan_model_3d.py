@@ -4,13 +4,12 @@
 This module provides the 3D version of VQGAN for volumetric medical images.
 """
 
-from typing import Tuple
 
 import torch
 import torch.nn as nn
 
 from maskgit3d.infrastructure.vqgan.base_vq_model import BaseVQModel
-from maskgit3d.infrastructure.vqgan.encoder_decoder_3d import Encoder3d, Decoder3d
+from maskgit3d.infrastructure.vqgan.encoder_decoder_3d import Decoder3d, Encoder3d
 from maskgit3d.infrastructure.vqgan.quantize import VectorQuantizer
 
 
@@ -31,9 +30,9 @@ class VQModel3D(BaseVQModel):
         embed_dim: int = 256,
         latent_channels: int = 256,
         resolution: int = 64,
-        channel_multipliers: Tuple[int, ...] = (1, 1, 2, 2, 4),
+        channel_multipliers: tuple[int, ...] = (1, 1, 2, 2, 4),
         num_res_blocks: int = 2,
-        attn_resolutions: Tuple[int, ...] = (8,),
+        attn_resolutions: tuple[int, ...] = (8,),
         dropout: float = 0.0,
     ):
         """
@@ -102,9 +101,9 @@ class VQModel3D(BaseVQModel):
             h = self.quant_conv(h)
             # h shape: [B, embed_dim, D', H', W']
             _, _, dd, hh, ww = h.shape
-            self._latent_shape: Tuple[int, int, int, int] = (embed_dim, dd, hh, ww)
+            self._latent_shape: tuple[int, int, int, int] = (embed_dim, dd, hh, ww)
 
-    def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Tuple]:
+    def encode(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, tuple]:
         """
         Encode volumes to quantized latent codes.
 
@@ -134,6 +133,6 @@ class VQModel3D(BaseVQModel):
         return dec
 
     @property
-    def latent_shape(self) -> Tuple[int, int, int, int]:
+    def latent_shape(self) -> tuple[int, int, int, int]:
         """Get the cached shape of latent representations (C, D, H, W)."""
         return self._latent_shape

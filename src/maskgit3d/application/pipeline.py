@@ -6,9 +6,9 @@ the training, validation, and testing workflows.
 """
 
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any
+
 import torch
-import torch.nn as nn
 from tqdm import tqdm
 
 from maskgit3d.infrastructure.checkpoints import load_checkpoint as load_ckpt
@@ -49,7 +49,7 @@ class TrainingPipeline:
         data_provider: DataProvider,
         training_strategy: TrainingStrategy,
         optimizer_factory: OptimizerFactory,
-        device: Optional[torch.device] = None,
+        device: torch.device | None = None,
         checkpoint_dir: str = "./checkpoints",
         log_interval: int = 10,
     ):
@@ -91,8 +91,8 @@ class TrainingPipeline:
         self,
         num_epochs: int,
         val_frequency: int = 1,
-        resume_from: Optional[str] = None,
-    ) -> Dict[str, List[float]]:
+        resume_from: str | None = None,
+    ) -> dict[str, list[float]]:
         """
         Run the training loop.
 
@@ -110,7 +110,7 @@ class TrainingPipeline:
             start_epoch = self._load_checkpoint(resume_from)
 
         # Initialize empty history - will be populated dynamically
-        history: Dict[str, List[float]] = {}
+        history: dict[str, list[float]] = {}
 
         for epoch in range(start_epoch, num_epochs):
             # Training phase
@@ -158,17 +158,17 @@ class TrainingPipeline:
 
         return history
 
-    def _train_epoch(self, epoch: int) -> Dict[str, List[float]]:
+    def _train_epoch(self, epoch: int) -> dict[str, list[float]]:
         """Run one training epoch."""
         self.model.train()
 
         # Collect all metrics dynamically
-        metrics_history: Dict[str, List[float]] = {}
+        metrics_history: dict[str, list[float]] = {}
 
         train_loader = self.data_provider.train_loader()
 
         pbar = tqdm(train_loader, desc=f"Training Epoch {epoch + 1}")
-        for batch_idx, batch in enumerate(pbar):
+        for _batch_idx, batch in enumerate(pbar):
             # Move batch to device
             batch = self._move_batch_to_device(batch)
 
@@ -195,18 +195,18 @@ class TrainingPipeline:
 
         return metrics_history
 
-    def _validate_epoch(self, epoch: int) -> Dict[str, List[float]]:
+    def _validate_epoch(self, epoch: int) -> dict[str, list[float]]:
         """Run one validation epoch."""
         self.model.eval()
 
         # Collect all metrics dynamically
-        metrics_history: Dict[str, List[float]] = {}
+        metrics_history: dict[str, list[float]] = {}
 
         val_loader = self.data_provider.val_loader()
 
         pbar = tqdm(val_loader, desc=f"Validation Epoch {epoch + 1}")
         with torch.no_grad():
-            for batch_idx, batch in enumerate(pbar):
+            for _batch_idx, batch in enumerate(pbar):
                 # Move batch to device
                 batch = self._move_batch_to_device(batch)
 
@@ -233,16 +233,16 @@ class TrainingPipeline:
 
     def _move_batch_to_device(
         self,
-        batch: Tuple[torch.Tensor, ...],
-    ) -> Tuple[torch.Tensor, ...]:
+        batch: tuple[torch.Tensor, ...],
+    ) -> tuple[torch.Tensor, ...]:
         """Move batch tensors to the training device."""
         return tuple(item.to(self.device) for item in batch)
 
     def _save_checkpoint(
         self,
         epoch: int,
-        train_metrics: Dict[str, List[float]],
-        val_metrics: Dict[str, List[float]],
+        train_metrics: dict[str, list[float]],
+        val_metrics: dict[str, list[float]],
     ) -> None:
         """Save model checkpoint."""
         checkpoint_path = self.checkpoint_dir / f"checkpoint_epoch_{epoch + 1}.pth"
@@ -251,7 +251,7 @@ class TrainingPipeline:
         model_state = self.model.state_dict()
 
         # Collect checkpoint data dynamically
-        checkpoint_data: Dict[str, Any] = {
+        checkpoint_data: dict[str, Any] = {
             "epoch": epoch + 1,
             "model_state_dict": model_state,
             "optimizer_state_dict": self.optimizer.state_dict(),
@@ -304,8 +304,8 @@ class TestPipeline:
         model: ModelInterface,
         data_provider: DataProvider,
         inference_strategy: InferenceStrategy,
-        metrics: Optional[Metrics] = None,
-        device: Optional[torch.device] = None,
+        metrics: Metrics | None = None,
+        device: torch.device | None = None,
         output_dir: str = "./outputs",
     ):
         """
@@ -340,9 +340,9 @@ class TestPipeline:
 
     def run(
         self,
-        checkpoint_path: Optional[str] = None,
+        checkpoint_path: str | None = None,
         save_predictions: bool = False,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Run inference on test data.
 
@@ -414,7 +414,7 @@ class TestPipeline:
 
     def _save_predictions(
         self,
-        predictions: Dict[str, Any],
+        predictions: dict[str, Any],
         batch_idx: int,
     ) -> None:
         """Save predictions to disk."""
@@ -443,7 +443,7 @@ class LightningTrainingPipeline(pl.LightningModule):
         data_provider: DataProvider,
         training_strategy: TrainingStrategy,
         optimizer_factory: OptimizerFactory,
-        device: Optional[torch.device] = None,
+        device: torch.device | None = None,
     ):
         """
         Initialize Lightning training pipeline.
@@ -471,9 +471,9 @@ class LightningTrainingPipeline(pl.LightningModule):
 
     def training_step(
         self,
-        batch: Tuple[torch.Tensor, ...],
+        batch: tuple[torch.Tensor, ...],
         batch_idx: int,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """Lightning-compatible training step."""
         batch = self._move_batch_to_device(batch)
         optimizer = self.optimizers()
@@ -482,9 +482,9 @@ class LightningTrainingPipeline(pl.LightningModule):
 
     def validation_step(
         self,
-        batch: Tuple[torch.Tensor, ...],
+        batch: tuple[torch.Tensor, ...],
         batch_idx: int,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """Lightning-compatible validation step."""
         batch = self._move_batch_to_device(batch)
         metrics = self.training_strategy.validate_step(self.model, batch)
@@ -495,8 +495,8 @@ class LightningTrainingPipeline(pl.LightningModule):
 
     def _move_batch_to_device(
         self,
-        batch: Tuple[torch.Tensor, ...],
-    ) -> Tuple[torch.Tensor, ...]:
+        batch: tuple[torch.Tensor, ...],
+    ) -> tuple[torch.Tensor, ...]:
         """Move batch to device."""
         return tuple(item.to(self._device) for item in batch)
 

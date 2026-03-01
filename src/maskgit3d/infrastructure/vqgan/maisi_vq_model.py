@@ -5,7 +5,7 @@ This module provides a VQGAN model using MONAI's MaisiEncoder/MaisiDecoder
 architecture with vector quantization, without KL regularization.
 """
 
-from typing import Dict, Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
@@ -127,7 +127,7 @@ class MaisiVQModel3D(nn.Module, VQModelInterface):
 
     def encode(
         self, x: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, Tuple]:
+    ) -> tuple[torch.Tensor, torch.Tensor, tuple]:
         """
         Encode volumes to quantized latent codes.
 
@@ -208,7 +208,7 @@ class MaisiVQModel3D(nn.Module, VQModelInterface):
         dec = self.decode(quant_b)
         return dec
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Full encode-decode forward pass.
 
@@ -222,7 +222,7 @@ class MaisiVQModel3D(nn.Module, VQModelInterface):
         dec = self.decode(quant)
         return dec, diff
 
-    def forward_with_loss(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward_with_loss(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass returning reconstruction and quantization loss.
 
@@ -253,7 +253,7 @@ class MaisiVQModel3D(nn.Module, VQModelInterface):
         return self._codebook_size
 
     @property
-    def latent_shape(self) -> Tuple[int, int, int]:
+    def latent_shape(self) -> tuple[int, int, int]:
         """
         Get the shape of latent representations (C, D, H, W).
 
@@ -272,7 +272,7 @@ def get_maisi_vq_config(
     num_channels: Sequence[int] = (64, 128, 256),
     num_res_blocks: Sequence[int] = (2, 2, 2),
     attention_levels: Sequence[bool] = (False, False, False),
-) -> Dict:
+) -> dict:
     """
     Generate MAISI VQGAN configuration.
 

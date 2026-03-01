@@ -6,7 +6,6 @@ logic for all VQGAN/VQVAE models.
 """
 
 from abc import abstractmethod
-from typing import Tuple
 
 import torch
 import torch.nn as nn
@@ -48,7 +47,7 @@ class BaseVQModel(nn.Module, VQModelInterface):
         self._latent_channels = latent_channels
 
     @abstractmethod
-    def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Tuple]:
+    def encode(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, tuple]:
         """
         Encode volumes to quantized latent codes.
 
@@ -112,7 +111,7 @@ class BaseVQModel(nn.Module, VQModelInterface):
         dec = self.decode(quant_b)
         return dec
 
-    def forward_with_loss(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward_with_loss(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Full encode-decode forward pass with quantization loss.
 
@@ -159,6 +158,6 @@ class BaseVQModel(nn.Module, VQModelInterface):
 
     @property
     @abstractmethod
-    def latent_shape(self) -> Tuple[int, int, int]:
+    def latent_shape(self) -> tuple[int, int, int]:
         """Get the shape of latent representations (C, D, H, W)."""
         pass

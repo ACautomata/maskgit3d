@@ -6,9 +6,10 @@ from concrete implementations (PyTorch, MONAI, etc.).
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
-import torch
+from collections.abc import Iterator
+from typing import Any
 
+import torch
 
 # =============================================================================
 # Data Interfaces
@@ -24,7 +25,7 @@ class DataProvider(ABC):
     """
 
     @abstractmethod
-    def train_loader(self) -> Iterator[Tuple[torch.Tensor, ...]]:
+    def train_loader(self) -> Iterator[tuple[torch.Tensor, ...]]:
         """
         Returns an iterator over training batches.
 
@@ -35,7 +36,7 @@ class DataProvider(ABC):
         pass
 
     @abstractmethod
-    def val_loader(self) -> Iterator[Tuple[torch.Tensor, ...]]:
+    def val_loader(self) -> Iterator[tuple[torch.Tensor, ...]]:
         """
         Returns an iterator over validation batches.
 
@@ -45,7 +46,7 @@ class DataProvider(ABC):
         pass
 
     @abstractmethod
-    def test_loader(self) -> Iterator[Tuple[torch.Tensor, ...]]:
+    def test_loader(self) -> Iterator[tuple[torch.Tensor, ...]]:
         """
         Returns an iterator over test batches.
 
@@ -111,7 +112,7 @@ class ModelInterface(ABC):
     # -- nn.Module runtime methods that pipelines depend on --
 
     @abstractmethod
-    def to(self, device: Union[str, torch.device]) -> "ModelInterface":
+    def to(self, device: str | torch.device) -> "ModelInterface":
         """Move model to the specified device."""
         pass
 
@@ -131,12 +132,12 @@ class ModelInterface(ABC):
         pass
 
     @abstractmethod
-    def state_dict(self) -> Dict[str, torch.Tensor]:
+    def state_dict(self) -> dict[str, torch.Tensor]:
         """Return the model's state dictionary."""
         pass
 
     @abstractmethod
-    def load_state_dict(self, state_dict: Dict[str, Any]) -> Any:
+    def load_state_dict(self, state_dict: dict[str, Any]) -> Any:
         """Load a state dictionary into the model."""
         pass
 
@@ -158,9 +159,9 @@ class TrainingStrategy(ABC):
     def train_step(
         self,
         model: ModelInterface,
-        batch: Tuple[torch.Tensor, ...],
+        batch: tuple[torch.Tensor, ...],
         optimizer: torch.optim.Optimizer,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Execute one training step.
 
@@ -178,8 +179,8 @@ class TrainingStrategy(ABC):
     def validate_step(
         self,
         model: ModelInterface,
-        batch: Tuple[torch.Tensor, ...],
-    ) -> Dict[str, float]:
+        batch: tuple[torch.Tensor, ...],
+    ) -> dict[str, float]:
         """
         Execute one validation step.
 
@@ -229,8 +230,8 @@ class GANOptimizerFactory(ABC):
     def create(
         self,
         gen_params: Iterator[torch.Tensor],
-        disc_params: Optional[Iterator[torch.Tensor]] = None,
-    ) -> Tuple[torch.optim.Optimizer, Optional[torch.optim.Optimizer]]:
+        disc_params: Iterator[torch.Tensor] | None = None,
+    ) -> tuple[torch.optim.Optimizer, torch.optim.Optimizer | None]:
         """
         Create optimizer instances for generator and discriminator.
 
@@ -320,7 +321,7 @@ class Metrics(ABC):
         pass
 
     @abstractmethod
-    def compute(self) -> Dict[str, float]:
+    def compute(self) -> dict[str, float]:
         """
         Compute final metrics.
 
@@ -348,7 +349,7 @@ class QuantizerInterface(ABC):
     """
 
     @abstractmethod
-    def forward(self, z: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Tuple]:
+    def forward(self, z: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, tuple]:
         """
         Quantize continuous latents to discrete codes.
 
@@ -367,7 +368,7 @@ class QuantizerInterface(ABC):
     def get_codebook_entry(
         self,
         indices: torch.Tensor,
-        shape: Optional[Tuple[int, ...]] = None,
+        shape: tuple[int, ...] | None = None,
     ) -> torch.Tensor:
         """
         Retrieve quantized latents from codebook indices.
@@ -412,7 +413,7 @@ class VQModelInterface(ModelInterface):
     """
 
     @abstractmethod
-    def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Tuple]:
+    def encode(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, tuple]:
         """
         Encode images to discrete latent codes.
 
@@ -458,12 +459,12 @@ class VQModelInterface(ModelInterface):
 
     @property
     @abstractmethod
-    def latent_shape(self) -> Tuple[int, int, int, int]:
+    def latent_shape(self) -> tuple[int, int, int, int]:
         """Get the shape of latent representations (C, D, H, W)."""
         pass
 
     @abstractmethod
-    def forward_with_loss(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward_with_loss(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass returning reconstruction and quantization loss.
 
@@ -519,8 +520,8 @@ class MaskGITModelInterface(ModelInterface):
     @abstractmethod
     def generate(
         self,
-        num_tokens: Optional[int] = None,
-        shape: Optional[Tuple[int, ...]] = None,
+        num_tokens: int | None = None,
+        shape: tuple[int, ...] | None = None,
         temperature: float = 1.0,
         num_iterations: int = 12,
         **kwargs,
@@ -547,7 +548,7 @@ class MaskGITModelInterface(ModelInterface):
 
     @property
     @abstractmethod
-    def latent_shape(self) -> Tuple[int, int, int, int]:
+    def latent_shape(self) -> tuple[int, int, int, int]:
         """Get the shape of latent representations (B, D, H, W)."""
         pass
 

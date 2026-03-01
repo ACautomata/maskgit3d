@@ -5,9 +5,10 @@ This module provides concrete implementations of TrainingStrategy
 including loss functions, optimization, and metrics computation.
 """
 
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union, cast
+from collections.abc import Iterator
+from typing import Any, cast
+
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 from maskgit3d.domain.interfaces import (
@@ -20,7 +21,6 @@ from maskgit3d.domain.interfaces import (
     TrainingStrategy,
     VQModelInterface,
 )
-
 
 # =============================================================================
 # Mixed Precision Training
@@ -39,7 +39,7 @@ class MixedPrecisionTrainer:
         self,
         enabled: bool = True,
         dtype: str = "float16",
-        grad_clip: Optional[float] = None,
+        grad_clip: float | None = None,
     ):
         """
         Initialize mixed precision trainer.
@@ -117,14 +117,14 @@ class MixedPrecisionTrainer:
 
         optimizer.zero_grad()
 
-    def state_dict(self) -> Dict[str, Any]:
+    def state_dict(self) -> dict[str, Any]:
         """Get state dict for checkpointing."""
         state = {"enabled": self.enabled, "dtype": self.dtype}
         if self.enabled and self.scaler is not None:
             state["scaler"] = self.scaler.state_dict()
         return state
 
-    def load_state_dict(self, state: Dict[str, Any]) -> None:
+    def load_state_dict(self, state: dict[str, Any]) -> None:
         """Load state dict from checkpoint."""
         self.enabled = state.get("enabled", self.enabled)
         self.dtype = state.get("dtype", self.dtype)
@@ -144,7 +144,7 @@ class AdamOptimizerFactory(OptimizerFactory):
         self,
         lr: float = 1e-4,
         weight_decay: float = 1e-5,
-        betas: Tuple[float, float] = (0.9, 0.999),
+        betas: tuple[float, float] = (0.9, 0.999),
     ):
         self.lr = lr
         self.weight_decay = weight_decay
@@ -197,7 +197,7 @@ class AdamWOptimizerFactory(OptimizerFactory):
         self,
         lr: float = 1e-4,
         weight_decay: float = 0.01,
-        betas: Tuple[float, float] = (0.9, 0.999),
+        betas: tuple[float, float] = (0.9, 0.999),
     ):
         self.lr = lr
         self.weight_decay = weight_decay
@@ -223,7 +223,7 @@ class VQGANOptimizerFactory(GANOptimizerFactory):
         lr_g: float = 1e-4,
         lr_d: float = 2e-4,
         weight_decay: float = 0.01,
-        betas: Tuple[float, float] = (0.9, 0.999),
+        betas: tuple[float, float] = (0.9, 0.999),
     ):
         self.lr_g = lr_g
         self.lr_d = lr_d
@@ -233,8 +233,8 @@ class VQGANOptimizerFactory(GANOptimizerFactory):
     def create(
         self,
         gen_params: Iterator[torch.Tensor],
-        disc_params: Optional[Iterator[torch.Tensor]] = None,
-    ) -> Tuple[torch.optim.Optimizer, Optional[torch.optim.Optimizer]]:
+        disc_params: Iterator[torch.Tensor] | None = None,
+    ) -> tuple[torch.optim.Optimizer, torch.optim.Optimizer | None]:
         opt_g = torch.optim.AdamW(
             gen_params,
             lr=self.lr_g,
@@ -272,7 +272,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
         pixel_loss_weight: float = 1.0,
         mixed_precision: bool = False,
         amp_dtype: str = "float16",
-        grad_clip: Optional[float] = None,
+        grad_clip: float | None = None,
     ):
         """
         Initialize VQGAN training strategy.
@@ -297,9 +297,9 @@ class VQGANTrainingStrategy(TrainingStrategy):
     def train_step(
         self,
         model: VQModelInterface,
-        batch: Tuple[torch.Tensor, ...],
+        batch: tuple[torch.Tensor, ...],
         optimizer: torch.optim.Optimizer,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Execute one training step.
 
@@ -312,10 +312,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
             Dictionary of training metrics
         """
         # Unpack batch
-        if isinstance(batch, (tuple, list)):
-            x = batch[0]
-        else:
-            x = batch
+        x = batch[0] if isinstance(batch, (tuple, list)) else batch
 
         model.train()
         vq_model = cast(VQModelInterface, model)
@@ -340,8 +337,8 @@ class VQGANTrainingStrategy(TrainingStrategy):
     def validate_step(
         self,
         model: ModelInterface,
-        batch: Tuple[torch.Tensor, ...],
-    ) -> Dict[str, float]:
+        batch: tuple[torch.Tensor, ...],
+    ) -> dict[str, float]:
         """
         Execute validation step.
 
@@ -355,10 +352,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
         model.eval()
         vq_model = cast(VQModelInterface, model)
 
-        if isinstance(batch, (tuple, list)):
-            x = batch[0]
-        else:
-            x = batch
+        x = batch[0] if isinstance(batch, (tuple, list)) else batch
 
         with torch.no_grad():
             xrec, qloss = vq_model.forward_with_loss(x)
@@ -449,7 +443,7 @@ class VQGANInference(InferenceStrategy):
     def post_process(
         self,
         predictions: torch.Tensor,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Post-process predictions.
 
@@ -538,10 +532,7 @@ class VQGANMetrics(Metrics):
         else:
             pred = predictions
 
-        if not isinstance(targets, torch.Tensor):
-            target = torch.from_numpy(targets)
-        else:
-            target = targets
+        target = torch.from_numpy(targets) if not isinstance(targets, torch.Tensor) else targets
 
         # Ensure predictions are in [0, data_range] range for MONAI
         # VQGAN outputs are typically in [-1, 1], so rescale to [0, 1]
@@ -576,7 +567,7 @@ class VQGANMetrics(Metrics):
             # Ultimate fallback: simple correlation-based metric
             return torch.tensor(1.0 - F.mse_loss(img1, img2) / (self.data_range**2))
 
-    def compute(self) -> Dict[str, float]:
+    def compute(self) -> dict[str, float]:
         """Compute final metrics."""
         if self.psnr_metric and self.ssim_metric:
             psnr = self.psnr_metric.aggregate().item()
@@ -611,7 +602,7 @@ class MaskGITTrainingStrategy(TrainingStrategy):
         reconstruction_weight: float = 1.0,
         mixed_precision: bool = False,
         amp_dtype: str = "float16",
-        grad_clip: Optional[float] = None,
+        grad_clip: float | None = None,
     ):
         """
         Initialize MaskGIT training strategy.
@@ -636,9 +627,9 @@ class MaskGITTrainingStrategy(TrainingStrategy):
     def train_step(
         self,
         model: MaskGITModelInterface,
-        batch: Tuple[torch.Tensor, ...],
+        batch: tuple[torch.Tensor, ...],
         optimizer: torch.optim.Optimizer,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Execute one training step with masked token prediction.
 
@@ -651,10 +642,7 @@ class MaskGITTrainingStrategy(TrainingStrategy):
             Dictionary of training metrics
         """
         # Unpack batch
-        if isinstance(batch, (tuple, list)):
-            x = batch[0]
-        else:
-            x = batch
+        x = batch[0] if isinstance(batch, (tuple, list)) else batch
 
         model.train()
 
@@ -704,8 +692,8 @@ class MaskGITTrainingStrategy(TrainingStrategy):
     def validate_step(
         self,
         model: ModelInterface,
-        batch: Tuple[torch.Tensor, ...],
-    ) -> Dict[str, float]:
+        batch: tuple[torch.Tensor, ...],
+    ) -> dict[str, float]:
         """
         Execute validation step.
 
@@ -718,10 +706,7 @@ class MaskGITTrainingStrategy(TrainingStrategy):
         """
         model.eval()
 
-        if isinstance(batch, (tuple, list)):
-            x = batch[0]
-        else:
-            x = batch
+        x = batch[0] if isinstance(batch, (tuple, list)) else batch
 
         with torch.no_grad():
             # Reconstruction
@@ -807,7 +792,7 @@ class MaskGITInference(InferenceStrategy):
     def post_process(
         self,
         predictions: torch.Tensor,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Post-process predictions.
 

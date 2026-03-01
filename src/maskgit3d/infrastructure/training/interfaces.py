@@ -5,8 +5,7 @@ This module contains framework-specific (architecture-specific) training
 strategy interfaces that belong in the infrastructure layer.
 """
 
-from abc import ABC, abstractmethod
-from typing import Dict, Tuple
+from abc import abstractmethod
 
 import torch
 
@@ -25,9 +24,9 @@ class MaskGITTrainingStrategyInterface(TrainingStrategy):
     def train_step(
         self,
         model: MaskGITModelInterface,
-        batch: Tuple[torch.Tensor, ...],
+        batch: tuple[torch.Tensor, ...],
         optimizer: torch.optim.Optimizer,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Execute one training step with masked token prediction.
 

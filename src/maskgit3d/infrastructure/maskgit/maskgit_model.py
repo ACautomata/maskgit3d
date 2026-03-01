@@ -6,14 +6,13 @@ Complete MaskGIT model combining:
 - Bidirectional Transformer for masked token prediction
 """
 
-from typing import Any, Dict, Optional, Tuple
 import torch
 import torch.nn as nn
 
 from maskgit3d.domain.interfaces import MaskGITModelInterface
-from maskgit3d.infrastructure.vqgan.vqgan_model_3d import VQModel3D
-from maskgit3d.infrastructure.maskgit.transformer import MaskGITTransformer
 from maskgit3d.infrastructure.maskgit.sampling import MaskGITSampler
+from maskgit3d.infrastructure.maskgit.transformer import MaskGITTransformer
+from maskgit3d.infrastructure.vqgan.vqgan_model_3d import VQModel3D
 
 
 class MaskGITModel(nn.Module, MaskGITModelInterface):
@@ -70,7 +69,7 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
         return self._codebook_size
 
     @property
-    def latent_shape(self) -> Tuple[int, int, int, int]:
+    def latent_shape(self) -> tuple[int, int, int, int]:
         """Shape of latent representations (B, D, H, W)."""
         return self._latent_shape
 
@@ -136,8 +135,8 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
 
     def generate(
         self,
-        num_tokens: Optional[int] = None,
-        shape: Optional[Tuple[int, ...]] = None,
+        num_tokens: int | None = None,
+        shape: tuple[int, ...] | None = None,
         temperature: float = 1.0,
         num_iterations: int = 12,
         **kwargs,
@@ -186,7 +185,7 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):
         self,
         x: torch.Tensor,
         mask_ratio: float,
-    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+    ) -> tuple[torch.Tensor, dict[str, float]]:
         """Compute MaskGIT cross-entropy loss and detached scalar metrics."""
         # Encode to tokens
         tokens = self.encode_tokens(x)
