@@ -109,37 +109,6 @@ class ModelInterface(ABC):
         """Get the device of the model."""
         pass
 
-    # -- nn.Module runtime methods that pipelines depend on --
-
-    @abstractmethod
-    def to(self, device: str | torch.device) -> "ModelInterface":
-        """Move model to the specified device."""
-        pass
-
-    @abstractmethod
-    def parameters(self) -> Iterator[torch.nn.Parameter]:
-        """Return an iterator over model parameters."""
-        pass
-
-    @abstractmethod
-    def train(self, mode: bool = True) -> "ModelInterface":
-        """Set the model to training mode."""
-        pass
-
-    @abstractmethod
-    def eval(self) -> "ModelInterface":
-        """Set the model to evaluation mode."""
-        pass
-
-    @abstractmethod
-    def state_dict(self) -> dict[str, torch.Tensor]:
-        """Return the model's state dictionary."""
-        pass
-
-    @abstractmethod
-    def load_state_dict(self, state_dict: dict[str, Any]) -> Any:
-        """Load a state dictionary into the model."""
-        pass
 
 
 # =============================================================================
