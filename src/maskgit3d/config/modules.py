@@ -135,14 +135,17 @@ class DataModule(Module):
         Returns:
             Configured data provider
         """
-        # Default to simple data provider
         from maskgit3d.infrastructure.data.dataset import SimpleDataProvider
+        from maskgit3d.infrastructure.data.medmnist_provider import MedMnist3DDataProvider
+        from maskgit3d.infrastructure.data.brats_provider import BraTSDataProvider
 
         data_type = self.data_config.get("type", "simple")
         data_params = self.data_config.get("params", {})
 
         providers = {
             "simple": SimpleDataProvider,
+            "medmnist3d": MedMnist3DDataProvider,
+            "brats": BraTSDataProvider,
         }
 
         if data_type not in providers:
