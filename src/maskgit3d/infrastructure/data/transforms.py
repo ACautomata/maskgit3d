@@ -12,6 +12,8 @@ from monai.transforms import (
     ConcatItemsd,
     ConvertToMultiChannelBasedOnBratsClassesd,
     DeleteItemsd,
+    DivisiblePad,
+    DivisiblePadd,
     EnsureChannelFirst,
     EnsureChannelFirstd,
     EnsureType,
@@ -27,9 +29,13 @@ from monai.transforms import (
     ScaleIntensity,
     ScaleIntensityd,
     ScaleIntensityRange,
-    ScaleIntensityRanged,
     SpatialPad,
     SpatialPadd,
+)
+
+from maskgit3d.infrastructure.data.padding import (
+    compute_downsampling_factor,
+    validate_crop_size,
 )
 
 _DICT_TRANSFORM_EXTENSIONS = (
@@ -416,5 +422,206 @@ def create_brats2023_inference_preprocessing(
                 maxv=1.0,
             )
         )
+
+    return Compose(transforms)
+
+
+# =============================================================================
+# VQVAE-Aware Transforms with Divisible Padding
+# =============================================================================
+
+
+def create_vqvae_training_preprocessing(
+    crop_size: Tuple[int, int, int] = (128, 128, 128),
+    normalize_mode: str = "zscore",
+    channel_multipliers: Tuple[int, ...] = (1, 1, 2, 2, 4),
+) -> Compose:
+    """
+    Create VQVAE-aware training preprocessing with divisible padding.
+
+    Ensures crop_size is divisible by the VQVAE downsampling factor.
+    Pads smaller images to crop_size, then applies random crop.
+
+    Args:
+        crop_size: Crop spatial dimensions (D, H, W). Must be divisible by
+            the downsampling factor.
+        normalize_mode: Normalization mode ("minmax" or "zscore")
+        channel_multipliers: VQVAE channel multipliers to compute downsampling factor.
+
+    Returns:
+        MONAI Compose object with VQVAE-compatible preprocessing
+
+    Raises:
+        ValueError: If crop_size is not divisible by downsampling factor
+    """
+    if normalize_mode not in ("minmax", "zscore"):
+        raise ValueError(f"normalize_mode must be 'minmax' or 'zscore', got '{normalize_mode}'")
+
+    downsampling_factor = compute_downsampling_factor(channel_multipliers)
+    validated_crop_size = validate_crop_size(crop_size, downsampling_factor)
+
+    transforms = [
+        EnsureType(),
+        EnsureChannelFirst(channel_dim="no_channel"),
+        NormalizeIntensity()
+        if normalize_mode == "zscore"
+        else ScaleIntensity(minv=-1.0, maxv=1.0),
+        SpatialPad(spatial_size=validated_crop_size, mode="constant"),
+        RandSpatialCrop(roi_size=validated_crop_size, random_center=True, random_size=False),
+    ]
+    return Compose(transforms)
+
+
+def create_vqvae_inference_preprocessing(
+    normalize_mode: str = "zscore",
+    channel_multipliers: Tuple[int, ...] = (1, 1, 2, 2, 4),
+) -> Compose:
+    """
+    Create VQVAE-aware inference preprocessing with divisible padding.
+
+    Pads input to be divisible by the VQVAE downsampling factor.
+    This ensures the latent dimensions can be properly recovered by the decoder.
+
+    Args:
+        normalize_mode: Normalization mode ("minmax" or "zscore")
+        channel_multipliers: VQVAE channel multipliers to compute downsampling factor.
+
+    Returns:
+        MONAI Compose object with VQVAE-compatible preprocessing
+
+    Note:
+        The output will be padded. Use the original size to crop the output
+        back to the original dimensions after inference.
+    """
+    if normalize_mode not in ("minmax", "zscore"):
+        raise ValueError(f"normalize_mode must be 'minmax' or 'zscore', got '{normalize_mode}'")
+
+    downsampling_factor = compute_downsampling_factor(channel_multipliers)
+
+    transforms = [
+        EnsureType(),
+        EnsureChannelFirst(channel_dim="no_channel"),
+        NormalizeIntensity()
+        if normalize_mode == "zscore"
+        else ScaleIntensity(minv=-1.0, maxv=1.0),
+        DivisiblePad(k=downsampling_factor, mode="constant"),
+    ]
+    return Compose(transforms)
+
+
+def create_vqvae_sliding_window_inference_preprocessing(
+    normalize_mode: str = "zscore",
+    channel_multipliers: Tuple[int, ...] = (1, 1, 2, 2, 4),
+) -> Compose:
+    """
+    Create VQVAE-aware preprocessing for sliding window inference.
+
+    This is designed for large volumes that need sliding window inference.
+    Pads to ensure divisibility by the downsampling factor.
+
+    Args:
+        normalize_mode: Normalization mode ("minmax" or "zscore")
+        channel_multipliers: VQVAE channel multipliers to compute downsampling factor.
+
+    Returns:
+        MONAI Compose object with VQVAE-compatible preprocessing
+    """
+    return create_vqvae_inference_preprocessing(normalize_mode, channel_multipliers)
+
+
+def create_vqvae2023_training_preprocessing(
+    crop_size: Tuple[int, int, int] = (128, 128, 128),
+    normalize_mode: str = "zscore",
+    task: str = "reconstruction",
+    channel_multipliers: Tuple[int, ...] = (1, 1, 2, 2, 4),
+) -> Compose:
+    """
+    Create dictionary-based VQVAE training preprocessing with divisible padding.
+
+    Args:
+        crop_size: Crop spatial dimensions (D, H, W). Must be divisible by downsampling factor.
+        normalize_mode: Normalization mode ("minmax" or "zscore")
+        task: Task type ("reconstruction" or "segmentation")
+        channel_multipliers: VQVAE channel multipliers to compute downsampling factor.
+
+    Returns:
+        MONAI Compose object with dictionary-based VQVAE preprocessing
+
+    Raises:
+        ValueError: If crop_size is not divisible by downsampling factor
+    """
+    if normalize_mode not in ("minmax", "zscore"):
+        raise ValueError(f"normalize_mode must be 'minmax' or 'zscore', got '{normalize_mode}'")
+
+    if task not in ("reconstruction", "segmentation"):
+        raise ValueError(f"task must be 'reconstruction' or 'segmentation', got '{task}'")
+
+    downsampling_factor = compute_downsampling_factor(channel_multipliers)
+    validated_crop_size = validate_crop_size(crop_size, downsampling_factor)
+
+    load_keys = ["image", "label"] if task == "segmentation" else ["image"]
+    crop_keys = ["image", "label"] if task == "segmentation" else ["image"]
+
+    transforms = [
+        LoadImaged(keys=load_keys, image_only=True),
+        EnsureChannelFirstd(keys="image"),
+    ]
+
+    if task == "segmentation":
+        transforms.append(ConvertToMultiChannelBasedOnBratsClassesd(keys="label"))
+
+    if normalize_mode == "zscore":
+        transforms.append(NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True))
+    else:
+        transforms.append(ScaleIntensityd(keys="image", minv=-1.0, maxv=1.0))
+
+    transforms.extend([
+        SpatialPadd(keys=crop_keys, spatial_size=validated_crop_size, mode="constant"),
+        RandSpatialCropd(keys=crop_keys, roi_size=validated_crop_size, random_center=True, random_size=False),
+    ])
+
+    return Compose(transforms)
+
+
+def create_vqvae2023_inference_preprocessing(
+    normalize_mode: str = "zscore",
+    task: str = "reconstruction",
+    channel_multipliers: Tuple[int, ...] = (1, 1, 2, 2, 4),
+) -> Compose:
+    """
+    Create dictionary-based VQVAE inference preprocessing with divisible padding.
+
+    Args:
+        normalize_mode: Normalization mode ("minmax" or "zscore")
+        task: Task type ("reconstruction" or "segmentation")
+        channel_multipliers: VQVAE channel multipliers to compute downsampling factor.
+
+    Returns:
+        MONAI Compose object with dictionary-based VQVAE preprocessing
+    """
+    if normalize_mode not in ("minmax", "zscore"):
+        raise ValueError(f"normalize_mode must be 'minmax' or 'zscore', got '{normalize_mode}'")
+
+    if task not in ("reconstruction", "segmentation"):
+        raise ValueError(f"task must be 'reconstruction' or 'segmentation', got '{task}'")
+
+    load_keys = ["image", "label"] if task == "segmentation" else ["image"]
+    pad_keys = ["image", "label"] if task == "segmentation" else ["image"]
+    downsampling_factor = compute_downsampling_factor(channel_multipliers)
+
+    transforms = [
+        LoadImaged(keys=load_keys, image_only=True),
+        EnsureChannelFirstd(keys="image"),
+    ]
+
+    if task == "segmentation":
+        transforms.append(ConvertToMultiChannelBasedOnBratsClassesd(keys="label"))
+
+    if normalize_mode == "zscore":
+        transforms.append(NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True))
+    else:
+        transforms.append(ScaleIntensityd(keys="image", minv=-1.0, maxv=1.0))
+
+    transforms.append(DivisiblePadd(keys=pad_keys, k=downsampling_factor, mode="constant"))
 
     return Compose(transforms)

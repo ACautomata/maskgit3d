@@ -830,6 +830,9 @@ class SlidingWindowVQGANInference(InferenceStrategy):
     1. Divides the input volume into overlapping patches
     2. Processes each patch through the VQGAN model
     3. Blends the results using Gaussian weighting
+
+    Note: For VQVAE models, roi_size must be divisible by the downsampling
+    factor (default 16) and overlap * roi_size must be an integer.
     """
 
     def __init__(
@@ -840,29 +843,39 @@ class SlidingWindowVQGANInference(InferenceStrategy):
         mode: str = "gaussian",
         sigma_scale: float = 0.125,
         progress: bool = False,
+        downsampling_factor: int = 16,
+        original_size: tuple[int, int, int] | None = None,
     ):
         """
         Initialize sliding window VQGAN inference.
 
         Args:
             roi_size: Region of interest size for each window (D, H, W).
-                Should match the training crop size.
+                Should match the training crop size. Must be divisible by
+                downsampling_factor for VQVAE compatibility.
             sw_batch_size: Number of windows to process in parallel.
                 Higher values use more GPU memory but are faster.
             overlap: Overlap ratio between windows (0-1).
-                0.25 is typical, higher values give smoother results but are slower.
+                0.25 is typical. Must satisfy: overlap * roi_size is integer.
             mode: Blending mode - "gaussian" or "constant".
                 Gaussian provides smoother transitions between patches.
             sigma_scale: Sigma scale for Gaussian blending.
                 Controls how quickly the weight decays near patch edges.
             progress: Show progress bar during inference.
+            downsampling_factor: VQVAE downsampling factor for validation.
+                Default is 16 (4 downsampling layers with stride 2).
+            original_size: Original spatial size (D, H, W) before padding.
+                If provided, output will be cropped back to this size.
         """
-        self.roi_size = roi_size
+        from maskgit3d.infrastructure.data.padding import validate_roi_size
+
+        self.roi_size = validate_roi_size(roi_size, overlap, downsampling_factor)
         self.sw_batch_size = sw_batch_size
         self.overlap = overlap
         self.mode = mode
         self.sigma_scale = sigma_scale
         self.progress = progress
+        self.original_size = original_size
 
     def predict(
         self,
@@ -885,7 +898,6 @@ class SlidingWindowVQGANInference(InferenceStrategy):
         device = model.device
 
         with torch.no_grad():
-            # Use sliding window inference
             output = sliding_window_inference(
                 inputs=batch,
                 roi_size=self.roi_size,
@@ -898,6 +910,15 @@ class SlidingWindowVQGANInference(InferenceStrategy):
                 device=device,
                 progress=self.progress,
             )
+
+            if self.original_size is not None:
+                from maskgit3d.infrastructure.data.padding import compute_output_crop
+
+                padded_size = tuple(batch.shape[2:])
+                crop_slices = compute_output_crop(self.original_size, padded_size)
+                output = output[
+                    (slice(None), slice(None), *crop_slices)
+                ]
 
         return output
 
@@ -914,14 +935,15 @@ class SlidingWindowVQGANInference(InferenceStrategy):
         Returns:
             Processed predictions dictionary
         """
-        # Convert to numpy and normalize to [0, 1]
         images = predictions.cpu().float()
-        images = (images + 1) / 2  # From [-1, 1] to [0, 1]
+        images = (images + 1) / 2
         images = images.clamp(0, 1)
 
         return {
             "images": images.numpy(),
         }
+
+
 
 
 class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
