@@ -103,8 +103,8 @@ class TestMaisyVQModel3D:
         new_model.load_checkpoint(checkpoint_path)
 
         # Verify parameters match
-        for (name1, param1), (name2, param2) in zip(
-            model.named_parameters(), new_model.named_parameters()
+        for (_name1, param1), (_name2, param2) in zip(
+            model.named_parameters(), new_model.named_parameters(), strict=True
         ):
             assert torch.allclose(param1, param2)
 

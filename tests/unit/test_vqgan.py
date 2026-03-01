@@ -5,19 +5,17 @@ These tests verify the functionality of VQGAN models, discriminators,
 quantizers, and training strategies.
 """
 
-import pytest
 import torch
-from unittest.mock import MagicMock, patch
 
+from maskgit3d.domain.interfaces import ModelInterface
+from maskgit3d.infrastructure.vqgan.discriminator import (
+    ActNorm,
+    IdentityDiscriminator,
+    NLayerDiscriminator,
+)
 from maskgit3d.infrastructure.vqgan.quantize import (
     VectorQuantizer,
 )
-from maskgit3d.infrastructure.vqgan.discriminator import (
-    NLayerDiscriminator,
-    IdentityDiscriminator,
-    ActNorm,
-)
-from maskgit3d.domain.interfaces import ModelInterface
 from maskgit3d.infrastructure.vqgan.vqgan_model_3d import VQModel3D
 
 

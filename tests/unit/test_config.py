@@ -7,12 +7,13 @@ These tests verify the functionality of configuration and dependency injection.
 import inspect
 
 import pytest
+
 from maskgit3d.config.modules import (
     MaisiVQModule,
-    _validate_param,
     _validate_float_param,
-    create_vqgan_module,
+    _validate_param,
     create_maskgit_module,
+    create_vqgan_module,
 )
 from maskgit3d.infrastructure.maskgit.maskgit_model import MaskGITModel
 from maskgit3d.infrastructure.vqgan import MaisiVQModel3D

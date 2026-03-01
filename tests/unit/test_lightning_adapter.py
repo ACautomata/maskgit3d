@@ -1,9 +1,9 @@
 """Tests for LightningTrainingPipeline as LightningModule adapter."""
 
-import torch
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, patch
-from unittest.mock import MagicMock, patch
+import torch
 
 # Try importing pytorch_lightning, skip if not available
 try:
@@ -14,7 +14,6 @@ except ImportError:
     PL_AVAILABLE = False
 
 from maskgit3d.application.pipeline import LightningTrainingPipeline
-
 
 pytestmark = pytest.mark.skipif(not PL_AVAILABLE, reason="pytorch_lightning not installed")
 

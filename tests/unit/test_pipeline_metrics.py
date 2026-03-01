@@ -5,9 +5,9 @@ These tests verify that the pipeline collects metrics dynamically from
 strategy return values instead of hardcoded dice keys.
 """
 
-import pytest
+from unittest.mock import MagicMock
+
 import torch
-from unittest.mock import MagicMock, patch
 
 from maskgit3d.application.pipeline import TrainingPipeline
 

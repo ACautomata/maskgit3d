@@ -3,9 +3,10 @@ Sample unit tests for the maskgit3d framework.
 
 These tests verify the basic functionality of the core components.
 """
+from unittest.mock import MagicMock
+
 import pytest
 import torch
-from unittest.mock import MagicMock, patch
 
 from maskgit3d.domain.interfaces import (
     DataProvider,
@@ -259,8 +260,8 @@ class TestSimpleDataProvider:
 
     def test_simple_data_provider_implements_data_provider_interface(self):
         """SimpleDataProvider must implement DataProvider."""
-        from maskgit3d.infrastructure.data.dataset import SimpleDataProvider
         from maskgit3d.domain.interfaces import DataProvider
+        from maskgit3d.infrastructure.data.dataset import SimpleDataProvider
 
         provider = SimpleDataProvider(num_train=2, num_val=1, num_test=1, batch_size=1)
         assert isinstance(provider, DataProvider)

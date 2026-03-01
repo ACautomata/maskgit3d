@@ -4,20 +4,21 @@ Unit tests for training strategies.
 These tests verify the functionality of training and inference strategies.
 """
 
-import pytest
-import torch
 from unittest.mock import MagicMock, patch
 
+import pytest
+import torch
+
 from maskgit3d.infrastructure.training.strategies import (
-    VQGANTrainingStrategy,
+    AdamOptimizerFactory,
+    AdamWOptimizerFactory,
+    MaskGITInference,
+    MaskGITTrainingStrategy,
+    SGDOptimizerFactory,
     VQGANInference,
     VQGANMetrics,
-    MaskGITTrainingStrategy,
-    MaskGITInference,
-    AdamOptimizerFactory,
-    SGDOptimizerFactory,
-    AdamWOptimizerFactory,
     VQGANOptimizerFactory,
+    VQGANTrainingStrategy,
 )
 
 
@@ -49,9 +50,8 @@ class TestVQGANTrainingStrategy:
         optimizer = MagicMock()
 
         # Use patch to avoid actual backward pass
-        with patch.object(optimizer, "zero_grad"):
-            with patch.object(optimizer, "step"):
-                metrics = strategy.train_step(mock_model, batch, optimizer)
+        with patch.object(optimizer, "zero_grad"), patch.object(optimizer, "step"):
+            metrics = strategy.train_step(mock_model, batch, optimizer)
 
         assert "loss" in metrics
         assert "rec_loss" in metrics
@@ -413,9 +413,10 @@ class TestMaskGITInference:
 def test_strategy_annotations_use_specific_model_interfaces():
     """Verify training strategies use specific model interfaces in type hints."""
     import inspect
+
     from maskgit3d.infrastructure.training.strategies import (
-        VQGANTrainingStrategy,
         MaskGITTrainingStrategy,
+        VQGANTrainingStrategy,
     )
 
     vq_sig = inspect.signature(VQGANTrainingStrategy.train_step)
