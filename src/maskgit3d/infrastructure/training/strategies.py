@@ -810,3 +810,327 @@ class MaskGITInference(InferenceStrategy):
         return {
             "volumes": volumes.numpy(),
         }
+
+
+# =============================================================================
+# Sliding Window Inference Strategies
+# =============================================================================
+
+
+class SlidingWindowVQGANInference(InferenceStrategy):
+    """
+    VQGAN inference strategy with sliding window support for large volumes.
+
+    Uses MONAI's sliding_window_inference to process volumes that are larger
+    than the training crop size. This is essential for:
+    - BraTS: Full-resolution MRI volumes (~240x240x155)
+    - Any volumes larger than training size
+
+    The sliding window approach:
+    1. Divides the input volume into overlapping patches
+    2. Processes each patch through the VQGAN model
+    3. Blends the results using Gaussian weighting
+    """
+
+    def __init__(
+        self,
+        roi_size: tuple[int, int, int] = (128, 128, 128),
+        sw_batch_size: int = 4,
+        overlap: float = 0.25,
+        mode: str = "gaussian",
+        sigma_scale: float = 0.125,
+        progress: bool = False,
+    ):
+        """
+        Initialize sliding window VQGAN inference.
+
+        Args:
+            roi_size: Region of interest size for each window (D, H, W).
+                Should match the training crop size.
+            sw_batch_size: Number of windows to process in parallel.
+                Higher values use more GPU memory but are faster.
+            overlap: Overlap ratio between windows (0-1).
+                0.25 is typical, higher values give smoother results but are slower.
+            mode: Blending mode - "gaussian" or "constant".
+                Gaussian provides smoother transitions between patches.
+            sigma_scale: Sigma scale for Gaussian blending.
+                Controls how quickly the weight decays near patch edges.
+            progress: Show progress bar during inference.
+        """
+        self.roi_size = roi_size
+        self.sw_batch_size = sw_batch_size
+        self.overlap = overlap
+        self.mode = mode
+        self.sigma_scale = sigma_scale
+        self.progress = progress
+
+    def predict(
+        self,
+        model: ModelInterface,
+        batch: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Run sliding window inference.
+
+        Args:
+            model: VQModel instance
+            batch: Input volumes [B, C, D, H, W]
+
+        Returns:
+            Reconstructed volumes [B, C, D, H, W]
+        """
+        from monai.inferers import sliding_window_inference
+
+        model.eval()
+        device = model.device
+
+        with torch.no_grad():
+            # Use sliding window inference
+            output = sliding_window_inference(
+                inputs=batch,
+                roi_size=self.roi_size,
+                sw_batch_size=self.sw_batch_size,
+                predictor=model.forward,
+                overlap=self.overlap,
+                mode=self.mode,
+                sigma_scale=self.sigma_scale,
+                sw_device=device,
+                device=device,
+                progress=self.progress,
+            )
+
+        return output
+
+    def post_process(
+        self,
+        predictions: torch.Tensor,
+    ) -> dict[str, Any]:
+        """
+        Post-process predictions.
+
+        Args:
+            predictions: Raw model outputs
+
+        Returns:
+            Processed predictions dictionary
+        """
+        # Convert to numpy and normalize to [0, 1]
+        images = predictions.cpu().float()
+        images = (images + 1) / 2  # From [-1, 1] to [0, 1]
+        images = images.clamp(0, 1)
+
+        return {
+            "images": images.numpy(),
+        }
+
+
+class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
+    """
+    VQGAN inference strategy for extracting latent codes with sliding window.
+
+    This is designed for the second stage (MaskGIT training):
+    1. Extract latent representations using sliding window
+    2. Convert latents to codebook indices
+    3. Return both latents and indices for downstream use
+
+    The sliding window approach ensures that:
+    - Large volumes can be processed without OOM
+    - Latent codes maintain spatial correspondence with input
+    """
+
+    def __init__(
+        self,
+        roi_size: tuple[int, int, int] = (128, 128, 128),
+        sw_batch_size: int = 4,
+        overlap: float = 0.25,
+        mode: str = "gaussian",
+        sigma_scale: float = 0.125,
+        progress: bool = False,
+    ):
+        """
+        Initialize sliding window latent extractor.
+
+        Args:
+            roi_size: Region of interest size for each window (D, H, W).
+            sw_batch_size: Number of windows to process in parallel.
+            overlap: Overlap ratio between windows (0-1).
+            mode: Blending mode - "gaussian" or "constant".
+            sigma_scale: Sigma scale for Gaussian blending.
+            progress: Show progress bar during inference.
+        """
+        self.roi_size = roi_size
+        self.sw_batch_size = sw_batch_size
+        self.overlap = overlap
+        self.mode = mode
+        self.sigma_scale = sigma_scale
+        self.progress = progress
+
+    def _encode_patch(
+        self,
+        model: VQModelInterface,
+        patch: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Encode a single patch to latent and indices.
+
+        Args:
+            model: VQModel instance
+            patch: Input patch [B, C, D, H, W]
+
+        Returns:
+            Tuple of (quantized_latent, indices)
+        """
+        h = model.encoder(patch)
+        h = model.quant_conv(h)
+        quant, _, info = model.quantize(h)
+        indices = info[2]  # min_encoding_indices
+        return quant, indices
+
+    def predict(
+        self,
+        model: ModelInterface,
+        batch: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Run sliding window latent extraction.
+
+        Args:
+            model: VQModel instance
+            batch: Input volumes [B, C, D, H, W]
+
+        Returns:
+            Codebook indices [B, D', H', W'] where D', H', W' are latent dimensions
+        """
+        from monai.inferers import sliding_window_inference
+
+        model.eval()
+        device = model.device
+        vq_model = cast(VQModelInterface, model)
+
+        with torch.no_grad():
+            # Test with a dummy to get actual latent size
+            dummy_out = vq_model.encoder(batch[:1])
+            dummy_out = vq_model.quant_conv(dummy_out)
+            _, d_latent, h_latent, w_latent = dummy_out.shape
+
+        B = batch.shape[0]
+        c_latent = vq_model.latent_shape[0]
+
+        # Create predictor that returns quantized latent
+        def encode_predictor(x: torch.Tensor) -> torch.Tensor:
+            quant, _ = self._encode_patch(vq_model, x)
+            return quant
+
+        with torch.no_grad():
+            # Get quantized latents via sliding window
+            quantized_latent = sliding_window_inference(
+                inputs=batch,
+                roi_size=self.roi_size,
+                sw_batch_size=self.sw_batch_size,
+                predictor=encode_predictor,
+                overlap=self.overlap,
+                mode=self.mode,
+                sigma_scale=self.sigma_scale,
+                sw_device=device,
+                device=device,
+                progress=self.progress,
+            )
+
+            # Now get indices from the quantized latent
+            # Reshape for quantize: (B, C, D, H, W) -> (B, D, H, W, C)
+            quant_flat = quantized_latent.permute(0, 2, 3, 4, 1).reshape(-1, c_latent)
+
+            # Get indices by finding nearest codebook entry
+            dist = torch.sum(quant_flat ** 2, dim=1, keepdim=True) + \
+                   torch.sum(vq_model.quantize.embedding.weight ** 2, dim=1) - \
+                   2 * torch.matmul(quant_flat, vq_model.quantize.embedding.weight.t())
+            indices = torch.argmin(dist, dim=1)
+
+            # Reshape indices to spatial
+            indices = indices.reshape(B, d_latent, h_latent, w_latent)
+
+        return indices
+
+    def extract_latent_and_indices(
+        self,
+        model: ModelInterface,
+        batch: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Extract both latent representations and codebook indices.
+
+        Args:
+            model: VQModel instance
+            batch: Input volumes [B, C, D, H, W]
+
+        Returns:
+            Tuple of (quantized_latent, indices)
+            - quantized_latent: [B, C', D', H', W']
+            - indices: [B, D', H', W']
+        """
+        from monai.inferers import sliding_window_inference
+
+        model.eval()
+        device = model.device
+        vq_model = cast(VQModelInterface, model)
+
+        with torch.no_grad():
+            # Get latent shape
+            dummy_out = vq_model.encoder(batch[:1])
+            dummy_out = vq_model.quant_conv(dummy_out)
+            c_latent, d_latent, h_latent, w_latent = dummy_out.shape[1:]
+
+        B = batch.shape[0]
+
+        # Store indices from each patch for later combination
+        # We need a custom approach to get indices without re-running inference
+        # The issue: sliding window blends latents, but we need original indices
+        # Solution: run encoder-only sliding window, then quantize the blended result
+
+        def encode_predictor(x: torch.Tensor) -> torch.Tensor:
+            """Returns encoder output (before quantization) for blending."""
+            h = vq_model.encoder(x)
+            h = vq_model.quant_conv(h)
+            return h
+
+        with torch.no_grad():
+            # Get encoder output via sliding window (blended)
+            encoder_output = sliding_window_inference(
+                inputs=batch,
+                roi_size=self.roi_size,
+                sw_batch_size=self.sw_batch_size,
+                predictor=encode_predictor,
+                overlap=self.overlap,
+                mode=self.mode,
+                sigma_scale=self.sigma_scale,
+                sw_device=device,
+                device=device,
+                progress=self.progress,
+            )
+
+            # Quantize the blended encoder output
+            quantized_latent, _, info = vq_model.quantize(encoder_output)
+
+            # Get indices from the quantized result
+            # Note: This gives indices for the blended latent, which is a reasonable approximation
+            indices = info[2]  # min_encoding_indices
+            indices = indices.reshape(B, d_latent, h_latent, w_latent)
+
+        return quantized_latent, indices
+
+    def post_process(
+        self,
+        predictions: torch.Tensor,
+    ) -> dict[str, Any]:
+        """
+        Post-process predictions.
+
+        Args:
+            predictions: Codebook indices
+
+        Returns:
+            Dictionary with indices
+        """
+        return {
+            "indices": predictions.cpu().numpy(),
+        }

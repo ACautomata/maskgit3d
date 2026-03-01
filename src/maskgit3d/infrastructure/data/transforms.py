@@ -20,10 +20,14 @@ from monai.transforms import (
     MapTransform,
     NormalizeIntensity,
     NormalizeIntensityd,
+    RandSpatialCrop,
+    RandSpatialCropd,
     Resize,
     Resized,
     ScaleIntensityRange,
     ScaleIntensityRanged,
+    SpatialPad,
+    SpatialPadd,
 )
 
 _DICT_TRANSFORM_EXTENSIONS = (
@@ -215,5 +219,208 @@ def create_brats2023_preprocessing(
         )
     else:
         transforms.append(Resized(keys="image", spatial_size=spatial_size, mode="trilinear"))
+
+    return Compose(transforms)
+
+
+# =============================================================================
+# Training Transforms with Random Crop
+# =============================================================================
+
+
+def create_brats_training_preprocessing(
+    crop_size: Tuple[int, int, int] = (128, 128, 128),
+    normalize_mode: str = "zscore",
+) -> Compose:
+    """
+    Create training preprocessing pipeline for BraTS MRI data with random crop.
+
+    Args:
+        crop_size: Crop spatial dimensions (D, H, W) for training
+        normalize_mode: Normalization mode ("minmax" or "zscore")
+
+    Returns:
+        MONAI Compose object with BraTS training preprocessing
+    """
+    transforms = [
+        EnsureType(),
+        EnsureChannelFirst(channel_dim="no_channel"),
+        NormalizeIntensity()
+        if normalize_mode == "zscore"
+        else ScaleIntensityRange(a_min=None, a_max=None, b_min=-1.0, b_max=1.0, clip=True),
+        # Pad if image smaller than crop size, then random crop
+        SpatialPad(spatial_size=crop_size, mode="constant"),
+        RandSpatialCrop(roi_size=crop_size, random_center=True, random_size=False),
+    ]
+    return Compose(transforms)
+
+
+def create_brats_inference_preprocessing(
+    normalize_mode: str = "zscore",
+) -> Compose:
+    """
+    Create inference preprocessing pipeline for BraTS MRI data.
+
+    No resize/crop - keep original size for sliding window inference.
+
+    Args:
+        normalize_mode: Normalization mode ("minmax" or "zscore")
+
+    Returns:
+        MONAI Compose object with BraTS inference preprocessing
+    """
+    transforms = [
+        EnsureType(),
+        EnsureChannelFirst(channel_dim="no_channel"),
+        NormalizeIntensity()
+        if normalize_mode == "zscore"
+        else ScaleIntensityRange(a_min=None, a_max=None, b_min=-1.0, b_max=1.0, clip=True),
+    ]
+    return Compose(transforms)
+
+
+def create_medmnist_training_preprocessing(
+    crop_size: Tuple[int, int, int] = (32, 32, 32),
+    input_size: int = 28,
+) -> Compose:
+    """
+    Create training preprocessing pipeline for MedMnist3D data with random crop.
+
+    Args:
+        crop_size: Crop spatial dimensions (D, H, W) for training
+        input_size: Input size (28 or 64 for MedMnist3D)
+
+    Returns:
+        MONAI Compose object with MedMnist3D training preprocessing
+    """
+    transforms = [
+        EnsureType(),
+        EnsureChannelFirst(channel_dim="no_channel"),
+        ScaleIntensityRange(a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0, clip=True),
+        # Pad if smaller than crop size, then random crop
+        SpatialPad(spatial_size=crop_size, mode="constant"),
+        RandSpatialCrop(roi_size=crop_size, random_center=True, random_size=False),
+    ]
+    return Compose(transforms)
+
+
+def create_medmnist_inference_preprocessing() -> Compose:
+    """
+    Create inference preprocessing pipeline for MedMnist3D data.
+
+    No resize/crop - keep original size for sliding window inference.
+
+    Returns:
+        MONAI Compose object with MedMnist3D inference preprocessing
+    """
+    transforms = [
+        EnsureType(),
+        EnsureChannelFirst(channel_dim="no_channel"),
+        ScaleIntensityRange(a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0, clip=True),
+    ]
+    return Compose(transforms)
+
+
+def create_brats2023_training_preprocessing(
+    crop_size: Tuple[int, int, int] = (128, 128, 128),
+    normalize_mode: str = "zscore",
+    task: str = "reconstruction",
+) -> Compose:
+    """
+    Create training preprocessing pipeline for BraTS 2023 data with random crop.
+
+    Args:
+        crop_size: Crop spatial dimensions (D, H, W) for training
+        normalize_mode: Normalization mode ("minmax" or "zscore")
+        task: Task type ("reconstruction" or "segmentation")
+
+    Returns:
+        MONAI Compose object with dictionary-based training preprocessing
+    """
+    if normalize_mode not in ("minmax", "zscore"):
+        raise ValueError(f"normalize_mode must be 'minmax' or 'zscore', got '{normalize_mode}'")
+
+    if task not in ("reconstruction", "segmentation"):
+        raise ValueError(f"task must be 'reconstruction' or 'segmentation', got '{task}'")
+
+    load_keys = ["image", "label"] if task == "segmentation" else ["image"]
+
+    transforms = [
+        LoadImaged(keys=load_keys, image_only=True),
+        EnsureChannelFirstd(keys="image"),
+    ]
+
+    if task == "segmentation":
+        transforms.append(ConvertToMultiChannelBasedOnBratsClassesd(keys="label"))
+
+    if normalize_mode == "zscore":
+        transforms.append(NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True))
+    else:
+        transforms.append(
+            ScaleIntensityRanged(
+                keys="image",
+                a_min=None,
+                a_max=None,
+                b_min=-1.0,
+                b_max=1.0,
+                clip=True,
+            )
+        )
+
+    # Pad and random crop
+    crop_keys = ["image"] if task == "reconstruction" else ["image", "label"]
+    transforms.extend([
+        SpatialPadd(keys=crop_keys, spatial_size=crop_size, mode="constant"),
+        RandSpatialCropd(keys=crop_keys, roi_size=crop_size, random_center=True, random_size=False),
+    ])
+
+    return Compose(transforms)
+
+
+def create_brats2023_inference_preprocessing(
+    normalize_mode: str = "zscore",
+    task: str = "reconstruction",
+) -> Compose:
+    """
+    Create inference preprocessing pipeline for BraTS 2023 data.
+
+    No resize/crop - keep original size for sliding window inference.
+
+    Args:
+        normalize_mode: Normalization mode ("minmax" or "zscore")
+        task: Task type ("reconstruction" or "segmentation")
+
+    Returns:
+        MONAI Compose object with dictionary-based inference preprocessing
+    """
+    if normalize_mode not in ("minmax", "zscore"):
+        raise ValueError(f"normalize_mode must be 'minmax' or 'zscore', got '{normalize_mode}'")
+
+    if task not in ("reconstruction", "segmentation"):
+        raise ValueError(f"task must be 'reconstruction' or 'segmentation', got '{task}'")
+
+    load_keys = ["image", "label"] if task == "segmentation" else ["image"]
+
+    transforms = [
+        LoadImaged(keys=load_keys, image_only=True),
+        EnsureChannelFirstd(keys="image"),
+    ]
+
+    if task == "segmentation":
+        transforms.append(ConvertToMultiChannelBasedOnBratsClassesd(keys="label"))
+
+    if normalize_mode == "zscore":
+        transforms.append(NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True))
+    else:
+        transforms.append(
+            ScaleIntensityRanged(
+                keys="image",
+                a_min=None,
+                a_max=None,
+                b_min=-1.0,
+                b_max=1.0,
+                clip=True,
+            )
+        )
 
     return Compose(transforms)
