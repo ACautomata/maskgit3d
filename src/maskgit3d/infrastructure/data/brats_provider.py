@@ -7,8 +7,9 @@ from the BraTS (Brain Tumor Segmentation) dataset.
 
 import logging
 import random
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Any
 
 import nibabel as nib
 import torch
@@ -66,10 +67,10 @@ class BraTS2021Dataset(Dataset):
     def __init__(
         self,
         data_dir: Path,
-        patient_ids: List[str],
-        modalities: List[str],
-        transform: Optional[Compose] = None,
-        spatial_size: Tuple[int, int, int] = (64, 64, 64),
+        patient_ids: list[str],
+        modalities: list[str],
+        transform: Compose | None = None,
+        spatial_size: tuple[int, int, int] = (64, 64, 64),
     ):
         """
         Initialize BraTS dataset.
@@ -102,7 +103,7 @@ class BraTS2021Dataset(Dataset):
                 f"Supported modalities are: {list(BRATS_MODALITIES.keys())}"
             )
 
-    def _build_file_paths(self) -> Dict[str, Dict[str, Path]]:
+    def _build_file_paths(self) -> dict[str, dict[str, Path]]:
         """
         Build dictionary mapping patient IDs to their modality file paths.
 
@@ -144,7 +145,7 @@ class BraTS2021Dataset(Dataset):
         """Return number of samples in dataset."""
         return len(self._file_paths)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Get a single sample.
 
@@ -208,8 +209,8 @@ class BraTS2023Dataset(Dataset):
 
     def __init__(
         self,
-        data_dicts: List[Dict[str, Any]],
-        transform: Optional[Compose] = None,
+        data_dicts: list[dict[str, Any]],
+        transform: Compose | None = None,
         task: str = "reconstruction",
     ):
         """
@@ -228,7 +229,7 @@ class BraTS2023Dataset(Dataset):
     def __len__(self) -> int:
         return len(self.data_dicts)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         data = dict(self.data_dicts[idx])
 
         if self.transform is not None:
@@ -237,10 +238,7 @@ class BraTS2023Dataset(Dataset):
         image = data["image"]
         tumor_type = torch.tensor(data["tumor_type"], dtype=torch.long)
 
-        if self.task == "segmentation":
-            target = data["label"]
-        else:
-            target = image.clone()
+        target = data["label"] if self.task == "segmentation" else image.clone()
 
         return image, target, tumor_type
 
@@ -310,9 +308,9 @@ class BraTSDataProvider(DataProvider):
 
     def __init__(
         self,
-        data_dir: Union[str, Path, None] = None,
-        modalities: Optional[List[str]] = None,
-        spatial_size: Tuple[int, int, int] = (64, 64, 64),
+        data_dir: str | Path | None = None,
+        modalities: list[str] | None = None,
+        spatial_size: tuple[int, int, int] = (64, 64, 64),
         batch_size: int = 1,
         num_workers: int = 4,
         train_ratio: float = 0.7,
@@ -322,8 +320,8 @@ class BraTSDataProvider(DataProvider):
         normalize_mode: str = "zscore",
         version: str = "2023",
         task: str = "reconstruction",
-        tumor_types: Optional[List[str]] = None,
-        data_dirs: Optional[Dict[str, Union[str, Path]]] = None,
+        tumor_types: list[str] | None = None,
+        data_dirs: dict[str, str | Path] | None = None,
     ):
         self.data_dir = Path(data_dir) if data_dir is not None else None
         self.modalities = modalities or DEFAULT_MODALITIES
@@ -352,7 +350,7 @@ class BraTSDataProvider(DataProvider):
                 spatial_size=spatial_size,
                 normalize_mode=normalize_mode,
             )
-            self._all_samples: List[Union[str, Dict[str, Any]]] = self._discover_patients_2021()
+            self._all_samples: list[str | dict[str, Any]] = self._discover_patients_2021()
             self._train_samples, self._val_samples, self._test_samples = self._split_patients(
                 [sample for sample in self._all_samples if isinstance(sample, str)]
             )
@@ -369,9 +367,9 @@ class BraTSDataProvider(DataProvider):
                 )
             )
 
-        self._train_dataset: Optional[Dataset] = None
-        self._val_dataset: Optional[Dataset] = None
-        self._test_dataset: Optional[Dataset] = None
+        self._train_dataset: Dataset | None = None
+        self._val_dataset: Dataset | None = None
+        self._test_dataset: Dataset | None = None
 
     def _validate_inputs(self) -> None:
         """Validate all input parameters."""
@@ -457,12 +455,12 @@ class BraTSDataProvider(DataProvider):
                         f"BraTS data directory for {tumor_type} not found: {self.data_dirs[tumor_type]}"
                     )
 
-    def _discover_patients_2021(self) -> List[str]:
+    def _discover_patients_2021(self) -> list[str]:
         """Discover BraTS 2021 patient folders in the data directory."""
         if self.data_dir is None:
             return []
 
-        patient_ids: List[str] = []
+        patient_ids: list[str] = []
         for item in self.data_dir.iterdir():
             if item.is_dir() and list(item.glob("*.nii.gz")):
                 patient_ids.append(item.name)
@@ -488,10 +486,10 @@ class BraTSDataProvider(DataProvider):
         self,
         patient_dir: Path,
         tumor_type: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Build BraTS 2023 sample dictionary for one patient."""
         patient_id = patient_dir.name
-        modality_paths: List[str] = []
+        modality_paths: list[str] = []
 
         for suffix in BRATS2023_MODALITIES.values():
             modality_path = patient_dir / f"{patient_id}{suffix}"
@@ -504,7 +502,7 @@ class BraTSDataProvider(DataProvider):
                 return None
             modality_paths.append(str(modality_path))
 
-        sample: Dict[str, Any] = {
+        sample: dict[str, Any] = {
             "image": modality_paths,
             "tumor_type": TUMOR_TYPE_MAP[tumor_type],
         }
@@ -522,9 +520,9 @@ class BraTSDataProvider(DataProvider):
 
         return sample
 
-    def _discover_patients_2023(self) -> List[Dict[str, Any]]:
+    def _discover_patients_2023(self) -> list[dict[str, Any]]:
         """Discover BraTS 2023 patients and build MONAI dictionary samples."""
-        patient_dicts: List[Dict[str, Any]] = []
+        patient_dicts: list[dict[str, Any]] = []
 
         if self.data_dir is not None:
             for tumor_type in self.tumor_types:
@@ -554,7 +552,7 @@ class BraTSDataProvider(DataProvider):
         logger.info("Discovered %s BraTS 2023 patients", len(patient_dicts))
         return patient_dicts
 
-    def _split_patients(self, patient_ids: List[str]) -> Tuple[List[str], List[str], List[str]]:
+    def _split_patients(self, patient_ids: list[str]) -> tuple[list[str], list[str], list[str]]:
         """Split patient IDs into train, validation, and test sets."""
         rng = random.Random(self.random_seed)
         shuffled_ids = patient_ids.copy()
@@ -578,11 +576,11 @@ class BraTSDataProvider(DataProvider):
 
     def _split_patients_stratified(
         self,
-        patient_dicts: List[Dict[str, Any]],
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+        patient_dicts: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
         """Split samples by tumor type with stratified train/val/test ratios."""
         rng = random.Random(self.random_seed)
-        grouped: Dict[int, List[Dict[str, Any]]] = {
+        grouped: dict[int, list[dict[str, Any]]] = {
             TUMOR_TYPE_MAP["GLI"]: [],
             TUMOR_TYPE_MAP["MEN"]: [],
             TUMOR_TYPE_MAP["MET"]: [],
@@ -591,9 +589,9 @@ class BraTSDataProvider(DataProvider):
         for sample in patient_dicts:
             grouped[sample["tumor_type"]].append(sample)
 
-        train_samples: List[Dict[str, Any]] = []
-        val_samples: List[Dict[str, Any]] = []
-        test_samples: List[Dict[str, Any]] = []
+        train_samples: list[dict[str, Any]] = []
+        val_samples: list[dict[str, Any]] = []
+        test_samples: list[dict[str, Any]] = []
 
         for tumor_type, samples in grouped.items():
             samples_copy = samples.copy()
@@ -680,7 +678,7 @@ class BraTSDataProvider(DataProvider):
                 )
         return self._test_dataset
 
-    def train_loader(self) -> Iterator[Tuple[torch.Tensor, ...]]:
+    def train_loader(self) -> Iterator[tuple[torch.Tensor, ...]]:
         """Get training data loader."""
         loader = DataLoader(
             self.train_dataset,
@@ -692,7 +690,7 @@ class BraTSDataProvider(DataProvider):
         )
         return iter(loader)
 
-    def val_loader(self) -> Iterator[Tuple[torch.Tensor, ...]]:
+    def val_loader(self) -> Iterator[tuple[torch.Tensor, ...]]:
         """Get validation data loader."""
         loader = DataLoader(
             self.val_dataset,
@@ -704,7 +702,7 @@ class BraTSDataProvider(DataProvider):
         )
         return iter(loader)
 
-    def test_loader(self) -> Iterator[Tuple[torch.Tensor, ...]]:
+    def test_loader(self) -> Iterator[tuple[torch.Tensor, ...]]:
         """Get test data loader."""
         loader = DataLoader(
             self.test_dataset,
@@ -738,7 +736,7 @@ class BraTSDataProvider(DataProvider):
         """Return number of test samples."""
         return len(self._test_samples)
 
-    def get_patient_info(self, patient_id: str) -> Dict[str, Any]:
+    def get_patient_info(self, patient_id: str) -> dict[str, Any]:
         """Get information about a specific patient."""
         if self.version == "2021":
             if self.data_dir is None:
@@ -773,7 +771,7 @@ class BraTSDataProvider(DataProvider):
             if isinstance(sample, dict):
                 sample_patient_id = Path(sample["image"][0]).parent.name
                 if sample_patient_id == patient_id:
-                    info: Dict[str, Any] = {
+                    info: dict[str, Any] = {
                         "patient_id": patient_id,
                         "tumor_type": sample["tumor_type"],
                         "file_paths": {"image": sample["image"]},

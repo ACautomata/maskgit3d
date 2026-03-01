@@ -14,11 +14,10 @@ Key requirements:
    downsampling factor.
 """
 
-from typing import Tuple
 
 
 def compute_downsampling_factor(
-    channel_multipliers: Tuple[int, ...] = (1, 1, 2, 2, 4),
+    channel_multipliers: tuple[int, ...] = (1, 1, 2, 2, 4),
 ) -> int:
     """
     Compute the downsampling factor from VQVAE channel multipliers.
@@ -44,9 +43,9 @@ def compute_downsampling_factor(
 
 
 def validate_crop_size(
-    crop_size: Tuple[int, int, int],
+    crop_size: tuple[int, int, int],
     downsampling_factor: int = 16,
-) -> Tuple[int, int, int]:
+) -> tuple[int, int, int]:
     """
     Validate and adjust crop size to be divisible by downsampling factor.
 
@@ -79,10 +78,10 @@ def validate_crop_size(
 
 
 def validate_roi_size(
-    roi_size: Tuple[int, int, int],
+    roi_size: tuple[int, int, int],
     overlap: float,
     downsampling_factor: int = 16,
-) -> Tuple[int, int, int]:
+) -> tuple[int, int, int]:
     """
     Validate and adjust ROI size for sliding window inference.
 
@@ -132,9 +131,9 @@ def validate_roi_size(
 
 
 def compute_padded_size(
-    input_size: Tuple[int, int, int],
+    input_size: tuple[int, int, int],
     downsampling_factor: int = 16,
-) -> Tuple[int, int, int]:
+) -> tuple[int, int, int]:
     """
     Compute the minimum padded size divisible by downsampling factor.
 
@@ -166,9 +165,9 @@ def compute_padded_size(
 
 
 def compute_output_crop(
-    original_size: Tuple[int, int, int],
-    padded_size: Tuple[int, int, int],
-) -> Tuple[slice, slice, slice]:
+    original_size: tuple[int, int, int],
+    padded_size: tuple[int, int, int],
+) -> tuple[slice, slice, slice]:
     """
     Compute slicing to crop output back to original size.
 

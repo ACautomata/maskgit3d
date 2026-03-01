@@ -5,7 +5,6 @@ This module provides common MONAI-based preprocessing pipelines for
 various medical imaging datasets (BraTS, MedMnist3D, etc.).
 """
 
-from typing import Tuple
 
 from monai.transforms import (
     Compose,
@@ -47,9 +46,9 @@ _DICT_TRANSFORM_EXTENSIONS = (
 
 
 def create_3d_preprocessing(
-    spatial_size: Tuple[int, int, int] = (64, 64, 64),
+    spatial_size: tuple[int, int, int] = (64, 64, 64),
     normalize_mode: str = "minmax",
-    output_range: Tuple[float, float] = (-1.0, 1.0),
+    output_range: tuple[float, float] = (-1.0, 1.0),
 ) -> Compose:
     """
     Create a standard 3D preprocessing pipeline.
@@ -108,7 +107,7 @@ def normalize_to_neg_one_one(x):
 
 
 def create_brats_preprocessing(
-    spatial_size: Tuple[int, int, int] = (64, 64, 64),
+    spatial_size: tuple[int, int, int] = (64, 64, 64),
     normalize_mode: str = "zscore",
 ) -> Compose:
     """
@@ -139,7 +138,7 @@ def create_brats_preprocessing(
 
 
 def create_medmnist_preprocessing(
-    spatial_size: Tuple[int, int, int] = (64, 64, 64),
+    spatial_size: tuple[int, int, int] = (64, 64, 64),
     input_size: int = 28,
 ) -> Compose:
     """
@@ -170,7 +169,7 @@ def create_medmnist_preprocessing(
 
 
 def create_brats2023_preprocessing(
-    spatial_size: Tuple[int, int, int] = (64, 64, 64),
+    spatial_size: tuple[int, int, int] = (64, 64, 64),
     normalize_mode: str = "zscore",
     task: str = "reconstruction",
 ) -> Compose:
@@ -235,7 +234,7 @@ def create_brats2023_preprocessing(
 
 
 def create_brats_training_preprocessing(
-    crop_size: Tuple[int, int, int] = (128, 128, 128),
+    crop_size: tuple[int, int, int] = (128, 128, 128),
     normalize_mode: str = "zscore",
 ) -> Compose:
     """
@@ -286,7 +285,7 @@ def create_brats_inference_preprocessing(
 
 
 def create_medmnist_training_preprocessing(
-    crop_size: Tuple[int, int, int] = (32, 32, 32),
+    crop_size: tuple[int, int, int] = (32, 32, 32),
     input_size: int = 28,
 ) -> Compose:
     """
@@ -328,7 +327,7 @@ def create_medmnist_inference_preprocessing() -> Compose:
 
 
 def create_brats2023_training_preprocessing(
-    crop_size: Tuple[int, int, int] = (128, 128, 128),
+    crop_size: tuple[int, int, int] = (128, 128, 128),
     normalize_mode: str = "zscore",
     task: str = "reconstruction",
 ) -> Compose:
@@ -432,9 +431,9 @@ def create_brats2023_inference_preprocessing(
 
 
 def create_vqvae_training_preprocessing(
-    crop_size: Tuple[int, int, int] = (128, 128, 128),
+    crop_size: tuple[int, int, int] = (128, 128, 128),
     normalize_mode: str = "zscore",
-    channel_multipliers: Tuple[int, ...] = (1, 1, 2, 2, 4),
+    channel_multipliers: tuple[int, ...] = (1, 1, 2, 2, 4),
 ) -> Compose:
     """
     Create VQVAE-aware training preprocessing with divisible padding.
@@ -474,7 +473,7 @@ def create_vqvae_training_preprocessing(
 
 def create_vqvae_inference_preprocessing(
     normalize_mode: str = "zscore",
-    channel_multipliers: Tuple[int, ...] = (1, 1, 2, 2, 4),
+    channel_multipliers: tuple[int, ...] = (1, 1, 2, 2, 4),
 ) -> Compose:
     """
     Create VQVAE-aware inference preprocessing with divisible padding.
@@ -511,7 +510,7 @@ def create_vqvae_inference_preprocessing(
 
 def create_vqvae_sliding_window_inference_preprocessing(
     normalize_mode: str = "zscore",
-    channel_multipliers: Tuple[int, ...] = (1, 1, 2, 2, 4),
+    channel_multipliers: tuple[int, ...] = (1, 1, 2, 2, 4),
 ) -> Compose:
     """
     Create VQVAE-aware preprocessing for sliding window inference.
@@ -530,10 +529,10 @@ def create_vqvae_sliding_window_inference_preprocessing(
 
 
 def create_vqvae2023_training_preprocessing(
-    crop_size: Tuple[int, int, int] = (128, 128, 128),
+    crop_size: tuple[int, int, int] = (128, 128, 128),
     normalize_mode: str = "zscore",
     task: str = "reconstruction",
-    channel_multipliers: Tuple[int, ...] = (1, 1, 2, 2, 4),
+    channel_multipliers: tuple[int, ...] = (1, 1, 2, 2, 4),
 ) -> Compose:
     """
     Create dictionary-based VQVAE training preprocessing with divisible padding.
@@ -586,7 +585,7 @@ def create_vqvae2023_training_preprocessing(
 def create_vqvae2023_inference_preprocessing(
     normalize_mode: str = "zscore",
     task: str = "reconstruction",
-    channel_multipliers: Tuple[int, ...] = (1, 1, 2, 2, 4),
+    channel_multipliers: tuple[int, ...] = (1, 1, 2, 2, 4),
 ) -> Compose:
     """
     Create dictionary-based VQVAE inference preprocessing with divisible padding.

@@ -4,8 +4,8 @@ Simple data providers for synthetic data generation.
 This module provides SimpleDataProvider for generating synthetic 3D volumes
 for testing and development purposes.
 """
-from abc import ABC
-from typing import Iterator, List, Optional, Tuple
+from collections.abc import Iterator
+
 import torch
 from torch.utils.data import DataLoader, Dataset
 
@@ -20,7 +20,7 @@ class SyntheticDataset(Dataset):
         num_samples: int,
         in_channels: int = 1,
         out_channels: int = 1,
-        spatial_size: Tuple[int, int, int] = (64, 64, 64),
+        spatial_size: tuple[int, int, int] = (64, 64, 64),
         mode: str = "train",
     ):
         """
@@ -42,7 +42,7 @@ class SyntheticDataset(Dataset):
     def __len__(self) -> int:
         return self.num_samples
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         """Get a single sample."""
         # Generate random input volume
         x = torch.randn(
@@ -78,7 +78,7 @@ class SimpleDataProvider(DataProvider):
         batch_size: int = 1,
         in_channels: int = 1,
         out_channels: int = 1,
-        spatial_size: Tuple[int, int, int] = (64, 64, 64),
+        spatial_size: tuple[int, int, int] = (64, 64, 64),
         num_workers: int = 0,
     ):
         """
@@ -126,7 +126,7 @@ class SimpleDataProvider(DataProvider):
             mode="test",
         )
 
-    def train_loader(self) -> Iterator[Tuple[torch.Tensor, torch.Tensor]]:
+    def train_loader(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         """Get training data loader."""
         loader = DataLoader(
             self.train_dataset,
@@ -137,7 +137,7 @@ class SimpleDataProvider(DataProvider):
         )
         return iter(loader)
 
-    def val_loader(self) -> Iterator[Tuple[torch.Tensor, torch.Tensor]]:
+    def val_loader(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         """Get validation data loader."""
         loader = DataLoader(
             self.val_dataset,
@@ -148,7 +148,7 @@ class SimpleDataProvider(DataProvider):
         )
         return iter(loader)
 
-    def test_loader(self) -> Iterator[Tuple[torch.Tensor, torch.Tensor]]:
+    def test_loader(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         """Get test data loader."""
         loader = DataLoader(
             self.test_dataset,

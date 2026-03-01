@@ -6,12 +6,12 @@ datasets from the MedMNIST collection, supporting various organ and structure
 datasets with automatic download and preprocessing capabilities.
 """
 
+from collections.abc import Iterator
 from enum import Enum
-from typing import Dict, Iterator, Optional, Tuple, Type
 
 import torch
-from torch.utils.data import DataLoader, Dataset
 from monai.transforms import Compose
+from torch.utils.data import DataLoader, Dataset
 
 from maskgit3d.domain.interfaces import DataProvider
 from maskgit3d.infrastructure.data.transforms import create_medmnist_preprocessing
@@ -29,10 +29,10 @@ class MedMNIST3DDataset(str, Enum):
 
 
 # Mapping from dataset type to MedMNIST class
-DATASET_CLASS_MAP: Dict[MedMNIST3DDataset, Type] = {}
+DATASET_CLASS_MAP: dict[MedMNIST3DDataset, type] = {}
 
 # Lazy import to avoid errors if medmnist is not installed
-def _get_dataset_class(dataset_type: MedMNIST3DDataset) -> Type:
+def _get_dataset_class(dataset_type: MedMNIST3DDataset) -> type:
     """
     Get the MedMNIST dataset class for the specified type.
 
@@ -53,12 +53,12 @@ def _get_dataset_class(dataset_type: MedMNIST3DDataset) -> Type:
     if not DATASET_CLASS_MAP:
         try:
             from medmnist import (
-                OrganMNIST3D,
-                NoduleMNIST3D,
                 AdrenalMNIST3D,
-                VesselMNIST3D,
                 FractureMNIST3D,
+                NoduleMNIST3D,
+                OrganMNIST3D,
                 SynapseMNIST3D,
+                VesselMNIST3D,
             )
 
             DATASET_CLASS_MAP = {
@@ -95,8 +95,8 @@ class MedMNIST3DDatasetWrapper(Dataset):
     def __init__(
         self,
         dataset: Dataset,
-        transform: Optional[Compose] = None,
-        spatial_size: Tuple[int, int, int] = (64, 64, 64),
+        transform: Compose | None = None,
+        spatial_size: tuple[int, int, int] = (64, 64, 64),
     ):
         """
         Initialize the dataset wrapper.
@@ -114,7 +114,7 @@ class MedMNIST3DDatasetWrapper(Dataset):
         """Return the number of samples in the dataset."""
         return len(self.dataset)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Get a single sample with preprocessing.
 
@@ -192,7 +192,7 @@ class MedMnist3DDataProvider(DataProvider):
     def __init__(
         self,
         dataset_type: str = "organ",
-        spatial_size: Tuple[int, int, int] = (64, 64, 64),
+        spatial_size: tuple[int, int, int] = (64, 64, 64),
         input_size: int = 28,
         batch_size: int = 16,
         num_workers: int = 4,
@@ -258,11 +258,11 @@ class MedMnist3DDataProvider(DataProvider):
         )
 
         # Load datasets lazily
-        self._train_dataset: Optional[MedMNIST3DDatasetWrapper] = None
-        self._val_dataset: Optional[MedMNIST3DDatasetWrapper] = None
-        self._test_dataset: Optional[MedMNIST3DDatasetWrapper] = None
+        self._train_dataset: MedMNIST3DDatasetWrapper | None = None
+        self._val_dataset: MedMNIST3DDatasetWrapper | None = None
+        self._test_dataset: MedMNIST3DDatasetWrapper | None = None
 
-    def _get_dataset_class(self) -> Type:
+    def _get_dataset_class(self) -> type:
         """Get the MedMNIST dataset class for the configured type."""
         return _get_dataset_class(self.dataset_type)
 
@@ -319,7 +319,7 @@ class MedMnist3DDataProvider(DataProvider):
             self._test_dataset = self._create_dataset("test")
         return self._test_dataset
 
-    def train_loader(self) -> Iterator[Tuple[torch.Tensor, torch.Tensor]]:
+    def train_loader(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         """
         Get training data loader.
 
@@ -338,7 +338,7 @@ class MedMnist3DDataProvider(DataProvider):
         )
         return iter(loader)
 
-    def val_loader(self) -> Iterator[Tuple[torch.Tensor, torch.Tensor]]:
+    def val_loader(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         """
         Get validation data loader.
 
@@ -357,7 +357,7 @@ class MedMnist3DDataProvider(DataProvider):
         )
         return iter(loader)
 
-    def test_loader(self) -> Iterator[Tuple[torch.Tensor, torch.Tensor]]:
+    def test_loader(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         """
         Get test data loader.
 
@@ -387,7 +387,7 @@ class MedMnist3DDataProvider(DataProvider):
         dataset_class = self._get_dataset_class()
         return getattr(dataset_class, "num_classes", 1)
 
-    def get_dataset_info(self) -> Dict[str, object]:
+    def get_dataset_info(self) -> dict[str, object]:
         """
         Get information about the dataset.
 
