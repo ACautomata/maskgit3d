@@ -1,0 +1,33 @@
+# @package _global_
+# MedMNIST 3D Dataset Configuration
+
+dataset:
+  name: medmnist3d
+  type: medmnist3d
+  
+  # Data parameters
+  data_dir: ./data
+  batch_size: 4
+  num_workers: 4
+  
+  # Dataset specific
+  dataset_name: organmnist3d  # organmnist3d, nodulemnist3d, etc.
+  split: train
+  download: true
+  
+  # Image parameters
+  image_size: 64
+  in_channels: 1
+  
+  # Data augmentation
+  augmentation:
+    enabled: true
+    random_flip: true
+    random_rotate: true
+    random_scale: true
+    normalize: true
+  
+  # Number of samples (for synthetic/simple datasets)
+  num_train: 1000
+  num_val: 100
+  num_test: 100

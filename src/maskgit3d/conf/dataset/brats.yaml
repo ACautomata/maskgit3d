@@ -1,0 +1,32 @@
+# @package _global_
+# BraTS Dataset Configuration
+
+dataset:
+  name: brats
+  type: brats
+  
+  # Data parameters
+  data_dir: ./data/brats
+  batch_size: 1
+  num_workers: 4
+  
+  # Dataset specific
+  modalities: ["t1", "t1ce", "t2", "flair"]
+  use_segdataset: true
+  
+  # Image parameters
+  image_size: 128
+  in_channels: 4
+  
+  # Data augmentation
+  augmentation:
+    enabled: true
+    random_flip: true
+    random_rotate: true
+    random_scale: true
+    normalize: true
+    
+  # Number of samples
+  num_train: 1000
+  num_val: 100
+  num_test: 100

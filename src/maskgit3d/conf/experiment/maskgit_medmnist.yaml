@@ -1,0 +1,34 @@
+# @package _global_
+# Example: MaskGIT + MedMNIST 3D Configuration
+
+defaults:
+  - override /model: maskgit
+  - override /dataset: medmnist3d
+  - override /training: default
+  - override /system: default
+
+experiment_name: maskgit_medmnist_experiment
+
+model:
+  image_size: 64
+  in_channels: 1
+  codebook_size: 1024
+  transformer_hidden: 512
+  transformer_layers: 8
+  transformer_heads: 8
+
+dataset:
+  batch_size: 8
+  dataset_name: organmnist3d
+
+training:
+  num_epochs: 100
+  val_frequency: 2
+  strategy_type: maskgit
+  
+  optimizer:
+    type: adam
+    lr: 1.0e-4
+
+checkpoint:
+  save_dir: ./checkpoints/maskgit_medmnist

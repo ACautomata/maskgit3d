@@ -1,0 +1,24 @@
+# @package _global_
+# Simple/Synthetic Dataset Configuration
+
+dataset:
+  name: simple
+  type: simple
+  
+  # Data parameters
+  data_dir: ./data
+  batch_size: 4
+  num_workers: 0
+  
+  # Image parameters
+  image_size: 64
+  in_channels: 1
+  
+  # Data augmentation
+  augmentation:
+    enabled: false
+  
+  # Number of samples
+  num_train: 100
+  num_val: 20
+  num_test: 20

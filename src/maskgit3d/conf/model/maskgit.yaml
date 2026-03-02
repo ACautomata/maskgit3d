@@ -1,0 +1,31 @@
+# @package _global_
+# MaskGIT Model Configuration
+
+model:
+  name: maskgit
+  type: maskgit
+  
+  # VQGAN parameters
+  in_channels: 1
+  image_size: 64
+  codebook_size: 1024
+  embed_dim: 256
+  latent_channels: 256
+  
+  # Architecture
+  channel_multipliers: [1, 1, 2, 2, 4]
+  num_res_blocks: 2
+  attn_resolutions: [16, 8]
+  dropout: 0.0
+  
+  # Transformer parameters
+  transformer_hidden: 768
+  transformer_layers: 12
+  transformer_heads: 12
+  
+  # Training parameters
+  mask_ratio: 0.5
+  temperature: 1.0
+  
+  # Inference parameters
+  num_iterations: 12

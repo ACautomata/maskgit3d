@@ -1,0 +1,18 @@
+# @package _global_
+# MAISI VQ Model Configuration
+
+model:
+  name: maisi_vq
+  type: maisi_vq
+  
+  # Model parameters
+  in_channels: 1
+  image_size: 64
+  codebook_size: 1024
+  embed_dim: 256
+  latent_channels: 4
+  
+  # Architecture
+  num_channels: [64, 128, 256]
+  num_res_blocks: [2, 2, 2]
+  attention_levels: [false, false, false]

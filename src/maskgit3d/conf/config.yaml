@@ -1,0 +1,36 @@
+# Main Hydra configuration for maskgit3d
+# Usage: maskgit3d-train model=maskgit dataset=medmnist3d
+
+defaults:
+  - model: maskgit
+  - dataset: medmnist3d
+  - training: default
+  - system: default
+  - _self_
+  - override hydra/hydra_logging: default
+  - override hydra/job_logging: default
+
+# Job name for output directory
+hydra:
+  run:
+    dir: ./outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}_${model.name}_${dataset.name}
+  sweep:
+    dir: ./outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra:job.num}
+
+# Experiment name
+experiment_name: maskgit3d_experiment
+
+# Mode: train or test
+mode: train
+
+# Checkpoint paths
+checkpoint:
+  save_dir: ./checkpoints
+  resume_from: null  # Path to checkpoint to resume from
+  load_from: null    # Path to checkpoint to load for testing
+
+# Output configuration
+output:
+  save_predictions: false
+  output_dir: ./outputs

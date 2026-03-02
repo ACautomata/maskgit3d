@@ -94,7 +94,6 @@ class ModelModule(Module):
         Returns:
             Configured model
         """
-        # Default to MaskGIT model
         model_type = self.model_config.get("type", "maskgit")
         model_params = self.model_config.get("params", {})
 
@@ -102,8 +101,15 @@ class ModelModule(Module):
             from maskgit3d.infrastructure.maskgit import MaskGITModel
 
             return MaskGITModel(**model_params)
-        raise ValueError(f"Unknown model type: {model_type}")
+        elif model_type in ("vqgan3d", "vqgan"):
+            from maskgit3d.infrastructure.vqgan import VQModel3D
 
+            return VQModel3D(**model_params)
+        elif model_type == "maisi_vq":
+            from maskgit3d.infrastructure.vqgan import MaisiVQModel3D
+
+            return MaisiVQModel3D(**model_params)
+        raise ValueError(f"Unknown model type: {model_type}")
 
 class DataModule(Module):
     """

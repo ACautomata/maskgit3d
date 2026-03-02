@@ -1,0 +1,32 @@
+# @package _global_
+# Example: VQGAN + BraTS Configuration
+
+defaults:
+  - override /model: vqgan
+  - override /dataset: brats
+  - override /training: default
+  - override /system: default
+
+experiment_name: vqgan_brats_experiment
+
+model:
+  image_size: 128
+  in_channels: 4
+  codebook_size: 512
+
+dataset:
+  batch_size: 1
+  image_size: 128
+  in_channels: 4
+
+training:
+  num_epochs: 200
+  val_frequency: 5
+  strategy_type: vqgan
+  
+  optimizer:
+    type: adam
+    lr: 4.5e-6
+
+checkpoint:
+  save_dir: ./checkpoints/vqgan_brats
