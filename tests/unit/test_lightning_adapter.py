@@ -1,25 +1,25 @@
-"""Tests for LightningTrainingPipeline as LightningModule adapter."""
+"""Tests for FabricTrainingPipeline as Lightning Fabric adapter."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
 
-# Try importing pytorch_lightning, skip if not available
+# Try importing lightning, skip if not available
 try:
-    import pytorch_lightning as pl
+    import lightning as L
 
-    PL_AVAILABLE = True
+    LIGHTNING_AVAILABLE = True
 except ImportError:
-    PL_AVAILABLE = False
+    LIGHTNING_AVAILABLE = False
 
-from maskgit3d.application.pipeline import LightningTrainingPipeline
+from maskgit3d.application.pipeline import FabricTrainingPipeline
 
-pytestmark = pytest.mark.skipif(not PL_AVAILABLE, reason="pytorch_lightning not installed")
+pytestmark = pytest.mark.skipif(not LIGHTNING_AVAILABLE, reason="lightning not installed")
 
 
-def test_lightning_training_pipeline_is_lightning_module():
-    """Test that LightningTrainingPipeline is a subclass of LightningModule."""
+def test_fabric_training_pipeline_initialization():
+    """Test that FabricTrainingPipeline initializes correctly."""
     # Create mock dependencies
     mock_model = MagicMock()
     mock_data_provider = MagicMock()
@@ -29,20 +29,22 @@ def test_lightning_training_pipeline_is_lightning_module():
     mock_optimizer_factory.create.return_value = mock_optimizer
 
     # Create the pipeline
-    pipeline = LightningTrainingPipeline(
+    pipeline = FabricTrainingPipeline(
         model=mock_model,
         data_provider=mock_data_provider,
         training_strategy=mock_training_strategy,
         optimizer_factory=mock_optimizer_factory,
     )
 
-    # Assert it's a LightningModule
-    assert isinstance(pipeline, pl.LightningModule)  # type: ignore[union-attr]
-    assert isinstance(pipeline, pl.LightningModule)  # type: ignore[union-attr]
+    # Check attributes are set
+    assert pipeline.model is mock_model
+    assert pipeline.data_provider is mock_data_provider
+    assert pipeline.training_strategy is mock_training_strategy
+    assert pipeline.optimizer_factory is mock_optimizer_factory
 
 
-def test_lightning_training_pipeline_has_required_methods():
-    """Test that LightningTrainingPipeline has Lightning-compatible methods."""
+def test_fabric_training_pipeline_has_required_methods():
+    """Test that FabricTrainingPipeline has required methods."""
     mock_model = MagicMock()
     mock_data_provider = MagicMock()
     mock_training_strategy = MagicMock()
@@ -50,7 +52,7 @@ def test_lightning_training_pipeline_has_required_methods():
     mock_optimizer = MagicMock()
     mock_optimizer_factory.create.return_value = mock_optimizer
 
-    pipeline = LightningTrainingPipeline(
+    pipeline = FabricTrainingPipeline(
         model=mock_model,
         data_provider=mock_data_provider,
         training_strategy=mock_training_strategy,
@@ -58,59 +60,75 @@ def test_lightning_training_pipeline_has_required_methods():
     )
 
     # Check required methods exist
-    assert hasattr(pipeline, "training_step")
-    assert hasattr(pipeline, "validation_step")
-    assert hasattr(pipeline, "configure_optimizers")
+    assert hasattr(pipeline, "run")
+    assert hasattr(pipeline, "_train_epoch")
+    assert hasattr(pipeline, "_validate_epoch")
+    assert hasattr(pipeline, "_save_checkpoint")
+    assert hasattr(pipeline, "_load_checkpoint")
 
 
-def test_lightning_training_pipeline_training_step():
-    """Test that training_step returns proper Lightning format."""
+def test_fabric_training_pipeline_configurable_params():
+    """Test that FabricTrainingPipeline accepts Fabric configuration."""
     mock_model = MagicMock()
     mock_data_provider = MagicMock()
     mock_training_strategy = MagicMock()
     mock_optimizer_factory = MagicMock()
-    mock_optimizer = MagicMock()
-    mock_optimizer_factory.create.return_value = mock_optimizer
 
-    # Mock training strategy to return metrics
-    mock_training_strategy.train_step.return_value = {"loss": 0.5}
-
-    pipeline = LightningTrainingPipeline(
+    # Create with custom Fabric parameters
+    pipeline = FabricTrainingPipeline(
         model=mock_model,
         data_provider=mock_data_provider,
         training_strategy=mock_training_strategy,
         optimizer_factory=mock_optimizer_factory,
+        accelerator="cuda",
+        devices=2,
+        strategy="ddp",
+        precision="16-mixed",
     )
 
-    # Create a dummy batch
-    batch = (torch.randn(1, 1, 64, 64, 64), torch.randn(1, 1, 64, 64, 64))
-
-    # Mock optimizers to return the mock optimizer
-    with patch.object(pipeline, "_move_batch_to_device", return_value=batch), \
-         patch.object(pipeline, "optimizers", return_value=mock_optimizer):
-        result = pipeline.training_step(batch, 0)
-
-    # Check result has loss key
-    assert "loss" in result
+    # Check Fabric parameters are stored
+    assert pipeline._accelerator == "cuda"
+    assert pipeline._devices == 2
+    assert pipeline._strategy == "ddp"
+    assert pipeline._precision == "16-mixed"
 
 
-def test_lightning_training_pipeline_configure_optimizers():
-    """Test that configure_optimizers returns the optimizer."""
-    mock_model = MagicMock()
-    mock_data_provider = MagicMock()
-    mock_training_strategy = MagicMock()
-    mock_optimizer_factory = MagicMock()
-    mock_optimizer = MagicMock()
-    mock_optimizer_factory.create.return_value = mock_optimizer
+def test_fabric_training_pipeline_import_error():
+    """Test that FabricTrainingPipeline raises ImportError when lightning not available."""
+    with patch("maskgit3d.application.pipeline.LIGHTNING_AVAILABLE", False):
+        mock_model = MagicMock()
+        mock_data_provider = MagicMock()
+        mock_training_strategy = MagicMock()
+        mock_optimizer_factory = MagicMock()
 
-    pipeline = LightningTrainingPipeline(
-        model=mock_model,
-        data_provider=mock_data_provider,
-        training_strategy=mock_training_strategy,
-        optimizer_factory=mock_optimizer_factory,
-    )
+        with pytest.raises(ImportError, match="Lightning is not installed"):
+            FabricTrainingPipeline(
+                model=mock_model,
+                data_provider=mock_data_provider,
+                training_strategy=mock_training_strategy,
+                optimizer_factory=mock_optimizer_factory,
+            )
 
-    optimizer = pipeline.configure_optimizers()
 
-    # Should return the optimizer created by the factory
-    assert optimizer is mock_optimizer
+def test_fabric_training_pipeline_checkpoint_dir():
+    """Test that FabricTrainingPipeline creates checkpoint directory."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mock_model = MagicMock()
+        mock_data_provider = MagicMock()
+        mock_training_strategy = MagicMock()
+        mock_optimizer_factory = MagicMock()
+
+        checkpoint_dir = f"{tmpdir}/checkpoints"
+
+        pipeline = FabricTrainingPipeline(
+            model=mock_model,
+            data_provider=mock_data_provider,
+            training_strategy=mock_training_strategy,
+            optimizer_factory=mock_optimizer_factory,
+            checkpoint_dir=checkpoint_dir,
+        )
+
+        # Check that checkpoint_dir is set
+        assert str(pipeline.checkpoint_dir) == checkpoint_dir

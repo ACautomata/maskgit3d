@@ -10,6 +10,7 @@ from typing import Any
 import torch
 from injector import Module, provider, singleton
 
+from maskgit3d.application.pipeline import FabricTrainingPipeline
 from maskgit3d.domain.interfaces import (
     DataProvider,
     InferenceStrategy,
@@ -914,4 +915,51 @@ def create_maskgit_module(
         optimizer_config=optimizer_config,
         inference_config=inference_config,
         metrics_config=metrics_config,
+    )
+
+# =============================================================================
+# Fabric Pipeline Factories
+# =============================================================================
+
+
+def create_fabric_pipeline(
+    model: ModelInterface,
+    data_provider: DataProvider,
+    training_strategy: TrainingStrategy,
+    optimizer_factory: OptimizerFactory,
+    accelerator: str = "auto",
+    devices: int | list[int] | str = "auto",
+    strategy: str = "auto",
+    precision: str = "32-true",
+    checkpoint_dir: str = "./checkpoints",
+    log_interval: int = 10,
+) -> FabricTrainingPipeline:
+    """
+    Factory function to create a FabricTrainingPipeline with specified configuration.
+
+    Args:
+        model: Model to train
+        data_provider: Data provider for train/val loaders
+        training_strategy: Training strategy with loss computation
+        optimizer_factory: Factory for creating optimizer
+        accelerator: Fabric accelerator ("cpu", "cuda", "auto")
+        devices: Number of devices or device IDs
+        strategy: Fabric strategy ("auto", "ddp", "fsdp")
+        precision: Training precision ("32-true", "16-mixed", "bf16-mixed")
+        checkpoint_dir: Directory to save checkpoints
+        log_interval: Interval for logging training progress
+
+    Returns:
+        Configured FabricTrainingPipeline instance
+    """
+    return FabricTrainingPipeline(
+        model=model,
+        data_provider=data_provider,
+        training_strategy=training_strategy,
+        optimizer_factory=optimizer_factory,
+        accelerator=accelerator,
+        devices=devices,
+        strategy=strategy,
+        precision=precision,
+        checkpoint_dir=checkpoint_dir,
     )
