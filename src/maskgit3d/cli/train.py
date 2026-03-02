@@ -7,10 +7,10 @@ import os
 os.environ["HYDRA_FULL_ERROR"] = "1"
 
 import hydra
-from omegaconf import DictConfig, OmegaConf
 from injector import Injector
+from omegaconf import DictConfig, OmegaConf
 
-from maskgit3d.application.pipeline import TrainingPipeline, FabricTrainingPipeline
+from maskgit3d.application.pipeline import FabricTrainingPipeline, TrainingPipeline
 from maskgit3d.config.modules import (
     create_maskgit_module,
     create_vqgan_module,
@@ -101,9 +101,9 @@ def main(cfg: DictConfig) -> None:
 
     # Determine pipeline type based on Fabric config
     use_fabric = cfg.training.fabric.get("enabled", False)
-    PipelineClass = FabricTrainingPipeline if use_fabric else TrainingPipeline
+    pipeline_class = FabricTrainingPipeline if use_fabric else TrainingPipeline
 
-    pipeline = injector.get(PipelineClass)
+    pipeline = injector.get(pipeline_class)
 
     # Run training
     num_epochs = cfg.training.num_epochs

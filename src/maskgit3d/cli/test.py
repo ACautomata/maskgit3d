@@ -4,8 +4,8 @@ import logging
 import os
 
 import hydra
-from omegaconf import DictConfig, OmegaConf
 from injector import Injector
+from omegaconf import DictConfig, OmegaConf
 
 from maskgit3d.application.pipeline import TestPipeline
 from maskgit3d.cli.train import create_module_from_config

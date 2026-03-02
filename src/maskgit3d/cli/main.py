@@ -48,7 +48,7 @@ Examples:
   maskgit3d train model=maskgit dataset=medmnist3d
   maskgit3d train model=vqgan dataset=brats training.num_epochs=50
 
-  # Testing  
+  # Testing
   maskgit3d test model=maskgit dataset=medmnist3d checkpoint.load_from=./checkpoints/best.ckpt
   maskgit3d test model=vqgan dataset=brats output.save_predictions=true
 
