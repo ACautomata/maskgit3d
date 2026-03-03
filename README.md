@@ -82,3 +82,15 @@ pipeline = create_fabric_pipeline(
 # Train with distributed training
 pipeline.run(num_epochs=10)
 ```
+
+### Training MaskGit with Pretrained VQGAN
+
+MaskGit (Stage 2) requires pretrained VQGAN weights from Stage 1:
+
+```bash
+# Train MaskGit with pretrained VQGAN (frozen by default)
+maskgit3d-train model=maskgit model.pretrained_vqgan_path=./checkpoints/vqgan/best.ckpt
+
+# Fine-tune without freezing VQGAN
+maskgit3d-train model=maskgit model.pretrained_vqgan_path=./checkpoints/vqgan/best.ckpt model.freeze_vqgan=false
+```

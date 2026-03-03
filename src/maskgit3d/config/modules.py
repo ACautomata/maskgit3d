@@ -712,8 +712,12 @@ class MaskGITModelModule(Module):
     def __init__(
         self,
         model_config: dict[str, Any] | None = None,
+        pretrained_vqgan_path: str | None = None,
+        freeze_vqgan: bool = True,
     ):
         self.model_config = model_config or {}
+        self.pretrained_vqgan_path = pretrained_vqgan_path
+        self.freeze_vqgan = freeze_vqgan
 
     @singleton
     @provider
@@ -727,7 +731,6 @@ class MaskGITModelModule(Module):
             from maskgit3d.infrastructure.maskgit.transformer import MaskGITTransformer
             from maskgit3d.infrastructure.vqgan.vqgan_model_3d import VQModel3D
 
-            # Create VQGAN
             vqgan = VQModel3D(
                 in_channels=model_params["in_channels"],
                 codebook_size=model_params["codebook_size"],
@@ -737,7 +740,13 @@ class MaskGITModelModule(Module):
                 channel_multipliers=model_params["channel_multipliers"],
             )
 
-            # Create Transformer
+            if self.pretrained_vqgan_path is not None:
+                self._load_pretrained_vqgan(vqgan, self.pretrained_vqgan_path)
+
+            if self.freeze_vqgan:
+                for param in vqgan.parameters():
+                    param.requires_grad = False
+
             transformer = MaskGITTransformer(
                 vocab_size=model_params["codebook_size"] + 1,
                 hidden_size=model_params["transformer_hidden"],
@@ -745,12 +754,33 @@ class MaskGITModelModule(Module):
                 num_heads=model_params["transformer_heads"],
             )
 
-            return MaskGITModel(
+            model = MaskGITModel(
                 vqgan=vqgan,
                 transformer=transformer,
                 mask_ratio=model_params.get("mask_ratio", 0.5),
             )
+            return model
         raise ValueError(f"Unknown MaskGIT model type: {model_type}")
+
+    def _load_pretrained_vqgan(self, vqgan: "VQModel3D", checkpoint_path: str) -> None:
+        """Load pretrained VQGAN weights from checkpoint.
+
+        Handles both stage 1 format (model_state_dict) and stage 2 format (vqgan).
+        """
+        import torch
+
+        from maskgit3d.infrastructure.checkpoints import load_checkpoint
+
+        checkpoint = load_checkpoint(checkpoint_path, map_location="cpu")
+
+        if "model_state_dict" in checkpoint:
+            vqgan.load_state_dict(checkpoint["model_state_dict"])
+        elif "vqgan" in checkpoint:
+            vqgan.load_state_dict(checkpoint["vqgan"])
+        elif "state_dict" in checkpoint:
+            vqgan.load_state_dict(checkpoint["state_dict"])
+        else:
+            vqgan.load_state_dict(checkpoint)
 
 
 class MaskGITModule(Module):
@@ -768,6 +798,8 @@ class MaskGITModule(Module):
         optimizer_config: dict[str, Any] | None = None,
         inference_config: dict[str, Any] | None = None,
         metrics_config: dict[str, Any] | None = None,
+        pretrained_vqgan_path: str | None = None,
+        freeze_vqgan: bool = True,
     ):
         """
         Initialize MaskGIT module.
@@ -779,8 +811,14 @@ class MaskGITModule(Module):
             optimizer_config: Optimizer configuration
             inference_config: Inference configuration
             metrics_config: Metrics configuration
+            pretrained_vqgan_path: Path to pretrained VQGAN checkpoint
+            freeze_vqgan: Whether to freeze VQGAN weights
         """
-        self.model_module = MaskGITModelModule(model_config)
+        self.model_module = MaskGITModelModule(
+            model_config,
+            pretrained_vqgan_path=pretrained_vqgan_path,
+            freeze_vqgan=freeze_vqgan,
+        )
         self.model_config = model_config or {}
         self.training_config = training_config or {}
         self.optimizer_config = optimizer_config or {}
@@ -826,6 +864,8 @@ def create_maskgit_module(
     batch_size: int = 1,
     num_train: int = 1000,
     num_val: int = 100,
+    pretrained_vqgan_path: str | None = None,
+    freeze_vqgan: bool = True,
 ) -> MaskGITModule:
     """
     Factory function to create a MaskGIT module with sensible defaults.
@@ -844,6 +884,8 @@ def create_maskgit_module(
         batch_size: Batch size
         num_train: Number of training samples
         num_val: Number of validation samples
+        pretrained_vqgan_path: Path to pretrained VQGAN checkpoint from stage 1
+        freeze_vqgan: Whether to freeze VQGAN weights during training
 
     Returns:
         Configured MaskGITModule
@@ -921,6 +963,8 @@ def create_maskgit_module(
         optimizer_config=optimizer_config,
         inference_config=inference_config,
         metrics_config=metrics_config,
+        pretrained_vqgan_path=pretrained_vqgan_path,
+        freeze_vqgan=freeze_vqgan,
     )
 
 

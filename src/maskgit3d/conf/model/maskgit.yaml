@@ -29,3 +29,10 @@ model:
   
   # Inference parameters
   num_iterations: 12
+  
+  # Pretrained VQGAN weights (from stage 1 training)
+  # Set this to load pretrained VQGAN encoder/decoder/codebook
+  pretrained_vqgan_path: null  # e.g., ./checkpoints/vqgan_stage1/best.ckpt
+  
+  # Whether to freeze VQGAN weights during MaskGit training
+  freeze_vqgan: true

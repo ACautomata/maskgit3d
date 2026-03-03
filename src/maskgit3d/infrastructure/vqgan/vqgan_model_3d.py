@@ -78,6 +78,7 @@ class VQModel3D(BaseVQModel):
         )
 
         # Quantization convolutions (3D)
+        # encoder conv_out outputs hidden_channels
         self.quant_conv = nn.Conv3d(latent_channels // 2, embed_dim, 1)
         self.post_quant_conv = nn.Conv3d(embed_dim, embed_dim, 1)
 

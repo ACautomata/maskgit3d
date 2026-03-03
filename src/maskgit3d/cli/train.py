@@ -71,7 +71,13 @@ def create_module_from_config(cfg: DictConfig):
             self.inference_module = InferenceModule(inference_config)
             if model_type == "maskgit":
                 model_params = _create_model_params(cfg, model_type, base_params)
-                self.model_module = MaskGITModelModule({"type": model_type, "params": model_params})
+                pretrained_path = cfg.model.get("pretrained_vqgan_path", None)
+                freeze_vqgan = cfg.model.get("freeze_vqgan", True)
+                self.model_module = MaskGITModelModule(
+                    {"type": model_type, "params": model_params},
+                    pretrained_vqgan_path=pretrained_path,
+                    freeze_vqgan=freeze_vqgan,
+                )
                 self.maskgit_model = self.model_module.provide_maskgit_model()
             else:
                 model_config = {
