@@ -537,6 +537,10 @@ class VQGANMetrics(Metrics):
 
         target = torch.from_numpy(targets) if not isinstance(targets, torch.Tensor) else targets
 
+        # Move to same device (target may be on GPU)
+        if target.is_cuda and not pred.is_cuda:
+            pred = pred.to(target.device)
+
         # Ensure predictions are in [0, data_range] range for MONAI
         # VQGAN outputs are typically in [-1, 1], so rescale to [0, 1]
         pred = (pred + 1) / 2 * self.data_range
@@ -736,12 +740,19 @@ class MaskGITTrainingStrategy(TrainingStrategy):
 
             # Encode and compute token accuracy
             tokens = maskgit_model.encode_tokens(x)
+            # Flatten tokens to [B, N] if needed
+            if tokens.dim() > 2:
+                tokens = tokens.view(tokens.shape[0], -1)
+            elif tokens.dim() == 1:
+                # Single batch or flattened - infer batch size
+                B = x.shape[0]
+                tokens = tokens.view(B, -1)
             transformer = getattr(maskgit_model, "transformer", None)
             if transformer is not None:
                 tokens_pred = transformer.encode(tokens, return_logits=True).argmax(dim=-1)
             else:
                 tokens_pred = tokens.argmax(dim=1)
-            token_acc = (tokens_pred == tokens.view(tokens.shape[0], -1)).float().mean()
+            token_acc = (tokens_pred == tokens).float().mean()
 
         return {
             "val_loss": rec_loss.item(),
@@ -1085,7 +1096,7 @@ class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
         with torch.no_grad():
             # Get quantized latents via sliding window
             quantized_latent = sliding_window_inference(
-  # type: ignore[assignment]
+                # type: ignore[assignment]
                 inputs=batch,
                 roi_size=self.roi_size,
                 sw_batch_size=self.sw_batch_size,
@@ -1100,15 +1111,19 @@ class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
 
             # Now get indices from the quantized latent
             # Reshape for quantize: (B, C, D, H, W) -> (B, D, H, W, C)
-            quant_flat = cast(torch.Tensor, quantized_latent).permute(0, 2, 3, 4, 1).reshape(-1, c_latent)
+            quant_flat = (
+                cast(torch.Tensor, quantized_latent).permute(0, 2, 3, 4, 1).reshape(-1, c_latent)
+            )
 
             # Get indices by finding nearest codebook entry
             embedding = cast(nn.Embedding, getattr(quantize, "embedding", None))
             assert embedding is not None, "quantize must have embedding attribute"
 
-            dist = torch.sum(quant_flat**2, dim=1, keepdim=True) + torch.sum(
-                embedding.weight**2, dim=1
-            ) - 2 * torch.matmul(quant_flat, embedding.weight.t())
+            dist = (
+                torch.sum(quant_flat**2, dim=1, keepdim=True)
+                + torch.sum(embedding.weight**2, dim=1)
+                - 2 * torch.matmul(quant_flat, embedding.weight.t())
+            )
             indices = torch.argmin(dist, dim=1)
 
             # Reshape indices to spatial

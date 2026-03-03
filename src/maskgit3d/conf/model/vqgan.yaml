@@ -1,5 +1,7 @@
 # @package _global_
 # VQGAN Model Configuration
+# IMPORTANT: latent_channels must be >= 64 for GroupNorm compatibility
+# embed_dim must equal latent_channels // 2 for decoder
 
 model:
   name: vqgan
@@ -9,12 +11,15 @@ model:
   in_channels: 1
   image_size: 64
   codebook_size: 1024
-  embed_dim: 256
-  latent_channels: 256
+  # Architecture constraints:
+  # - latent_channels >= 64 (for GroupNorm's 32 groups)
+  # - embed_dim = latent_channels // 2
+  latent_channels: 128  # Must be >= 64
+  embed_dim: 64        # Must = latent_channels // 2
   resolution: 64
   
   # Architecture
-  channel_multipliers: [1, 1, 2, 2, 4]
+  channel_multipliers: [1, 2]  # Simpler for faster training
   num_res_blocks: 2
-  attn_resolutions: [16, 8]
+  attn_resolutions: []
   dropout: 0.0

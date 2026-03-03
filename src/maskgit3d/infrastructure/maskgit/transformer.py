@@ -1,4 +1,3 @@
-
 """
 MaskGIT Transformer implementation.
 
@@ -6,6 +5,7 @@ Bidirectional Transformer for masked token prediction.
 Uses BERT-style training where tokens are randomly masked and
 the model learns to predict them.
 """
+
 import torch
 import torch.nn as nn
 
@@ -95,12 +95,15 @@ class TransformerBlock(nn.Module):
             Output [B, N, C]
         """
         # Self-attention with residual
-        x = x + self.attn(
-            self.norm1(x),
-            self.norm1(x),
-            self.norm1(x),
-            attn_mask=mask,
-        )[0]
+        x = (
+            x
+            + self.attn(
+                self.norm1(x),
+                self.norm1(x),
+                self.norm1(x),
+                attn_mask=mask,
+            )[0]
+        )
 
         # Feedforward with residual
         x = x + self.mlp(self.norm2(x))
@@ -154,15 +157,17 @@ class MaskGITTransformer(nn.Module):
         self.pos_encoding: PositionalEncoding3D | None = None
 
         # Transformer blocks
-        self.blocks = nn.ModuleList([
-            TransformerBlock(
-                hidden_size=hidden_size,
-                num_heads=num_heads,
-                mlp_ratio=mlp_ratio,
-                dropout=dropout,
-            )
-            for _ in range(num_layers)
-        ])
+        self.blocks = nn.ModuleList(
+            [
+                TransformerBlock(
+                    hidden_size=hidden_size,
+                    num_heads=num_heads,
+                    mlp_ratio=mlp_ratio,
+                    dropout=dropout,
+                )
+                for _ in range(num_layers)
+            ]
+        )
 
         # Output projection
         self.norm = nn.LayerNorm(hidden_size)
@@ -170,11 +175,12 @@ class MaskGITTransformer(nn.Module):
 
     def _init_pos_encoding(self, seq_len: int, device: torch.device):
         """Initialize positional encoding if needed."""
-        pos_enc: PositionalEncoding3D | None = self.pos_encoding  # type: ignore[assignment]
-        if pos_enc is None or pos_enc.shape[1] < seq_len:  # type: ignore[union-attr]
-            pos_enc = PositionalEncoding3D(seq_len, self.hidden_size)
-            self.pos_encoding = pos_enc.to(device)
-        # Assert for type checker - pos_encoding is guaranteed non-None after this
+        if self.pos_encoding is None:
+            self.pos_encoding = PositionalEncoding3D(seq_len, self.hidden_size).to(device)
+        else:
+            current_seq_len = self.pos_encoding.pos_embed.shape[1]
+            if current_seq_len < seq_len:
+                self.pos_encoding = PositionalEncoding3D(seq_len, self.hidden_size).to(device)
         assert self.pos_encoding is not None
 
     def encode(

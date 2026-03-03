@@ -73,7 +73,6 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):  # type: ignore[misc]
         """Shape of latent representations (B, D, H, W)."""
         return self._latent_shape
 
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass (reconstruction).
@@ -112,27 +111,13 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):  # type: ignore[misc]
         Decode tokens to images.
 
         Args:
-            tokens: Token indices [B, D, H, W] or [B, N]
+            tokens: Token indices [B, D, H, W] or [B, N] or [N] or [B*N]
 
         Returns:
             Reconstructed images [B, C, D', H', W']
         """
-        # Handle different token shapes
-        if tokens.dim() == 4:  # [B, D, H, W]
-            B, D, H, W = tokens.shape
-            tokens_flat = tokens.view(B, -1)
-            shape = (B, D, H, W)
-        else:
-            tokens_flat = tokens
-            B = tokens_flat.shape[0]
-            _, D, H, W = self._latent_shape
-            shape = (B, D, H, W)
-
-        # Get quantized latents from indices
-        quant = self.vqgan.quantize.get_codebook_entry(tokens_flat, shape)
-
-        # Decode through VQGAN
-        return self.vqgan.decode(quant)
+        # Use VQGAN's decode_code method which handles all shape logic
+        return self.vqgan.decode_code(tokens)
 
     def generate(
         self,
@@ -190,16 +175,34 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):  # type: ignore[misc]
         """Compute MaskGIT cross-entropy loss and detached scalar metrics."""
         # Encode to tokens
         tokens = self.encode_tokens(x)
-        B, D, H, W = tokens.shape
-        tokens_flat = tokens.view(B, -1)
+
+        # Handle different token shapes dynamically
+        if tokens.dim() == 1:
+            # Flattened tokens [N] - reshape assuming batch size
+            B = x.shape[0]
+            tokens = tokens.view(B, -1)
+
+        if tokens.dim() == 4:
+            B, D, H, W = tokens.shape
+            tokens_flat = tokens.view(B, -1)
+        elif tokens.dim() == 3:
+            B, D, N = tokens.shape
+            tokens_flat = tokens.view(B, -1)
+        elif tokens.dim() == 2:
+            B, N = tokens.shape
+            tokens_flat = tokens
+        else:
+            raise ValueError(f"Unexpected tokens shape: {tokens.shape}")
+
+        N_total = tokens_flat.shape[1]
 
         # Random masking
-        mask = torch.rand(B, D * H * W, device=tokens.device) < mask_ratio
+        mask = torch.rand(B, N_total, device=tokens.device) < mask_ratio
 
         # Ensure at least one token masked per sample
         for i in range(B):
             if not mask[i].any():
-                mask[i, torch.randint(0, D * H * W, (1,), device=tokens.device)] = True
+                mask[i, torch.randint(0, N_total, (1,), device=tokens.device)] = True
 
         # Get predictions
         logits = self.transformer.forward(tokens_flat, mask_indices=mask)

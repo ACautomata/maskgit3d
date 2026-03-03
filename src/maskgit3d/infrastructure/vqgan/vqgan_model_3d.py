@@ -4,7 +4,6 @@
 This module provides the 3D version of VQGAN for volumetric medical images.
 """
 
-
 import torch
 import torch.nn as nn
 
@@ -80,7 +79,7 @@ class VQModel3D(BaseVQModel):
 
         # Quantization convolutions (3D)
         self.quant_conv = nn.Conv3d(latent_channels // 2, embed_dim, 1)
-        self.post_quant_conv = nn.Conv3d(embed_dim, latent_channels // 2, 1)
+        self.post_quant_conv = nn.Conv3d(embed_dim, embed_dim, 1)
 
         # Decoder
         self.decoder = Decoder3d(

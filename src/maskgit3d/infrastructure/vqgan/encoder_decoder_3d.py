@@ -4,6 +4,7 @@
 This module provides 3D versions of the encoder/decoder components
 for volumetric medical images (MRI, CT scans).
 """
+
 import math
 
 import torch
@@ -270,7 +271,7 @@ class Encoder3d(nn.Module):
             for block in self.down[i_level].block:  # type: ignore[union-attr]  # type: ignore[union-attr]
                 h = block(h)
 
-            if hasattr(self.down[i_level], 'downsample'):
+            if hasattr(self.down[i_level], "downsample"):
                 h = self.down[i_level].downsample(h)  # type: ignore[operator]
 
             if len(self.down[i_level].attn) > 0:  # type: ignore[arg-type]
@@ -299,7 +300,7 @@ class Encoder3d(nn.Module):
             for block in self.down[i_level].block:  # type: ignore[union-attr]  # type: ignore[union-attr]
                 h = checkpoint(block, h, use_reentrant=False)
 
-            if hasattr(self.down[i_level], 'downsample'):
+            if hasattr(self.down[i_level], "downsample"):
                 h = checkpoint(self.down[i_level].downsample, h, use_reentrant=False)
 
             if len(self.down[i_level].attn) > 0:  # type: ignore[arg-type]
@@ -430,15 +431,17 @@ class Decoder3d(nn.Module):
 
         # Upsampling
         for i_level in reversed(range(len(self.up))):
-            if hasattr(self.up[i_level], 'upsample'):
-                h = self.up[i_level].upsample(h)  # type: ignore[operator]
-
+            # Apply res blocks first
             for block in self.up[i_level].block:  # type: ignore[union-attr]  # type: ignore[union-attr]
                 h = block(h)
 
             if len(self.up[i_level].attn) > 0:  # type: ignore[arg-type]
                 for attn in self.up[i_level].attn:  # type: ignore[union-attr]  # type: ignore[union-attr]
                     h = attn(h)
+
+            # Then upsample
+            if hasattr(self.up[i_level], "upsample"):
+                h = self.up[i_level].upsample(h)  # type: ignore[operator]
 
         # Output
         h = self.norm_out(h)
@@ -459,15 +462,17 @@ class Decoder3d(nn.Module):
 
         # Upsampling
         for i_level in reversed(range(len(self.up))):
-            if hasattr(self.up[i_level], 'upsample'):
-                h = checkpoint(self.up[i_level].upsample, h, use_reentrant=False)
-
+            # Apply res blocks first
             for block in self.up[i_level].block:  # type: ignore[union-attr]  # type: ignore[union-attr]
                 h = checkpoint(block, h, use_reentrant=False)
 
             if len(self.up[i_level].attn) > 0:  # type: ignore[arg-type]
                 for attn in self.up[i_level].attn:  # type: ignore[union-attr]  # type: ignore[union-attr]
                     h = checkpoint(attn, h, use_reentrant=False)
+
+            # Then upsample
+            if hasattr(self.up[i_level], "upsample"):
+                h = checkpoint(self.up[i_level].upsample, h, use_reentrant=False)
 
         # Output
         h = checkpoint(self.norm_out, h, use_reentrant=False)

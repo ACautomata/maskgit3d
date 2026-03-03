@@ -88,22 +88,21 @@ class BaseVQModel(nn.Module, VQModelInterface):  # type: ignore[misc]
         Returns:
             Reconstructed volumes [B, C, D', H', W']
         """
+        # Get actual latent shape from property
+        _, D, H, W = self.latent_shape
+        N_per_sample = D * H * W
+
         # Handle different input shapes
         if code.dim() == 4:  # [B, D, H, W]
-            B, D, H, W = code.shape
+            B = code.shape[0]
             code_flat = code.view(B, -1).view(-1)  # Flatten to (B*D*H*W,)
         elif code.dim() == 2:  # [B, N]
             B = code.shape[0]
             code_flat = code.view(-1)  # Flatten to (B*N,)
-            N = code.shape[1]
-            latent_res = round(N ** (1 / 3))
-            D = H = W = latent_res
-        elif code.dim() == 1:  # [N] - single sample
-            B = 1
+        elif code.dim() == 1:  # [N] or [B*N] - flattened
+            total_tokens = code.shape[0]
+            B = total_tokens // N_per_sample
             code_flat = code
-            N = code.shape[0]
-            latent_res = round(N ** (1 / 3))
-            D = H = W = latent_res
         else:
             raise ValueError(f"Invalid code shape: {code.shape}. Expected 1D, 2D or 4D tensor.")
 

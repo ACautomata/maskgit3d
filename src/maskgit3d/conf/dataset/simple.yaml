@@ -1,24 +1,21 @@
 # @package _global_
 # Simple/Synthetic Dataset Configuration
+# Uses synthetic 3D volumes for testing
 
 dataset:
   name: simple
   type: simple
   
   # Data parameters
-  data_dir: ./data
-  batch_size: 4
+  batch_size: 2
   num_workers: 0
   
-  # Image parameters
-  image_size: 64
+  # Image parameters - match model config
+  image_size: 32  # Smaller for faster testing
   in_channels: 1
   
-  # Data augmentation
-  augmentation:
-    enabled: false
-  
-  # Number of samples
-  num_train: 100
-  num_val: 20
-  num_test: 20
+  # Number of synthetic samples
+  num_train: 10
+  num_val: 5
+  num_test: 5
+

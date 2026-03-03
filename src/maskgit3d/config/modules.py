@@ -483,9 +483,6 @@ def create_vqgan_module(
         "params": {
             "codebook_weight": 1.0,
             "pixel_loss_weight": 1.0,
-            "perceptual_weight": 1.0,
-            "disc_weight": 1.0,
-            "disc_start": 10000,
         },
     }
 
