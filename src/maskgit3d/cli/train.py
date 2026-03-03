@@ -1,7 +1,6 @@
 """Training CLI for maskgit3d with Hydra configuration."""
 
 import logging
-import os
 
 import hydra
 from injector import Injector
@@ -51,10 +50,10 @@ def _create_data_config(cfg: DictConfig) -> dict:
 def create_module_from_config(cfg: DictConfig):
     from maskgit3d.config.modules import (
         DataModule,
-        ModelModule,
-        TrainingModule,
         InferenceModule,
         MaskGITModelModule,
+        ModelModule,
+        TrainingModule,
     )
     from maskgit3d.domain.interfaces import MaskGITModelInterface, ModelInterface
 
@@ -176,10 +175,10 @@ def main(cfg: DictConfig) -> None:
     use_fabric = cfg.training.fabric.get("enabled", False)
     pipeline_class = FabricTrainingPipeline if use_fabric else TrainingPipeline
     from maskgit3d.domain.interfaces import (
-        ModelInterface,
         DataProvider,
-        TrainingStrategy,
+        ModelInterface,
         OptimizerFactory,
+        TrainingStrategy,
     )
 
     model = injector.get(ModelInterface)

@@ -22,10 +22,10 @@ def run_testing(cfg: DictConfig) -> None:
     injector = Injector([module])
 
     from maskgit3d.domain.interfaces import (
-        ModelInterface,
         DataProvider,
         InferenceStrategy,
         Metrics,
+        ModelInterface,
     )
 
     model = injector.get(ModelInterface)
@@ -57,7 +57,7 @@ def run_testing(cfg: DictConfig) -> None:
     checkpoint_path = cfg.checkpoint.get("load_from")
     save_predictions = cfg.output.get("save_predictions", False)
 
-    results = pipeline.run(
+    pipeline.run(
         checkpoint_path=checkpoint_path,
         save_predictions=save_predictions,
     )
@@ -74,6 +74,7 @@ def main():
     GlobalHydra.instance().clear()
 
     from pathlib import Path
+
     import maskgit3d
 
     package_dir = Path(maskgit3d.__file__).parent

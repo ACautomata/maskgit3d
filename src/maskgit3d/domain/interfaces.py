@@ -62,7 +62,7 @@ class DataProvider(ABC):
 # =============================================================================
 
 
-class ModelInterface(ABC):
+class ModelInterface(torch.nn.Module, ABC):
     """
     Base interface for all models.
 
@@ -108,7 +108,6 @@ class ModelInterface(ABC):
     def device(self) -> torch.device:
         """Get the device of the model."""
         pass
-
 
 
 # =============================================================================
@@ -526,4 +525,3 @@ class MaskGITModelInterface(ModelInterface):
     def codebook_size(self) -> int:
         """Get the number of codes in the codebook."""
         pass
-

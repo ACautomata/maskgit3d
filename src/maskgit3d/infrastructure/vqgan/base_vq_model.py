@@ -8,12 +8,11 @@ logic for all VQGAN/VQVAE models.
 from abc import abstractmethod
 
 import torch
-import torch.nn as nn
 
 from maskgit3d.domain.interfaces import QuantizerInterface, VQModelInterface
 
 
-class BaseVQModel(nn.Module, VQModelInterface):  # type: ignore[misc]
+class BaseVQModel(VQModelInterface):
     """
     Abstract base class for VQGAN/VQVAE models.
 
@@ -90,7 +89,7 @@ class BaseVQModel(nn.Module, VQModelInterface):  # type: ignore[misc]
         """
         # Get actual latent shape from property
         _, D, H, W = self.latent_shape
-        N_per_sample = D * H * W
+        n_per_sample = D * H * W
 
         # Handle different input shapes
         if code.dim() == 4:  # [B, D, H, W]
@@ -101,7 +100,7 @@ class BaseVQModel(nn.Module, VQModelInterface):  # type: ignore[misc]
             code_flat = code.view(-1)  # Flatten to (B*N,)
         elif code.dim() == 1:  # [N] or [B*N] - flattened
             total_tokens = code.shape[0]
-            B = total_tokens // N_per_sample
+            B = total_tokens // n_per_sample
             code_flat = code
         else:
             raise ValueError(f"Invalid code shape: {code.shape}. Expected 1D, 2D or 4D tensor.")

@@ -6,7 +6,7 @@ the training, validation, and testing workflows.
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import torch
 from tqdm import tqdm
@@ -430,8 +430,6 @@ class TestPipeline:
         np.save(probs_path, predictions["probs"])
 
 
-
-
 class FabricTrainingPipeline:
     """
     Pipeline for training with Lightning Fabric.
@@ -452,7 +450,24 @@ class FabricTrainingPipeline:
         accelerator: str = "auto",
         devices: int | list[int] | str = "auto",
         strategy: str = "auto",
-        precision: str = "32-true",
+        precision: Literal[
+            64,
+            32,
+            16,
+            "transformer-engine",
+            "transformer-engine-float16",
+            "16-true",
+            "16-mixed",
+            "bf16-true",
+            "bf16-mixed",
+            "32-true",
+            "64-true",
+            "64",
+            "32",
+            "16",
+            "bf16",
+        ]
+        | None = "32-true",
         checkpoint_dir: str = "./checkpoints",
         log_interval: int = 10,
     ):
@@ -472,9 +487,7 @@ class FabricTrainingPipeline:
             log_interval: Interval for logging training progress
         """
         if not LIGHTNING_AVAILABLE:
-            raise ImportError(
-                "Lightning is not installed. Install with: pip install lightning"
-            )
+            raise ImportError("Lightning is not installed. Install with: pip install lightning")
 
         self.model = model
         self.data_provider = data_provider
@@ -514,11 +527,11 @@ class FabricTrainingPipeline:
             Dictionary of training history
         """
         # Initialize Fabric
-        self._fabric = L.Fabric(  # type: ignore[misc]
+        self._fabric = L.Fabric(  # type: ignore[union-attr]
             accelerator=self._accelerator,
             devices=self._devices,
             strategy=self._strategy,
-            precision=self._precision,
+            precision=self._precision,  # type: ignore[arg-type]
         )
         self._fabric.launch()
 
@@ -713,5 +726,3 @@ class FabricTrainingPipeline:
         print(f"Resumed from epoch {start_epoch}, checkpoint: {checkpoint_path}")
 
         return start_epoch
-
-

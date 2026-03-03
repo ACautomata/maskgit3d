@@ -5,7 +5,7 @@ This module provides Injector modules that bind interfaces
 to concrete implementations for the application.
 """
 
-from typing import Any
+from typing import Any, Literal
 
 import torch
 from injector import Module, provider, singleton
@@ -43,7 +43,9 @@ from maskgit3d.infrastructure.vqgan import (
 # =============================================================================
 
 
-def _validate_param(name: str, value: int, min_val: int | None = None, max_val: int | None = None) -> None:
+def _validate_param(
+    name: str, value: int, min_val: int | None = None, max_val: int | None = None
+) -> None:
     """Validate integer parameter with optional min/max bounds."""
     if min_val is not None and value < min_val:
         raise ValueError(f"{name} must be >= {min_val}, got {value}")
@@ -110,6 +112,7 @@ class ModelModule(Module):
 
             return MaisiVQModel3D(**model_params)
         raise ValueError(f"Unknown model type: {model_type}")
+
 
 class DataModule(Module):
     """
@@ -920,6 +923,7 @@ def create_maskgit_module(
         metrics_config=metrics_config,
     )
 
+
 # =============================================================================
 # Fabric Pipeline Factories
 # =============================================================================
@@ -933,7 +937,24 @@ def create_fabric_pipeline(
     accelerator: str = "auto",
     devices: int | list[int] | str = "auto",
     strategy: str = "auto",
-    precision: str = "32-true",
+    precision: Literal[
+        64,
+        32,
+        16,
+        "transformer-engine",
+        "transformer-engine-float16",
+        "16-true",
+        "16-mixed",
+        "bf16-true",
+        "bf16-mixed",
+        "32-true",
+        "64-true",
+        "64",
+        "32",
+        "16",
+        "bf16",
+    ]
+    | None = "32-true",
     checkpoint_dir: str = "./checkpoints",
     log_interval: int = 10,
 ) -> FabricTrainingPipeline:

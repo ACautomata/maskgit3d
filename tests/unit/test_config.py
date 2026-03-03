@@ -194,7 +194,8 @@ class TestMaskGITModuleInstantiation:
         source = inspect.getsource(MaskGITModel)
 
         assert "self.vqgan.quantize(" in source
-        assert "self.vqgan.quantize.get_codebook_entry" in source
+        # MaskGITModel uses decode_code instead of directly calling get_codebook_entry
+        assert "self.vqgan.decode_code" in source
         assert "self.vqgan.quantizer" not in source
 
 

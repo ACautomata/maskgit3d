@@ -19,7 +19,7 @@ from maskgit3d.domain.interfaces import VQModelInterface
 from maskgit3d.infrastructure.vqgan.quantize import VectorQuantizer2
 
 
-class MaisiVQModel3D(nn.Module, VQModelInterface):  # type: ignore[misc]
+class MaisiVQModel3D(VQModelInterface):
     """
     MAISI-based VQGAN Model for volumetric medical images.
 
@@ -126,9 +126,7 @@ class MaisiVQModel3D(nn.Module, VQModelInterface):  # type: ignore[misc]
             use_flash_attention=use_flash_attention,
         )
 
-    def encode(
-        self, x: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, tuple]:
+    def encode(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, tuple]:
         """
         Encode volumes to quantized latent codes.
 
@@ -201,9 +199,7 @@ class MaisiVQModel3D(nn.Module, VQModelInterface):  # type: ignore[misc]
 
         # Get quantized latents from indices
         # VectorQuantizer2.get_codebook_entry expects shape=(B, D, H, W, C) and indices as (B*D*H*W,)
-        quant_b = self.quantize.get_codebook_entry(
-            code_flat, shape=(B, D, H, W, self.embed_dim)
-        )
+        quant_b = self.quantize.get_codebook_entry(code_flat, shape=(B, D, H, W, self.embed_dim))
 
         # Decode
         dec = self.decode(quant_b)

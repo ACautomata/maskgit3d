@@ -15,7 +15,7 @@ from maskgit3d.infrastructure.maskgit.transformer import MaskGITTransformer
 from maskgit3d.infrastructure.vqgan.vqgan_model_3d import VQModel3D
 
 
-class MaskGITModel(nn.Module, MaskGITModelInterface):  # type: ignore[misc]
+class MaskGITModel(MaskGITModelInterface):
     """
     Complete MaskGIT model for 3D medical image generation.
 
@@ -194,15 +194,15 @@ class MaskGITModel(nn.Module, MaskGITModelInterface):  # type: ignore[misc]
         else:
             raise ValueError(f"Unexpected tokens shape: {tokens.shape}")
 
-        N_total = tokens_flat.shape[1]
+        n_total = tokens_flat.shape[1]
 
         # Random masking
-        mask = torch.rand(B, N_total, device=tokens.device) < mask_ratio
+        mask = torch.rand(B, n_total, device=tokens.device) < mask_ratio
 
         # Ensure at least one token masked per sample
         for i in range(B):
             if not mask[i].any():
-                mask[i, torch.randint(0, N_total, (1,), device=tokens.device)] = True
+                mask[i, torch.randint(0, n_total, (1,), device=tokens.device)] = True
 
         # Get predictions
         logits = self.transformer.forward(tokens_flat, mask_indices=mask)
