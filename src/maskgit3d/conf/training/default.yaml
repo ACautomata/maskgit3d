@@ -22,14 +22,14 @@ training:
     disc_weight: 0.1
     disc_start: 10000
   
-  # Optimizer
+  # Optimizer - AdamW as default (recommended for transformers and medical imaging)
   optimizer:
-    type: adam  # adam, adamw, sgd
+    type: adamw  # adam, adamw, sgd
     lr: 1.0e-4
-    weight_decay: 0.0
+    weight_decay: 0.01
     
-    # Adam specific
-    betas: [0.9, 0.999]
+    # AdamW specific (optimized for transformers)
+    betas: [0.9, 0.95]
     eps: 1.0e-8
     
     # SGD specific

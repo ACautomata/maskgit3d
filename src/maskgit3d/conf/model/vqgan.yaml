@@ -18,8 +18,9 @@ model:
   embed_dim: 64        # Must = latent_channels // 2
   resolution: 64
   
-  # Architecture
-  channel_multipliers: [1, 2]  # Simpler for faster training
+  # Architecture - 8x downsampling (3 downsample operations = 4 levels)
+  # channel_multipliers length = 4 → 3 downsamples → 8x spatial reduction
+  channel_multipliers: [1, 2, 4, 8]
   num_res_blocks: 2
-  attn_resolutions: []
+  attn_resolutions: [8]
   dropout: 0.0

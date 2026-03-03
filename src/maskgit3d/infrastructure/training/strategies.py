@@ -198,7 +198,7 @@ class AdamWOptimizerFactory(OptimizerFactory):
         self,
         lr: float = 1e-4,
         weight_decay: float = 0.01,
-        betas: tuple[float, float] = (0.9, 0.999),
+        betas: tuple[float, float] = (0.9, 0.95),
     ):
         self.lr = lr
         self.weight_decay = weight_decay

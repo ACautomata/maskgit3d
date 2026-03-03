@@ -12,10 +12,10 @@ model:
   embed_dim: 256
   latent_channels: 256
   
-  # Architecture
-  channel_multipliers: [1, 1, 2, 2, 4]
+  # Architecture - 8x downsampling (4 levels, 3 downsample operations)
+  channel_multipliers: [1, 2, 4, 8]
   num_res_blocks: 2
-  attn_resolutions: [16, 8]
+  attn_resolutions: [8]
   dropout: 0.0
   
   # Transformer parameters
@@ -31,8 +31,5 @@ model:
   num_iterations: 12
   
   # Pretrained VQGAN weights (from stage 1 training)
-  # Set this to load pretrained VQGAN encoder/decoder/codebook
-  pretrained_vqgan_path: null  # e.g., ./checkpoints/vqgan_stage1/best.ckpt
-  
-  # Whether to freeze VQGAN weights during MaskGit training
+  pretrained_vqgan_path: null
   freeze_vqgan: true
