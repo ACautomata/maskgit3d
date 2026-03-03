@@ -13,6 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from maskgit3d.domain.interfaces import (
+    DiscriminatorInterface,
     GANOptimizerFactory,
     InferenceStrategy,
     MaskGITModelInterface,
@@ -263,14 +264,23 @@ class VQGANTrainingStrategy(TrainingStrategy):
     """
     Training strategy for VQGAN models.
 
-    Supports VQ-VAE training with codebook commitment loss
-    and mixed precision training.
+    Supports VQ-VAE training with:
+    - L1 reconstruction loss
+    - LPIPS perceptual loss
+    - Adversarial loss with discriminator
+    - Codebook commitment loss
+
+    All loss weights are configurable via config.
     """
 
     def __init__(
         self,
         codebook_weight: float = 1.0,
         pixel_loss_weight: float = 1.0,
+        perceptual_weight: float = 1.0,
+        disc_weight: float = 0.1,
+        disc_start: int = 10000,
+        discriminator: "DiscriminatorInterface | None" = None,
         mixed_precision: bool = False,
         amp_dtype: str = "float16",
         grad_clip: float | None = None,
@@ -280,13 +290,39 @@ class VQGANTrainingStrategy(TrainingStrategy):
 
         Args:
             codebook_weight: Weight for codebook commitment loss
-            pixel_loss_weight: Weight for pixel reconstruction loss
+            pixel_loss_weight: Weight for L1 pixel reconstruction loss
+            perceptual_weight: Weight for LPIPS perceptual loss
+            disc_weight: Weight for adversarial discriminator loss
+            disc_start: Number of steps before starting discriminator training
+            discriminator: Discriminator model for adversarial training (optional)
             mixed_precision: Enable automatic mixed precision training
             amp_dtype: Mixed precision dtype ("float16" or "bfloat16")
             grad_clip: Maximum gradient norm for clipping
         """
         self.codebook_weight = codebook_weight
         self.pixel_loss_weight = pixel_loss_weight
+        self.perceptual_weight = perceptual_weight
+        self.disc_weight = disc_weight
+        self.disc_start = disc_start
+        self.discriminator = discriminator
+        self.global_step = 0
+
+        # Initialize LPIPS loss
+        try:
+            import lpips
+
+            self.lpips_fn = lpips.LPIPS(net="vgg", verbose=False)
+            # Freeze LPIPS parameters
+            for param in self.lpips_fn.parameters():
+                param.requires_grad = False
+        except ImportError:
+            import warnings
+
+            warnings.warn(
+                "lpips not installed. Perceptual loss will be disabled. "
+                "Install with: pip install lpips>=0.1.4"
+            )
+            self.lpips_fn = None
 
         # Mixed precision
         self.mixed_precision = MixedPrecisionTrainer(
@@ -294,6 +330,98 @@ class VQGANTrainingStrategy(TrainingStrategy):
             dtype=amp_dtype,
             grad_clip=grad_clip,
         )
+
+    def _compute_perceptual_loss(self, x: torch.Tensor, xrec: torch.Tensor) -> torch.Tensor:
+        """Compute LPIPS perceptual loss between real and reconstructed images.
+
+        LPIPS expects RGB images (3 channels) with minimum spatial dimensions.
+        For medical images with single channel, we repeat to 3 channels.
+        For small spatial dimensions, we skip LPIPS (returns 0).
+        """
+        if self.lpips_fn is None or self.perceptual_weight == 0:
+            return torch.tensor(0.0, device=x.device)
+
+        # LPIPS expects 2D images [B, C, H, W], need to handle 3D volumes
+        # For 3D volumes, we compute perceptual loss slice-wise
+        if x.dim() == 5:  # [B, C, D, H, W]
+            # Take middle slices along depth dimension
+            mid_slice = x.shape[2] // 2
+            x_2d = x[:, :, mid_slice, :, :]  # [B, C, H, W]
+            xrec_2d = xrec[:, :, mid_slice, :, :]
+
+            # Check minimum spatial dimensions (LPIPS VGG needs at least 32x32)
+            if x_2d.shape[2] < 32 or x_2d.shape[3] < 32:
+                return torch.tensor(0.0, device=x.device)
+
+            # LPIPS expects RGB images (3 channels)
+            # For single-channel medical images, repeat to 3 channels
+            if x_2d.shape[1] == 1:
+                x_2d = x_2d.repeat(1, 3, 1, 1)  # [B, 3, H, W]
+                xrec_2d = xrec_2d.repeat(1, 3, 1, 1)
+
+            # LPIPS expects input in range [-1, 1], normalize from [0, 1]
+            x_norm = 2.0 * x_2d - 1.0
+            xrec_norm = 2.0 * xrec_2d - 1.0
+
+            return self.lpips_fn(x_norm, xrec_norm).mean()
+        else:
+            # 2D case
+            # Check minimum spatial dimensions
+            if x.shape[2] < 32 or x.shape[3] < 32:
+                return torch.tensor(0.0, device=x.device)
+
+            # Handle single channel
+            x_2d = x if x.shape[1] == 3 else x.repeat(1, 3, 1, 1)
+            xrec_2d = xrec if xrec.shape[1] == 3 else xrec.repeat(1, 3, 1, 1)
+
+            x_norm = 2.0 * x_2d - 1.0
+            xrec_norm = 2.0 * xrec_2d - 1.0
+            return self.lpips_fn(x_norm, xrec_norm).mean()
+
+    def _compute_adversarial_loss(
+        self,
+        x: torch.Tensor,
+        xrec: torch.Tensor,
+        optimizer_idx: int = 0,
+    ) -> tuple[torch.Tensor, dict[str, float]]:
+        """
+        Compute adversarial loss for generator or discriminator.
+
+        Args:
+            x: Real images
+            xrec: Reconstructed images
+            optimizer_idx: 0 for generator, 1 for discriminator
+
+        Returns:
+            Tuple of (loss, metrics_dict)
+        """
+        if self.discriminator is None or self.disc_weight == 0:
+            return torch.tensor(0.0, device=x.device), {}
+
+        metrics = {}
+
+        if optimizer_idx == 0:  # Generator update
+            # Try to fool discriminator with reconstructed images
+            fake_logits = self.discriminator.forward(xrec)
+            g_loss = -torch.mean(fake_logits)
+            metrics["g_loss"] = g_loss.item()
+            return g_loss, metrics
+
+        else:  # Discriminator update
+            # Distinguish real from fake
+            real_logits = self.discriminator.forward(x.detach())
+            fake_logits = self.discriminator.forward(xrec.detach())
+
+            # Hinge loss
+            d_loss_real = torch.mean(F.relu(1.0 - real_logits))
+            d_loss_fake = torch.mean(F.relu(1.0 + fake_logits))
+            d_loss = d_loss_real + d_loss_fake
+
+            metrics["d_loss"] = d_loss.item()
+            metrics["d_loss_real"] = d_loss_real.item()
+            metrics["d_loss_fake"] = d_loss_fake.item()
+
+            return d_loss, metrics
 
     def train_step(  # type: ignore[override]
         self,
@@ -321,19 +449,94 @@ class VQGANTrainingStrategy(TrainingStrategy):
         # Forward pass with mixed precision
         with self.mixed_precision.autocast_context():
             xrec, qloss = vq_model.forward_with_loss(x)
-            rec_loss = torch.abs(x - xrec)
-            loss = self.pixel_loss_weight * rec_loss.mean() + self.codebook_weight * qloss.mean()
+
+            # 1. L1 reconstruction loss
+            rec_loss = torch.abs(x - xrec).mean()
+
+            # 2. LPIPS perceptual loss
+            perceptual_loss = self._compute_perceptual_loss(x, xrec)
+
+            # 3. Adversarial loss (only after disc_start)
+            if (
+                self.discriminator is not None
+                and self.disc_weight > 0
+                and self.global_step >= self.disc_start
+            ):
+                g_loss, g_metrics = self._compute_adversarial_loss(x, xrec, optimizer_idx=0)
+            else:
+                g_loss = torch.tensor(0.0, device=x.device)
+                g_metrics = {}
+
+            # Total generator loss
+            loss = (
+                self.pixel_loss_weight * rec_loss
+                + self.perceptual_weight * perceptual_loss
+                + self.disc_weight * g_loss
+                + self.codebook_weight * qloss.mean()
+            )
 
         # Backward
         scaled_loss = self.mixed_precision.scale_loss(loss)
         scaled_loss.backward()
         self.mixed_precision.step_optimizer(optimizer, loss)
 
-        return {
+        self.global_step += 1
+
+        metrics = {
             "loss": loss.item(),
-            "rec_loss": rec_loss.mean().item(),
+            "rec_loss": rec_loss.item(),
+            "perceptual_loss": perceptual_loss.item(),
             "codebook_loss": qloss.mean().item(),
+            "g_loss": g_loss.item(),
+            **g_metrics,
         }
+
+        return metrics
+
+    def train_discriminator_step(
+        self,
+        model: VQModelInterface,
+        batch: tuple[torch.Tensor, ...],
+        discriminator_optimizer: torch.optim.Optimizer,
+    ) -> dict[str, float]:
+        """
+        Execute discriminator training step.
+
+        This should be called alternately with train_step for GAN training.
+
+        Args:
+            model: VQModel instance
+            batch: Tuple of (input_images,)
+            discriminator_optimizer: Optimizer for discriminator
+
+        Returns:
+            Dictionary of discriminator metrics
+        """
+        if self.discriminator is None or self.global_step < self.disc_start:
+            return {}
+
+        # Unpack batch
+        x = batch[0] if isinstance(batch, tuple | list) else batch
+
+        model.eval()
+        vq_model = cast(VQModelInterface, model)
+        if self.discriminator is not None:
+            cast(nn.Module, self.discriminator).train()
+
+        # Forward pass with mixed precision
+        with self.mixed_precision.autocast_context():
+            with torch.no_grad():
+                xrec, _ = vq_model.forward_with_loss(x)
+
+            # Discriminator loss
+            d_loss, d_metrics = self._compute_adversarial_loss(x, xrec, optimizer_idx=1)
+
+        # Backward
+        scaled_loss = self.mixed_precision.scale_loss(d_loss)
+        scaled_loss.backward()
+        self.mixed_precision.step_optimizer(discriminator_optimizer, d_loss)
+
+        return d_metrics
 
     def validate_step(
         self,
@@ -357,11 +560,13 @@ class VQGANTrainingStrategy(TrainingStrategy):
 
         with torch.no_grad():
             xrec, qloss = vq_model.forward_with_loss(x)
-            rec_loss = torch.abs(x - xrec)
+            rec_loss = torch.abs(x - xrec).mean()
+            perceptual_loss = self._compute_perceptual_loss(x, xrec)
 
         return {
-            "val_loss": rec_loss.mean().item(),
-            "val_rec_loss": rec_loss.mean().item(),
+            "val_loss": rec_loss.item(),
+            "val_rec_loss": rec_loss.item(),
+            "val_perceptual_loss": perceptual_loss.item(),
             "val_codebook_loss": qloss.mean().item(),
         }
 

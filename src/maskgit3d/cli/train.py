@@ -26,25 +26,66 @@ def _extract_factory_params(cfg: DictConfig) -> dict:
 
 
 def _create_data_config(cfg: DictConfig) -> dict:
+    """Create data provider configuration based on dataset type.
+
+    Different data providers accept different parameters:
+    - SimpleDataProvider: num_train, num_val, num_test
+    - MedMnist3DDataProvider: dataset_type, input_size, data_root, download
+    - BraTSDataProvider: data_dir, modalities, train_ratio, val_ratio, test_ratio, etc.
+    """
     dataset = cfg.dataset
     model = cfg.model
-    return {
-        "type": dataset.get("type", "simple"),
-        "params": {
+    dataset_type = dataset.get("type", "simple")
+
+    common_params = {
+        "batch_size": dataset.get("batch_size", 4),
+        "spatial_size": (
+            model.get("image_size", 64),
+            model.get("image_size", 64),
+            model.get("image_size", 64),
+        ),
+        "num_workers": dataset.get("num_workers", 0),
+    }
+
+    if dataset_type == "simple":
+        params = {
+            **common_params,
             "num_train": dataset.get("num_train", 100),
             "num_val": dataset.get("num_val", 20),
             "num_test": dataset.get("num_test", 20),
-            "batch_size": dataset.get("batch_size", 4),
             "in_channels": model.get("in_channels", 1),
             "out_channels": model.get("in_channels", 1),
-            "spatial_size": (
-                model.get("image_size", 64),
-                model.get("image_size", 64),
-                model.get("image_size", 64),
-            ),
-            "num_workers": dataset.get("num_workers", 0),
-        },
-    }
+        }
+    elif dataset_type in ("organ", "nodule", "adrenal", "vessel", "fracture", "synapse"):
+        params = {
+            **common_params,
+            "dataset_type": dataset_type,
+            "input_size": dataset.get("input_size", 28),
+            "data_root": dataset.get("data_root", "./data"),
+            "download": dataset.get("download", True),
+            "in_channels": model.get("in_channels", 1),
+            "pin_memory": dataset.get("pin_memory", True),
+            "drop_last_train": dataset.get("drop_last_train", True),
+        }
+    elif dataset_type == "brats":
+        params = {
+            **common_params,
+            "data_dir": dataset.get("data_dir", None),
+            "modalities": dataset.get("modalities", None),
+            "train_ratio": dataset.get("train_ratio", 0.7),
+            "val_ratio": dataset.get("val_ratio", 0.15),
+            "test_ratio": dataset.get("test_ratio", 0.15),
+            "random_seed": dataset.get("random_seed", 42),
+            "normalize_mode": dataset.get("normalize_mode", "zscore"),
+            "version": dataset.get("version", "2023"),
+            "task": dataset.get("task", "reconstruction"),
+            "tumor_types": dataset.get("tumor_types", None),
+            "data_dirs": dataset.get("data_dirs", None),
+        }
+    else:
+        raise ValueError(f"Unknown dataset type: {dataset_type}")
+
+    return {"type": dataset_type, "params": params}
 
 
 def create_module_from_config(cfg: DictConfig):
