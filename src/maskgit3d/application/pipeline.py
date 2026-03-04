@@ -113,7 +113,16 @@ class TestPipeline:
 
     def _load_checkpoint(self, checkpoint_path: str) -> None:
         checkpoint = load_ckpt(checkpoint_path, map_location=self.device)
-        self.model.load_state_dict(checkpoint["model_state_dict"])
+        # Supports: {"model_state_dict": ...}, {"model": ...}, {"state_dict": ...}, or raw state_dict
+        if "model_state_dict" in checkpoint:
+            state_dict = checkpoint["model_state_dict"]
+        elif "model" in checkpoint:
+            state_dict = checkpoint["model"]
+        elif "state_dict" in checkpoint:
+            state_dict = checkpoint["state_dict"]
+        else:
+            state_dict = checkpoint
+        self.model.load_state_dict(state_dict)
         print(f"Loaded checkpoint from {checkpoint_path}")
 
     def _save_predictions(

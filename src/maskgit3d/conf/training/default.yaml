@@ -20,7 +20,7 @@ training:
     pixel_loss_weight: 1.0
     perceptual_weight: 1.0
     disc_weight: 0.1
-    disc_start: 10000
+    disc_start: 500
   
   # Optimizer - AdamW as default (recommended for transformers and medical imaging)
   optimizer:

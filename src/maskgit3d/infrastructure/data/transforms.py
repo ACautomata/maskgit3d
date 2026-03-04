@@ -5,7 +5,6 @@ This module provides common MONAI-based preprocessing pipelines for
 various medical imaging datasets (BraTS, MedMnist3D, etc.).
 """
 
-
 from monai.transforms.compose import Compose
 from monai.transforms.croppad.array import DivisiblePad, RandSpatialCrop, SpatialPad
 from monai.transforms.croppad.dictionary import DivisiblePadd, RandSpatialCropd, SpatialPadd
@@ -66,16 +65,18 @@ def create_3d_preprocessing(
 
     if normalize_mode == "minmax":
         # Scale whatever intensity range to [0, 1] then to output range
-        transforms.extend([
-            ScaleIntensity(),
-            ScaleIntensityRange(
-                a_min=0.0,
-                a_max=1.0,
-                b_min=output_range[0],
-                b_max=output_range[1],
-                clip=True,
-            )
-        ])
+        transforms.extend(
+            [
+                ScaleIntensity(),
+                ScaleIntensityRange(
+                    a_min=0.0,
+                    a_max=1.0,
+                    b_min=output_range[0],
+                    b_max=output_range[1],
+                    clip=True,
+                ),
+            ]
+        )
     else:  # zscore
         transforms.append(NormalizeIntensity())
 
@@ -119,9 +120,7 @@ def create_brats_preprocessing(
         EnsureType(),
         EnsureChannelFirst(channel_dim="no_channel"),
         # Normalize intensity (z-score is common for MRI)
-        NormalizeIntensity()
-        if normalize_mode == "zscore"
-        else ScaleIntensity(minv=-1.0, maxv=1.0),
+        NormalizeIntensity() if normalize_mode == "zscore" else ScaleIntensity(minv=-1.0, maxv=1.0),
         # Resize to target size
         Resize(spatial_size=spatial_size, mode="trilinear"),
     ]
@@ -148,7 +147,7 @@ def create_medmnist_preprocessing(
     """
     transforms = [
         EnsureType(),
-        EnsureChannelFirst(channel_dim="no_channel"),
+        # MedMNIST3D data already has channel dim (1, D, H, W), no need for EnsureChannelFirst
         # Scale from [0, 255] to [-1, 1]
         ScaleIntensity(minv=-1.0, maxv=1.0),
         # Resize if target size differs from input
@@ -242,9 +241,7 @@ def create_brats_training_preprocessing(
     transforms = [
         EnsureType(),
         EnsureChannelFirst(channel_dim="no_channel"),
-        NormalizeIntensity()
-        if normalize_mode == "zscore"
-        else ScaleIntensity(minv=-1.0, maxv=1.0),
+        NormalizeIntensity() if normalize_mode == "zscore" else ScaleIntensity(minv=-1.0, maxv=1.0),
         # Pad if image smaller than crop size, then random crop
         SpatialPad(spatial_size=crop_size, mode="constant"),
         RandSpatialCrop(roi_size=crop_size, random_center=True, random_size=False),
@@ -269,9 +266,7 @@ def create_brats_inference_preprocessing(
     transforms = [
         EnsureType(),
         EnsureChannelFirst(channel_dim="no_channel"),
-        NormalizeIntensity()
-        if normalize_mode == "zscore"
-        else ScaleIntensity(minv=-1.0, maxv=1.0),
+        NormalizeIntensity() if normalize_mode == "zscore" else ScaleIntensity(minv=-1.0, maxv=1.0),
     ]
     return Compose(transforms)
 
@@ -292,7 +287,7 @@ def create_medmnist_training_preprocessing(
     """
     transforms = [
         EnsureType(),
-        EnsureChannelFirst(channel_dim="no_channel"),
+        # MedMNIST3D data already has channel dim (1, D, H, W), no need for EnsureChannelFirst
         ScaleIntensity(minv=-1.0, maxv=1.0),
         # Pad if smaller than crop size, then random crop
         SpatialPad(spatial_size=crop_size, mode="constant"),
@@ -312,7 +307,7 @@ def create_medmnist_inference_preprocessing() -> Compose:
     """
     transforms = [
         EnsureType(),
-        EnsureChannelFirst(channel_dim="no_channel"),
+        # MedMNIST3D data already has channel dim (1, D, H, W), no need for EnsureChannelFirst
         ScaleIntensity(minv=-1.0, maxv=1.0),
     ]
     return Compose(transforms)
@@ -363,10 +358,14 @@ def create_brats2023_training_preprocessing(
 
     # Pad and random crop
     crop_keys = ["image"] if task == "reconstruction" else ["image", "label"]
-    transforms.extend([
-        SpatialPadd(keys=crop_keys, spatial_size=crop_size, mode="constant"),
-        RandSpatialCropd(keys=crop_keys, roi_size=crop_size, random_center=True, random_size=False),
-    ])
+    transforms.extend(
+        [
+            SpatialPadd(keys=crop_keys, spatial_size=crop_size, mode="constant"),
+            RandSpatialCropd(
+                keys=crop_keys, roi_size=crop_size, random_center=True, random_size=False
+            ),
+        ]
+    )
 
     return Compose(transforms)
 
@@ -454,9 +453,7 @@ def create_vqvae_training_preprocessing(
     transforms = [
         EnsureType(),
         EnsureChannelFirst(channel_dim="no_channel"),
-        NormalizeIntensity()
-        if normalize_mode == "zscore"
-        else ScaleIntensity(minv=-1.0, maxv=1.0),
+        NormalizeIntensity() if normalize_mode == "zscore" else ScaleIntensity(minv=-1.0, maxv=1.0),
         SpatialPad(spatial_size=validated_crop_size, mode="constant"),
         RandSpatialCrop(roi_size=validated_crop_size, random_center=True, random_size=False),
     ]
@@ -492,9 +489,7 @@ def create_vqvae_inference_preprocessing(
     transforms = [
         EnsureType(),
         EnsureChannelFirst(channel_dim="no_channel"),
-        NormalizeIntensity()
-        if normalize_mode == "zscore"
-        else ScaleIntensity(minv=-1.0, maxv=1.0),
+        NormalizeIntensity() if normalize_mode == "zscore" else ScaleIntensity(minv=-1.0, maxv=1.0),
         DivisiblePad(k=downsampling_factor, mode="constant"),
     ]
     return Compose(transforms)
@@ -566,10 +561,14 @@ def create_vqvae2023_training_preprocessing(
     else:
         transforms.append(ScaleIntensityd(keys="image", minv=-1.0, maxv=1.0))
 
-    transforms.extend([
-        SpatialPadd(keys=crop_keys, spatial_size=validated_crop_size, mode="constant"),
-        RandSpatialCropd(keys=crop_keys, roi_size=validated_crop_size, random_center=True, random_size=False),
-    ])
+    transforms.extend(
+        [
+            SpatialPadd(keys=crop_keys, spatial_size=validated_crop_size, mode="constant"),
+            RandSpatialCropd(
+                keys=crop_keys, roi_size=validated_crop_size, random_center=True, random_size=False
+            ),
+        ]
+    )
 
     return Compose(transforms)
 

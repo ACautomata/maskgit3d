@@ -4,7 +4,6 @@ Simple data providers for synthetic data generation.
 This module provides SimpleDataProvider for generating synthetic 3D volumes
 for testing and development purposes.
 """
-from collections.abc import Iterator
 
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -126,35 +125,32 @@ class SimpleDataProvider(DataProvider):
             mode="test",
         )
 
-    def train_loader(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+    def train_loader(self) -> DataLoader:
         """Get training data loader."""
-        loader = DataLoader(
+        return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
             drop_last=True,
         )
-        return iter(loader)
 
-    def val_loader(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+    def val_loader(self) -> DataLoader:
         """Get validation data loader."""
-        loader = DataLoader(
+        return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
             drop_last=False,
         )
-        return iter(loader)
 
-    def test_loader(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+    def test_loader(self) -> DataLoader:
         """Get test data loader."""
-        loader = DataLoader(
+        return DataLoader(
             self.test_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
             drop_last=False,
         )
-        return iter(loader)

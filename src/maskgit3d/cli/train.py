@@ -56,17 +56,31 @@ def _create_data_config(cfg: DictConfig) -> dict:
             "in_channels": model.get("in_channels", 1),
             "out_channels": model.get("in_channels", 1),
         }
-    elif dataset_type in ("organ", "nodule", "adrenal", "vessel", "fracture", "synapse"):
+    elif dataset_type == "medmnist3d":
+        dataset_name = dataset.get("dataset_name", "organmnist3d")
+        medmnist_type = dataset_name.replace("mnist3d", "")
         params = {
             **common_params,
-            "dataset_type": dataset_type,
+            "dataset_type": medmnist_type,
             "input_size": dataset.get("input_size", 28),
-            "data_root": dataset.get("data_root", "./data"),
+            "data_root": dataset.get("data_dir", dataset.get("data_root", "./data")),
             "download": dataset.get("download", True),
             "in_channels": model.get("in_channels", 1),
             "pin_memory": dataset.get("pin_memory", True),
             "drop_last_train": dataset.get("drop_last_train", True),
         }
+    elif dataset_type in ("organ", "nodule", "adrenal", "vessel", "fracture", "synapse"):
+        params = {
+            **common_params,
+            "dataset_type": dataset_type,
+            "input_size": dataset.get("input_size", 28),
+            "data_root": dataset.get("data_dir", dataset.get("data_root", "./data")),
+            "download": dataset.get("download", True),
+            "in_channels": model.get("in_channels", 1),
+            "pin_memory": dataset.get("pin_memory", True),
+            "drop_last_train": dataset.get("drop_last_train", True),
+        }
+        return {"type": "medmnist3d", "params": params}
     elif dataset_type == "brats":
         params = {
             **common_params,
@@ -112,8 +126,8 @@ def create_module_from_config(cfg: DictConfig):
             self.inference_module = InferenceModule(inference_config)
             if model_type == "maskgit":
                 model_params = _create_model_params(cfg, model_type, base_params)
-                pretrained_path = cfg.model.get("pretrained_vqvae_path", None)
-                freeze_vqvae = cfg.model.get("freeze_vqvae", True)
+                pretrained_path = cfg.model.get("pretrained_vqgan_path", None)
+                freeze_vqvae = cfg.model.get("freeze_vqgan", True)
                 self.model_module = MaskGITModelModule(
                     {"type": model_type, "params": model_params},
                     pretrained_vqvae_path=pretrained_path,
@@ -158,16 +172,32 @@ def _create_model_params(cfg: DictConfig, model_type: str, base_params: dict) ->
             "mask_ratio": cfg.model.get("mask_ratio", 0.5),
         }
     elif model_type in ("vqgan", "vqgan3d"):
+        channel_multipliers = list(cfg.model.get("channel_multipliers", [1, 2]))
+        base_channel = 64
+        num_channels = tuple(base_channel * m for m in channel_multipliers)
+        num_levels = len(channel_multipliers)
+
+        raw_res_blocks = cfg.model.get("num_res_blocks", 2)
+        if isinstance(raw_res_blocks, int):
+            num_res_blocks = tuple([raw_res_blocks] * num_levels)
+        else:
+            num_res_blocks = tuple(raw_res_blocks)
+
+        # attn_resolutions → attention_levels: level i has resolution image_size // 2^i
+        image_size = base_params["image_size"]
+        attn_resolutions = list(cfg.model.get("attn_resolutions", []))
+        attention_levels = tuple(
+            (image_size // (2**i)) in attn_resolutions for i in range(num_levels)
+        )
+
         return {
             "in_channels": base_params["in_channels"],
             "codebook_size": cfg.model.get("codebook_size", 1024),
             "embed_dim": base_params["embed_dim"],
             "latent_channels": base_params["latent_channels"],
-            "resolution": base_params["image_size"],
-            "channel_multipliers": tuple(cfg.model.get("channel_multipliers", [1, 2])),
-            "num_res_blocks": cfg.model.get("num_res_blocks", 2),
-            "attn_resolutions": tuple(cfg.model.get("attn_resolutions", [])),
-            "dropout": cfg.model.get("dropout", 0.0),
+            "num_channels": num_channels,
+            "num_res_blocks": num_res_blocks,
+            "attention_levels": attention_levels,
         }
     elif model_type == "maisi_vq":
         from maskgit3d.infrastructure.vqgan import get_maisi_vq_config
@@ -185,17 +215,23 @@ def _create_model_params(cfg: DictConfig, model_type: str, base_params: dict) ->
 
 def _create_training_config(cfg: DictConfig, model_type: str) -> dict:
     strategy_type = "maskgit" if model_type == "maskgit" else "vqgan"
-    return {
-        "type": strategy_type,
-        "params": {
-            "codebook_weight": 1.0,
-            "pixel_loss_weight": 1.0,
+    if strategy_type == "vqgan":
+        vqgan_cfg = cfg.training.get("vqgan", {})
+        params = {
+            "codebook_weight": vqgan_cfg.get("codebook_weight", 1.0),
+            "pixel_loss_weight": vqgan_cfg.get("pixel_loss_weight", 1.0),
+            "perceptual_weight": vqgan_cfg.get("perceptual_weight", 1.0),
+            "disc_weight": vqgan_cfg.get("disc_weight", 0.1),
+            "disc_start": vqgan_cfg.get("disc_start", 500),
         }
-        if strategy_type == "vqgan"
-        else {
+    else:
+        params = {
             "mask_ratio": cfg.model.get("mask_ratio", 0.5),
             "reconstruction_weight": 1.0,
-        },
+        }
+    return {
+        "type": strategy_type,
+        "params": params,
     }
 
 

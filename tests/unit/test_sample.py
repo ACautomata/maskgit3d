@@ -3,6 +3,7 @@ Sample unit tests for the maskgit3d framework.
 
 These tests verify the basic functionality of the core components.
 """
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -31,7 +32,6 @@ class TestModelInterface:
         required = ["forward", "save_checkpoint", "load_checkpoint", "device"]
         for name in required:
             assert hasattr(ModelInterface, name), f"ModelInterface missing {name}"
-
 
 
 class TestMockModel:
@@ -91,9 +91,7 @@ class TestTrainingStrategy:
         result = mock_strategy.train_step(mock_model, batch, mock_optimizer)
 
         assert result == expected_metrics
-        mock_strategy.train_step.assert_called_once_with(
-            mock_model, batch, mock_optimizer
-        )
+        mock_strategy.train_step.assert_called_once_with(mock_model, batch, mock_optimizer)
 
     def test_mock_validation_step(self):
         """Test validation step with mock strategy."""
@@ -300,7 +298,7 @@ class TestSimpleDataProvider:
             spatial_size=(8, 8, 8),
         )
 
-        train_iter = provider.train_loader()
+        train_iter = iter(provider.train_loader())
         batch = next(train_iter)
 
         inputs, targets = batch
@@ -318,11 +316,11 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
     )
-    config.addinivalue_line(
-        "markers", "gpu: marks tests that require GPU"
-    )
+    config.addinivalue_line("markers", "gpu: marks tests that require GPU")
+
 
 def test_domain_layer_does_not_export_maskgit_strategy_abstraction():
     """Domain layer should not export framework-specific strategy abstractions."""
     from maskgit3d.domain import interfaces
+
     assert not hasattr(interfaces, "MaskGITTrainingStrategy")

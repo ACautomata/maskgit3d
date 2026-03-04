@@ -21,8 +21,8 @@ class TestDataProviderIntegration:
             spatial_size=(32, 32, 32),
         )
 
-        # Test train loader (returns iterator)
-        batch_x, batch_y = next(provider.train_loader())
+        # Test train loader (returns DataLoader)
+        batch_x, batch_y = next(iter(provider.train_loader()))
 
         assert batch_x.shape == (2, 1, 32, 32, 32)
         assert batch_y.shape == (2, 1, 32, 32, 32)
@@ -37,8 +37,8 @@ class TestDataProviderIntegration:
             spatial_size=(16, 16, 16),
         )
 
-        val_x, val_y = next(provider.val_loader())
-        test_x, test_y = next(provider.test_loader())
+        val_x, val_y = next(iter(provider.val_loader()))
+        test_x, test_y = next(iter(provider.test_loader()))
 
         assert val_x.shape[0] <= 2
         assert test_x.shape[0] <= 2
