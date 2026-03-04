@@ -1,13 +1,14 @@
 """
 Unit tests for VQGAN components.
 
-These tests verify the functionality of VQGAN models, discriminators,
+These tests verify the functionality of VQVAE models, discriminators,
 quantizers, and training strategies.
 """
 
 import torch
 
 from maskgit3d.domain.interfaces import ModelInterface
+from maskgit3d.infrastructure.vqgan import VQVAE
 from maskgit3d.infrastructure.vqgan.discriminator import (
     ActNorm,
     IdentityDiscriminator,
@@ -16,7 +17,6 @@ from maskgit3d.infrastructure.vqgan.discriminator import (
 from maskgit3d.infrastructure.vqgan.quantize import (
     VectorQuantizer,
 )
-from maskgit3d.infrastructure.vqgan.vqgan_model_3d import VQModel3D
 
 
 class TestVectorQuantizer:
@@ -243,70 +243,40 @@ class TestQuantizerInterface:
         assert isinstance(quantizer, QuantizerInterface)
 
 
-class TestVQModel3D:
-    """Regression tests for VQModel3D construction behavior."""
+class TestVQVAE:
+    """Tests for VQVAE (Maisi-based VQVAE)."""
 
-    def test_vqmodel3d_initialization_succeeds(self):
-        """VQModel3D should initialize with explicit constructor args."""
-        model = VQModel3D(
+    def test_vqvae_initialization_succeeds(self):
+        """VQVAE should initialize with MONAI MaisiEncoder/MaisiDecoder."""
+        model = VQVAE(
             in_channels=1,
             codebook_size=64,
             embed_dim=32,
-            latent_channels=64,
-            resolution=32,
-            channel_multipliers=(1, 2),
+            latent_channels=4,
         )
         assert model is not None
 
-    def test_vqmodel3d_codebook_size_matches_argument(self):
+    def test_vqvae_codebook_size_matches_argument(self):
         """codebook_size property should reflect the configured codebook size."""
-        model = VQModel3D(
+        model = VQVAE(
             in_channels=1,
             codebook_size=128,
             embed_dim=32,
-            latent_channels=64,
-            resolution=32,
-            channel_multipliers=(1, 2),
+            latent_channels=4,
         )
         assert model.codebook_size == 128
 
 
-def test_vqmodel_forward_returns_tensor_for_model_interface_contract():
-    """VQModel3D.forward() must return a single Tensor per ModelInterface contract."""
-    model = VQModel3D(
+def test_vqvae_forward_returns_tensor_for_model_interface_contract():
+    """VQVAE.forward() must return a single Tensor per ModelInterface contract."""
+    model = VQVAE(
         in_channels=1,
         codebook_size=64,
         embed_dim=32,
-        latent_channels=64,
-        resolution=32,
-        channel_multipliers=(1, 2),
+        latent_channels=4,
+        num_splits=1,  # Avoid split issues with small input
     )
-    x = torch.randn(1, 1, 32, 32, 32)
+    x = torch.randn(1, 1, 8, 8, 8)
     out = model.forward(x)
     assert isinstance(out, torch.Tensor), f"Expected Tensor, got {type(out)}"
     assert isinstance(model, ModelInterface)
-
-
-def test_vqmodel_latent_shape_does_not_rerun_encoder_each_access(monkeypatch):
-    """latent_shape must return cached value without running the encoder."""
-    model = VQModel3D(
-        in_channels=1,
-        codebook_size=64,
-        embed_dim=32,
-        latent_channels=64,
-        resolution=32,
-        channel_multipliers=(1, 2),
-    )
-
-    call_count = {"n": 0}
-    original = model.encoder.forward
-
-    def wrapped(*args, **kwargs):
-        call_count["n"] += 1
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(model.encoder, "forward", wrapped)
-    _ = model.latent_shape
-    _ = model.latent_shape
-
-    assert call_count["n"] == 0

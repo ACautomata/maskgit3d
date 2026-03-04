@@ -98,8 +98,8 @@ class TestVQGANOptimizerFactory:
     """Tests for VQGANOptimizerFactory."""
 
     def test_create_with_discriminator(self):
-        """Test creating optimizers with discriminator."""
-        factory = VQGANOptimizerFactory(lr_g=1e-4, lr_d=2e-4)
+        """Test creating optimizers with discriminator (same lr for G and D)."""
+        factory = VQGANOptimizerFactory(lr=1e-4)
         gen_model = nn.Linear(10, 10)
         disc_model = nn.Linear(10, 1)
 
@@ -108,7 +108,7 @@ class TestVQGANOptimizerFactory:
         assert isinstance(opt_g, torch.optim.AdamW)
         assert isinstance(opt_d, torch.optim.AdamW)
         assert opt_g.defaults["lr"] == 1e-4
-        assert opt_d.defaults["lr"] == 2e-4
+        assert opt_d.defaults["lr"] == 1e-4
 
     def test_create_without_discriminator(self):
         """Test creating optimizers without discriminator."""
