@@ -34,3 +34,6 @@ checkpoint:
 output:
   save_predictions: false
   output_dir: ./outputs
+  export_nifti: false           # Save input/prediction/target as .nii.gz files
+  enable_tensorboard: false     # Log sample slices to TensorBoard
+  tensorboard_dir: null         # TensorBoard log dir (defaults to output_dir/tensorboard)

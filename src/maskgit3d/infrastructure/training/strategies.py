@@ -675,13 +675,16 @@ class VQGANMetrics(Metrics):
     """
     Metrics for VQGAN evaluation.
 
-    Computes reconstruction metrics including PSNR, SSIM using MONAI/torchmetrics.
+    Computes reconstruction metrics including PSNR, SSIM, LPIPS using MONAI.
+    Tracks per-batch values and computes mean±std statistics.
+    Supports TensorBoard logging and JSON/CSV export.
     """
 
     def __init__(
         self,
         data_range: float = 1.0,
         spatial_dims: int = 2,
+        enable_lpips: bool = True,
     ):
         """
         Initialize VQGAN metrics.
@@ -689,9 +692,11 @@ class VQGANMetrics(Metrics):
         Args:
             data_range: Data range of input images (e.g., 1.0 for [-1,1], 255 for [0,255])
             spatial_dims: Number of spatial dimensions (2 for images, 3 for volumetric)
+            enable_lpips: Whether to enable LPIPS perceptual metric
         """
         self.data_range = data_range
         self.spatial_dims = spatial_dims
+        self.enable_lpips = enable_lpips
 
         # Use MONAI for PSNR and SSIM
         try:
@@ -711,30 +716,50 @@ class VQGANMetrics(Metrics):
             self.psnr_metric = None
             self.ssim_metric = None
 
+        self.lpips_loss: Any = None
+        if enable_lpips:
+            try:
+                from monai.losses.perceptual import PerceptualLoss
+
+                self.lpips_loss = PerceptualLoss(
+                    spatial_dims=spatial_dims,
+                    network_type="alex",
+                    is_fake_3d=True,
+                    fake_3d_ratio=0.5,
+                )
+                for param in self.lpips_loss.parameters():
+                    param.requires_grad = False
+            except ImportError:
+                import warnings
+
+                warnings.warn("MONAI PerceptualLoss not available. Upgrade MONAI to >=1.3")
+                self.enable_lpips = False
+
         self.reset()
 
     def reset(self) -> None:
         """Reset metrics."""
-        if self.psnr_metric:
+        if self.psnr_metric is not None:
             self.psnr_metric.reset()
-        if self.ssim_metric:
+        if self.ssim_metric is not None:
             self.ssim_metric.reset()
-        self.psnr_values: list[float] = []
-        self.ssim_values: list[float] = []
+
+        # Per-batch values for mean±std computation
+        self.psnr_values: list[Any] = []
+        self.ssim_values: list[Any] = []
+        self.lpips_values: list[Any] = []
+
+        # Accumulated values for MONAI metrics
+        self._psnr_sum = 0.0
+        self._ssim_sum = 0.0
+        self._lpips_sum = 0.0
+        self._count = 0
 
     def update(
         self,
         predictions: Any,
         targets: Any,
     ) -> None:
-        """
-        Update metrics with new predictions.
-
-        Args:
-            predictions: Reconstructed images [B, C, H, W] or [B, C, D, H, W]
-            targets: Original images
-        """
-        # Convert to tensor if needed
         if not isinstance(predictions, torch.Tensor):
             pred = torch.from_numpy(predictions["images"])
         else:
@@ -742,28 +767,47 @@ class VQGANMetrics(Metrics):
 
         target = torch.from_numpy(targets) if not isinstance(targets, torch.Tensor) else targets
 
-        # Move to same device (target may be on GPU)
         if target.is_cuda and not pred.is_cuda:
             pred = pred.to(target.device)
 
-        # Ensure predictions are in [0, data_range] range for MONAI
-        # VQGAN outputs are typically in [-1, 1], so rescale to [0, 1]
-        pred = (pred + 1) / 2 * self.data_range
-        target = (target + 1) / 2 * self.data_range
+        pred_normalized = (pred + 1) / 2 * self.data_range
+        target_normalized = (target + 1) / 2 * self.data_range
 
-        if self.psnr_metric and self.ssim_metric:
-            # Use MONAI metrics
-            self.psnr_metric(pred, target)
-            self.ssim_metric(pred, target)
-        else:
-            # Fallback to manual computation
-            mse = F.mse_loss(pred, target)
-            psnr = 20 * torch.log10(self.data_range / torch.sqrt(mse))
-            self.psnr_values.append(psnr.item())
+        if self.psnr_metric is not None:
+            self.psnr_metric(pred_normalized, target_normalized)
+            psnr_val = self._safe_item(self.psnr_metric.aggregate())
+            self.psnr_values.append(psnr_val)
+            self._psnr_sum += psnr_val
 
-            # Simplified SSIM
-            ssim_val = self._compute_ssim_fallback(pred, target)
-            self.ssim_values.append(ssim_val.item())
+        if self.ssim_metric is not None:
+            try:
+                self.ssim_metric(pred_normalized, target_normalized)
+                ssim_val = self._safe_item(self.ssim_metric.aggregate())
+                self.ssim_values.append(ssim_val)
+                self._ssim_sum += ssim_val
+            except RuntimeError:
+                # SSIM kernel size (default 11) may exceed small input dimensions
+                pass
+
+        if self.enable_lpips and self.lpips_loss is not None:
+            try:
+                lpips_val = self._compute_lpips(pred_normalized, target_normalized)
+                self.lpips_values.append(lpips_val)
+                self._lpips_sum += lpips_val
+            except Exception:
+                pass
+
+        self._count += 1
+
+    def _safe_item(self, tensor_or_tuple: torch.Tensor | tuple) -> Any:
+        if isinstance(tensor_or_tuple, tuple):
+            return tensor_or_tuple[0].mean().item()
+        if tensor_or_tuple.numel() == 1:
+            return tensor_or_tuple.item()
+        return tensor_or_tuple.mean().item()
+
+    def _compute_lpips(self, pred: torch.Tensor, target: torch.Tensor) -> float:
+        return self.lpips_loss(pred, target).mean().item()
 
     def _compute_ssim_fallback(self, img1: torch.Tensor, img2: torch.Tensor) -> torch.Tensor:
         """Fallback SSIM computation using torchmetrics if available."""
@@ -784,21 +828,144 @@ class VQGANMetrics(Metrics):
             return torch.tensor(1.0 - F.mse_loss(img1, img2) / (self.data_range**2))
 
     def compute(self) -> dict[str, float]:
-        """Compute final metrics."""
-        if self.psnr_metric and self.ssim_metric:
-            psnr_tensor = self.psnr_metric.aggregate()
-            ssim_tensor = self.ssim_metric.aggregate()
-            # These are guaranteed to be tensors from MONAI metrics
-            psnr: float = psnr_tensor.item()  # type: ignore[union-attr]
-            ssim: float = ssim_tensor.item()  # type: ignore[union-attr]
-        else:
-            psnr = sum(self.psnr_values) / len(self.psnr_values) if self.psnr_values else 0.0
-            ssim = sum(self.ssim_values) / len(self.ssim_values) if self.ssim_values else 0.0
-
-        return {
-            "psnr": psnr,
-            "ssim": ssim,
+        """Compute final metrics with mean±std statistics."""
+        metrics: dict[str, float] = {
+            "psnr": 0.0,
+            "ssim": 0.0,
+            "psnr_mean": 0.0,
+            "psnr_std": 0.0,
+            "ssim_mean": 0.0,
+            "ssim_std": 0.0,
         }
+
+        # PSNR
+        if self.psnr_values:
+            psnr_mean = sum(self.psnr_values) / len(self.psnr_values)
+            psnr_std = (
+                (sum((x - psnr_mean) ** 2 for x in self.psnr_values) / len(self.psnr_values)) ** 0.5
+                if len(self.psnr_values) > 1
+                else 0.0
+            )
+            metrics["psnr"] = psnr_mean
+            metrics["psnr_mean"] = psnr_mean
+            metrics["psnr_std"] = psnr_std
+
+        # SSIM
+        if self.ssim_values:
+            ssim_mean = sum(self.ssim_values) / len(self.ssim_values)
+            ssim_std = (
+                (sum((x - ssim_mean) ** 2 for x in self.ssim_values) / len(self.ssim_values)) ** 0.5
+                if len(self.ssim_values) > 1
+                else 0.0
+            )
+            metrics["ssim"] = ssim_mean
+            metrics["ssim_mean"] = ssim_mean
+            metrics["ssim_std"] = ssim_std
+
+        # LPIPS
+        if self.lpips_values:
+            lpips_mean = sum(self.lpips_values) / len(self.lpips_values)
+            lpips_std = (
+                (sum((x - lpips_mean) ** 2 for x in self.lpips_values) / len(self.lpips_values))
+                ** 0.5
+                if len(self.lpips_values) > 1
+                else 0.0
+            )
+            metrics["lpips"] = lpips_mean
+            metrics["lpips_mean"] = lpips_mean
+            metrics["lpips_std"] = lpips_std
+
+        return metrics
+
+    def compute_with_stats(self) -> dict[str, Any]:
+        """
+        Compute metrics with full statistics (mean, std, min, max, count).
+
+        Returns:
+            Dictionary with full statistics for each metric
+        """
+        stats = {}
+
+        for metric_name, values in [
+            ("psnr", self.psnr_values),
+            ("ssim", self.ssim_values),
+            ("lpips", self.lpips_values),
+        ]:
+            if values:
+                stats[metric_name] = {
+                    "mean": sum(values) / len(values),
+                    "std": (
+                        (sum((x - sum(values) / len(values)) ** 2 for x in values) / len(values))
+                        ** 0.5
+                        if len(values) > 1
+                        else 0.0
+                    ),
+                    "min": min(values),
+                    "max": max(values),
+                    "count": len(values),
+                }
+
+        return stats
+
+    def export_json(self, path: str) -> None:
+        """
+        Export metrics to JSON file.
+
+        Args:
+            path: Path to save JSON file
+        """
+        import json
+
+        metrics = self.compute()
+        stats = self.compute_with_stats()
+
+        data = {
+            "summary": metrics,
+            "detailed_stats": stats,
+            "per_batch_values": {
+                "psnr": self.psnr_values,
+                "ssim": self.ssim_values,
+                "lpips": self.lpips_values,
+            },
+        }
+
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+
+    def export_csv(self, path: str) -> None:
+        """
+        Export per-batch metrics to CSV file.
+
+        Args:
+            path: Path to save CSV file
+        """
+        import csv
+
+        # Determine max length
+        max_len = max(len(self.psnr_values), len(self.ssim_values), len(self.lpips_values))
+
+        with open(path, "w", newline="") as f:
+            writer = csv.writer(f)
+            # Header
+            header = ["batch"]
+            if self.psnr_values:
+                header.append("psnr")
+            if self.ssim_values:
+                header.append("ssim")
+            if self.lpips_values:
+                header.append("lpips")
+            writer.writerow(header)
+
+            # Data rows
+            for i in range(max_len):
+                row = [i]
+                if i < len(self.psnr_values):
+                    row.append(self.psnr_values[i])
+                if i < len(self.ssim_values):
+                    row.append(self.ssim_values[i])
+                if i < len(self.lpips_values):
+                    row.append(self.lpips_values[i])
+                writer.writerow(row)
 
 
 # =============================================================================

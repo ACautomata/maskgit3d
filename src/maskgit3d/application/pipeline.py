@@ -139,6 +139,361 @@ class TestPipeline:
         np.save(probs_path, predictions["probs"])
 
 
+class FabricTestPipeline:
+    """
+    Pipeline for inference and testing with Lightning Fabric.
+
+    Provides lightweight distributed testing support using Lightning Fabric API
+    while maintaining the dependency injection architecture.
+
+    Supports Lightning Callbacks for extensibility (logging, visualization, etc.)
+    """
+
+    def __init__(
+        self,
+        model: ModelInterface,
+        data_provider: DataProvider,
+        inference_strategy: InferenceStrategy,
+        metrics: Metrics | None = None,
+        accelerator: str = "auto",
+        devices: int | list[int] | str = "auto",
+        strategy: str = "auto",
+        precision: Literal[
+            64,
+            32,
+            16,
+            "transformer-engine",
+            "transformer-engine-float16",
+            "16-true",
+            "16-mixed",
+            "bf16-true",
+            "bf16-mixed",
+            "32-true",
+            "64-true",
+            "64",
+            "32",
+            "16",
+            "bf16",
+        ]
+        | None = "32-true",
+        checkpoint_path: str | None = None,
+        output_dir: str = "./outputs",
+        callbacks: list[Any] | None = None,
+    ):
+        """
+        Initialize Fabric testing pipeline.
+
+        Args:
+            model: Model to test (implements ModelInterface)
+            data_provider: Data provider for test loader
+            inference_strategy: Inference strategy with predict/post_process
+            metrics: Metrics computation interface (optional)
+            accelerator: Fabric accelerator ("cpu", "cuda", "auto")
+            devices: Number of devices or device IDs
+            strategy: Fabric strategy ("auto", "ddp", "fsdp")
+            precision: Testing precision ("32-true", "16-mixed", "bf16-mixed")
+            checkpoint_path: Path to checkpoint to load (optional)
+            output_dir: Directory to save outputs
+            callbacks: List of Lightning Callback instances
+        """
+        if not LIGHTNING_AVAILABLE:
+            raise ImportError("Lightning is not installed. Install with: pip install lightning")
+
+        self.model = model
+        self.data_provider = data_provider
+        self.inference_strategy = inference_strategy
+        self.metrics = metrics
+        self.checkpoint_path = checkpoint_path
+        self.output_dir = Path(output_dir)
+        self.callbacks = callbacks or []
+
+        self._accelerator = accelerator
+        self._devices = devices
+        self._strategy = strategy
+        self._precision = precision
+
+        self._fabric: Any = None
+        self._global_step = 0
+
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def run(
+        self,
+        save_predictions: bool = False,
+        export_nifti: bool = False,
+        enable_tensorboard: bool = False,
+        tensorboard_dir: str | None = None,
+    ) -> dict[str, float]:
+        """
+        Run the testing loop with Fabric.
+
+        Args:
+            save_predictions: Whether to save prediction outputs
+            export_nifti: Whether to export predictions as NIfTI files
+            enable_tensorboard: Whether to enable TensorBoard logging
+            tensorboard_dir: Directory for TensorBoard logs (default: output_dir/tensorboard)
+
+        Returns:
+            Dictionary of test metrics
+        """
+        self._fabric = L.Fabric(
+            accelerator=self._accelerator,
+            devices=self._devices,
+            strategy=self._strategy,
+            precision=self._precision,
+            callbacks=self.callbacks,
+        )
+        self._fabric.launch()
+
+        self.model = self._fabric.setup(self.model)
+
+        if self.checkpoint_path:
+            self._load_checkpoint(self.checkpoint_path)
+
+        self.model.eval()
+
+        if self.metrics:
+            self.metrics.reset()
+
+        test_loader = self._fabric.setup_dataloaders(self.data_provider.test_loader())
+
+        writer = None
+        if enable_tensorboard:
+            from torch.utils.tensorboard import SummaryWriter
+
+            tb_dir = Path(tensorboard_dir) if tensorboard_dir else self.output_dir / "tensorboard"
+            tb_dir.mkdir(parents=True, exist_ok=True)
+            writer = SummaryWriter(str(tb_dir))
+
+        all_predictions = []
+
+        self._call_callbacks("on_test_epoch_start")
+
+        pbar = tqdm(test_loader, desc="Testing")
+        with torch.no_grad():
+            for batch_idx, batch in enumerate(pbar):
+                self._call_callbacks("on_test_batch_start", batch, batch_idx)
+
+                if isinstance(batch, tuple | list):
+                    images = batch[0]
+                    targets = batch[1] if len(batch) > 1 else None
+                else:
+                    images = batch
+                    targets = None
+
+                raw_predictions = self.inference_strategy.predict(self.model, images)
+                processed = self.inference_strategy.post_process(raw_predictions)
+
+                all_predictions.append(processed)
+
+                if self.metrics and targets is not None:
+                    self.metrics.update(processed, targets)
+
+                if save_predictions:
+                    self._save_predictions(processed, batch_idx)
+
+                if export_nifti:
+                    self._export_nifti(images, processed, targets, batch_idx)
+
+                if writer is not None:
+                    self._log_tensorboard(writer, images, processed, targets, batch_idx)
+
+                self._global_step += 1
+                pbar.set_postfix({"batch": batch_idx + 1})
+
+                self._call_callbacks("on_test_batch_end", batch, batch_idx)
+
+        self._call_callbacks("on_test_epoch_end")
+
+        if writer is not None:
+            writer.close()
+
+        if self.metrics:
+            final_metrics = self.metrics.compute()
+            if self._fabric.is_global_zero:
+                print("Test Results:")
+                for key, value in final_metrics.items():
+                    print(f"  {key}: {value:.4f}")
+            return final_metrics
+
+        return {"num_samples": len(all_predictions)}
+
+    def _load_checkpoint(self, checkpoint_path: str) -> None:
+        """
+        Load model checkpoint with Fabric.
+
+        Supports both Fabric format (full model saved) and legacy state_dict format.
+        """
+        try:
+            checkpoint = self._fabric.load(checkpoint_path)
+
+            if isinstance(checkpoint, dict):
+                if "model" in checkpoint:
+                    pass
+                elif "model_state_dict" in checkpoint:
+                    self.model.load_state_dict(checkpoint["model_state_dict"])
+                    print(f"Loaded checkpoint (legacy format) from {checkpoint_path}")
+                    return
+                elif "state_dict" in checkpoint:
+                    self.model.load_state_dict(checkpoint["state_dict"])
+                    print(f"Loaded checkpoint (legacy format) from {checkpoint_path}")
+                    return
+                else:
+                    self.model.load_state_dict(checkpoint)
+                    print(f"Loaded checkpoint (raw state_dict) from {checkpoint_path}")
+                    return
+
+            print(f"Loaded checkpoint from {checkpoint_path}")
+        except Exception as e:
+            print(f"Fabric checkpoint loading failed, trying legacy format: {e}")
+            checkpoint = load_ckpt(checkpoint_path, map_location="cpu")
+
+            if "model_state_dict" in checkpoint:
+                state_dict = checkpoint["model_state_dict"]
+            elif "model" in checkpoint:
+                state_dict = checkpoint["model"]
+            elif "state_dict" in checkpoint:
+                state_dict = checkpoint["state_dict"]
+            else:
+                state_dict = checkpoint
+
+            self.model.load_state_dict(state_dict)
+            print(f"Loaded checkpoint (legacy format) from {checkpoint_path}")
+
+    def _save_predictions(
+        self,
+        predictions: dict[str, Any],
+        batch_idx: int,
+    ) -> None:
+        """Save predictions to output directory."""
+        import numpy as np
+
+        masks_path = self.output_dir / f"predictions_batch_{batch_idx}.npy"
+        np.save(masks_path, predictions["masks"])
+
+        probs_path = self.output_dir / f"probabilities_batch_{batch_idx}.npy"
+        np.save(probs_path, predictions["probs"])
+
+    def _export_nifti(
+        self,
+        images: "torch.Tensor",
+        predictions: dict[str, Any],
+        targets: "torch.Tensor | None",
+        batch_idx: int,
+    ) -> None:
+        """Export inputs, predictions, and targets as NIfTI files.
+
+        Files are saved to ``output_dir`` with names:
+        - ``input_batch_{batch_idx}.nii.gz``        — raw input volume
+        - ``predictions_batch_{batch_idx}.nii.gz``  — predicted mask / reconstruction
+        - ``probabilities_batch_{batch_idx}.nii.gz``— predicted probabilities
+        - ``target_batch_{batch_idx}.nii.gz``       — ground-truth label (if available)
+        """
+        try:
+            import nibabel as nib
+            import numpy as np
+
+            def _to_numpy(t: "torch.Tensor") -> "np.ndarray":
+                """Detach → CPU → float32 → numpy, drop batch dim."""
+                arr = t.detach().cpu().float().numpy()
+                # shape: (B, C, D, H, W) → take first sample → (C, D, H, W)
+                if arr.ndim == 5:
+                    arr = arr[0]
+                # (C, D, H, W) → (D, H, W) for single-channel or keep all channels
+                if arr.shape[0] == 1:
+                    arr = arr[0]
+                return arr
+
+            nib.save(
+                nib.Nifti1Image(_to_numpy(images), affine=np.eye(4)),
+                str(self.output_dir / f"input_batch_{batch_idx}.nii.gz"),
+            )
+
+            masks = predictions.get("masks")
+            probs = predictions.get("probs")
+
+            if masks is not None:
+                masks_arr = _to_numpy(masks) if hasattr(masks, "detach") else masks
+                if isinstance(masks_arr, np.ndarray):
+                    nib.save(
+                        nib.Nifti1Image(masks_arr, affine=np.eye(4)),
+                        str(self.output_dir / f"predictions_batch_{batch_idx}.nii.gz"),
+                    )
+
+            if probs is not None:
+                probs_arr = _to_numpy(probs) if hasattr(probs, "detach") else probs
+                if isinstance(probs_arr, np.ndarray):
+                    nib.save(
+                        nib.Nifti1Image(probs_arr, affine=np.eye(4)),
+                        str(self.output_dir / f"probabilities_batch_{batch_idx}.nii.gz"),
+                    )
+
+            if targets is not None:
+                nib.save(
+                    nib.Nifti1Image(_to_numpy(targets), affine=np.eye(4)),
+                    str(self.output_dir / f"target_batch_{batch_idx}.nii.gz"),
+                )
+
+        except ImportError:
+            print("Warning: nibabel not installed. Skipping NIfTI export.")
+        except Exception as e:
+            print(f"Warning: Failed to export NIfTI for batch {batch_idx}: {e}")
+
+    def _log_tensorboard(
+        self,
+        writer: Any,
+        images: "torch.Tensor",
+        predictions: dict[str, Any],
+        targets: "torch.Tensor | None",
+        batch_idx: int,
+    ) -> None:
+        """Log input, prediction, and target centre slices to TensorBoard.
+
+        For 3D volumes (B, C, D, H, W) the centre axial slice is extracted.
+        Images are normalised to [0, 1] before logging.
+
+        Tags written:
+        - ``test/input``      — centre slice of the input volume
+        - ``test/prediction`` — centre slice of the predicted mask / reconstruction
+        - ``test/target``     — centre slice of the ground-truth (if available)
+        """
+        import numpy as np
+
+        step = self._global_step
+
+        def _centre_slice(t: "torch.Tensor") -> "np.ndarray":
+            """Return a normalised (H, W) centre-slice numpy array from a (B,C,D,H,W) tensor."""
+            arr = t.detach().cpu().float()
+            while arr.ndim > 3:
+                arr = arr[0]
+            if arr.ndim == 3:
+                arr = arr[arr.shape[0] // 2]
+            arr_np = arr.numpy()
+            lo, hi = arr_np.min(), arr_np.max()
+            if hi > lo:
+                arr_np = (arr_np - lo) / (hi - lo)
+            return arr_np
+
+        writer.add_image("test/input", _centre_slice(images), step, dataformats="HW")
+
+        masks = predictions.get("masks")
+        if masks is not None and hasattr(masks, "detach"):
+            writer.add_image("test/prediction", _centre_slice(masks), step, dataformats="HW")
+
+        if targets is not None:
+            writer.add_image("test/target", _centre_slice(targets), step, dataformats="HW")
+
+    def _call_callbacks(self, hook_name: str, *args, **kwargs) -> None:
+        """Call callback hooks if they exist."""
+        for callback in self.callbacks:
+            if hasattr(callback, hook_name):
+                method = getattr(callback, hook_name)
+                if "fabric" in hook_name or "test" in hook_name:
+                    method(self._fabric, *args, **kwargs)
+                else:
+                    method(self._fabric, self.model, *args, **kwargs)
+
+
 class FabricTrainingPipeline:
     """
     Pipeline for training with Lightning Fabric.
