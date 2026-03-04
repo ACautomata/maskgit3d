@@ -1,245 +1,280 @@
 # maskgit-3d
 
-A PyTorch + Lightning + MONAI deep learning framework with dependency injection architecture.
+基于 PyTorch + Lightning + MONAI 的 3D 医学图像生成深度学习框架，采用依赖注入架构。
 
-## Installation
+## 功能特性
+
+- **双阶段训练**: VQGAN (Stage 1) + MaskGIT (Stage 2)
+- **多数据集支持**: MedMNIST-3D、BraTS 等医学影像数据集
+- **依赖注入**: 基于 `injector` 库的清晰架构
+- **灵活配置**: 基于 Hydra 的配置管理系统
+- **高性能训练**: Lightning Fabric 支持多 GPU 与混合精度
+
+## 快速开始
+
+### 安装
 
 ```bash
+# 创建 conda 环境
 conda create -n maskgit3d python=3.10 -y
 conda activate maskgit3d
+
+# 安装 PyTorch (CPU 或 CUDA 版本)
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# 安装核心依赖
 pip install lightning monai injector
+
+# 安装项目
 pip install -e .
 ```
 
-## One-Click Training & Testing Commands
+### 一键训练与测试
 
-All commands below use the `maskgit3d-train` / `maskgit3d-test` CLI entry points powered by [Hydra](https://hydra.cc/).
+> **前置条件**: conda 环境已激活 + 项目已安装
 
-> **Prerequisites**: conda environment activated (`conda activate maskgit3d`) and package installed (`pip install -e .`).
-
----
-
-### Stage 1 — VQGAN Training
-
-Train the VQ-VAE/VQGAN encoder-decoder with a vector-quantised codebook.
+#### Stage 1 — VQGAN 训练
 
 ```bash
-# Default: MedMNIST 3D dataset
+# 默认: MedMNIST-3D 数据集
 maskgit3d-train model=vqgan dataset=medmnist3d
 
-# With BraTS dataset
-maskgit3d-train model=vqgan dataset=brats dataset.data_dir=/path/to/brats
-
-# Custom epochs & learning rate
+# 自定义参数
 maskgit3d-train model=vqgan dataset=medmnist3d \
     training.num_epochs=100 \
     training.optimizer.lr=1e-4 \
     dataset.batch_size=4
-
-# Resume from a checkpoint
-maskgit3d-train model=vqgan dataset=medmnist3d \
-    checkpoint.resume_from=./checkpoints/checkpoint_epoch_50.ckpt
-
-# Mixed-precision training (recommended for GPU)
-maskgit3d-train model=vqgan dataset=medmnist3d \
-    training.fabric.precision=16-mixed
 ```
 
-**Key parameters:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `model.codebook_size` | `1024` | VQ codebook vocabulary size |
-| `model.embed_dim` | `256` | Embedding dimension |
-| `model.latent_channels` | `256` | Latent space channels |
-| `training.num_epochs` | `100` | Number of training epochs |
-| `training.optimizer.lr` | `1e-4` | Learning rate |
-| `dataset.batch_size` | `4` | Batch size |
-| `checkpoint.save_dir` | `./checkpoints` | Checkpoint save directory |
-
----
-
-### Stage 1 — VQGAN Testing
-
-Evaluate a trained VQGAN checkpoint. Outputs reconstruction metrics, TensorBoard visualisations, and `.nii.gz` sample files.
+#### Stage 2 — MaskGIT 训练
 
 ```bash
-# Basic evaluation
+# 需要先有 Stage 1 的 VQGAN 预训练模型
+maskgit3d-train model=maskgit dataset=medmnist3d \
+    model.pretrained_vqgan_path=./checkpoints/vqgan/best.ckpt
+```
+
+#### 模型测试
+
+```bash
+# VQGAN 测试
 maskgit3d-test model=vqgan dataset=medmnist3d \
     checkpoint.load_from=./checkpoints/vqgan/best.ckpt
 
-# Save reconstructed volumes as .nii.gz for offline inspection
-maskgit3d-test model=vqgan dataset=medmnist3d \
-    checkpoint.load_from=./checkpoints/vqgan/best.ckpt \
-    output.export_nifti=true \
-    output.output_dir=./outputs/vqgan_test
-
-# Enable TensorBoard sample visualisation
-maskgit3d-test model=vqgan dataset=medmnist3d \
-    checkpoint.load_from=./checkpoints/vqgan/best.ckpt \
-    output.enable_tensorboard=true \
-    output.tensorboard_dir=./outputs/vqgan_test/tensorboard
-
-# Full test with all outputs
-maskgit3d-test model=vqgan dataset=brats \
-    checkpoint.load_from=./checkpoints/vqgan/best.ckpt \
-    output.save_predictions=true \
-    output.export_nifti=true \
-    output.enable_tensorboard=true \
-    output.output_dir=./outputs/vqgan_brats_test
-```
-
-**View TensorBoard logs:**
-
-```bash
-tensorboard --logdir=./outputs/vqgan_test/tensorboard
-# Then open http://localhost:6006 in your browser
-```
-
----
-
-### Stage 2 — MaskGit Training
-
-Train the MaskGit transformer. **Requires a pretrained Stage 1 VQGAN checkpoint.**
-
-```bash
-# Train MaskGit with pretrained VQGAN (VQGAN frozen by default)
-maskgit3d-train model=maskgit dataset=medmnist3d \
-    model.pretrained_vqgan_path=./checkpoints/vqgan/best.ckpt
-
-# Fine-tune with VQGAN unfrozen (end-to-end)
-maskgit3d-train model=maskgit dataset=medmnist3d \
-    model.pretrained_vqgan_path=./checkpoints/vqgan/best.ckpt \
-    model.freeze_vqgan=false
-
-# Custom transformer configuration
-maskgit3d-train model=maskgit dataset=medmnist3d \
-    model.pretrained_vqgan_path=./checkpoints/vqgan/best.ckpt \
-    model.transformer_hidden=768 \
-    model.transformer_layers=12 \
-    model.transformer_heads=12 \
-    training.num_epochs=200 \
-    training.optimizer.lr=1e-4
-
-# With BraTS dataset
-maskgit3d-train model=maskgit dataset=brats \
-    model.pretrained_vqgan_path=./checkpoints/vqgan/best.ckpt \
-    dataset.data_dir=/path/to/brats
-
-# Resume training
-maskgit3d-train model=maskgit dataset=medmnist3d \
-    model.pretrained_vqgan_path=./checkpoints/vqgan/best.ckpt \
-    checkpoint.resume_from=./checkpoints/maskgit/checkpoint_epoch_50.ckpt
-```
-
-**Key parameters:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `model.pretrained_vqgan_path` | `null` | **Required**: path to Stage 1 checkpoint |
-| `model.freeze_vqgan` | `true` | Freeze VQGAN weights during Stage 2 training |
-| `model.transformer_hidden` | `768` | Transformer hidden dimension |
-| `model.transformer_layers` | `12` | Number of transformer layers |
-| `model.transformer_heads` | `12` | Number of attention heads |
-| `model.mask_ratio` | `0.5` | Masking ratio for MaskGit training |
-
----
-
-### Stage 2 — MaskGit Testing
-
-Evaluate a trained MaskGit checkpoint. Outputs generation/reconstruction metrics, TensorBoard visualisations, and `.nii.gz` samples.
-
-```bash
-# Basic evaluation
+# MaskGIT 测试
 maskgit3d-test model=maskgit dataset=medmnist3d \
     checkpoint.load_from=./checkpoints/maskgit/best.ckpt
-
-# Save generated volumes as .nii.gz
-maskgit3d-test model=maskgit dataset=medmnist3d \
-    checkpoint.load_from=./checkpoints/maskgit/best.ckpt \
-    output.export_nifti=true \
-    output.output_dir=./outputs/maskgit_test
-
-# Enable TensorBoard sample visualisation
-maskgit3d-test model=maskgit dataset=medmnist3d \
-    checkpoint.load_from=./checkpoints/maskgit/best.ckpt \
-    output.enable_tensorboard=true \
-    output.tensorboard_dir=./outputs/maskgit_test/tensorboard
-
-# Full test with all outputs
-maskgit3d-test model=maskgit dataset=brats \
-    checkpoint.load_from=./checkpoints/maskgit/best.ckpt \
-    output.save_predictions=true \
-    output.export_nifti=true \
-    output.enable_tensorboard=true \
-    output.output_dir=./outputs/maskgit_brats_test
 ```
 
----
+## 项目结构
 
-## Common Notes & Caveats
+```
+maskgit-3d/
+├── src/maskgit3d/
+│   ├── cli/              # 命令行接口 (train/test)
+│   ├── config/           # 配置模块与依赖注入
+│   ├── domain/           # 领域接口定义
+│   ├── application/      # 训练管道
+│   ├── infrastructure/   # 模型、数据、训练策略实现
+│   └── conf/            # Hydra 配置文件
+├── tests/                # 测试套件 (>80% 覆盖率)
+└── pyproject.toml       # 项目配置
+```
 
-### GPU Selection
+## 核心配置参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `model.codebook_size` | `1024` | VQ 码本大小 |
+| `model.embed_dim` | `256` | 嵌入维度 |
+| `model.latent_channels` | `256` | 潜在空间通道数 |
+| `model.transformer_hidden` | `768` | Transformer 隐藏维度 |
+| `model.transformer_layers` | `12` | Transformer 层数 |
+| `training.num_epochs` | `100` | 训练轮数 |
+| `training.optimizer.lr` | `1e-4` | 学习率 |
+| `dataset.batch_size` | `4` | 批大小 |
+
+## 开发命令
 
 ```bash
-# Use a specific GPU
+# 安装开发依赖
+poetry install
+
+# 运行全部测试
+poetry run pytest --cache-clear -vv tests
+
+# 运行带覆盖率测试
+make test
+
+# 代码格式化
+make format
+```
+
+## GPU 使用
+
+```bash
+# 指定 GPU
 CUDA_VISIBLE_DEVICES=0 maskgit3d-train model=vqgan dataset=medmnist3d
 
-# Multi-GPU with DDP
+# 多 GPU DDP
 maskgit3d-train model=vqgan dataset=medmnist3d \
     training.fabric.devices=2 \
     training.fabric.strategy=ddp
 ```
 
-### Output Directory Layout
+---
 
-Hydra automatically timestamps each run:
+<!-- Agent 文档开始 -->
+
+<details>
+<summary><h2>📖 Agent 完整文档 (点击展开)</h2></summary>
+
+### 架构概览
+
+本项目采用**依赖注入 (Dependency Injection)** 架构，核心模块位于 `src/maskgit3d/config/modules.py`。
+
+#### 依赖注入模块
+
+| 模块 | 职责 |
+|------|------|
+| `ModelModule` | 提供模型实现 (VQVAE、MaskGIT) |
+| `DataModule` | 提供数据加载器 (MedMNIST-3D、BraTS) |
+| `TrainingModule` | 提供训练策略与优化器 |
+| `InferenceModule` | 提供推理策略与指标 |
+| `SystemModule` | 提供系统级配置 (device) |
+
+#### 领域接口 (`domain/interfaces.py`)
+
+```python
+ModelInterface          # 模型基接口
+VQModelInterface        # VQ 模型特化接口
+MaskGITModelInterface   # MaskGIT 模型特化接口
+DataProvider            # 数据提供者接口
+TrainingStrategy       # 训练策略接口
+InferenceStrategy      # 推理策略接口
+OptimizerFactory       # 优化器工厂接口
+Metrics                # 指标接口
+```
+
+### 模型架构
+
+#### VQ-VAE / VQGAN (Stage 1)
+
+- **编码器**: 3D 卷积网络，将输入体积映射到潜在空间
+- **向量量化**: 使用码本 (codebook) 对潜在表示进行量化
+- **解码器**: 3D 卷积网络，从量化潜在重建图像
+- **判别器** (可选): GAN 对抗训练
+
+**配置文件**: `conf/model/vqgan.yaml`
+
+#### MaskGIT (Stage 2)
+
+- **VQGAN 编码器**: 冻结 (默认)，将图像编码为 token 序列
+- **Transformer**: 双向 Transformer (BERT-style) 预测 masked tokens
+- **VQGAN 解码器**: 将 token 序列解码回图像
+
+**配置文件**: `conf/model/maskgit.yaml`
+
+### 数据集支持
+
+| 数据集 | 配置 | 说明 |
+|--------|------|------|
+| MedMNIST-3D | `dataset=medmnist3d` | 28x28x28 医学图像分类数据集 |
+| BraTS | `dataset=brats` | 多模态脑肿瘤 MRI 数据集 |
+
+**数据提供者** (`infrastructure/data/`):
+
+- `MedMnist3DDataProvider`: MedMNIST-3D 数据加载
+- `BraTSDataProvider`: BraTS 数据加载
+- `SimpleDataProvider`: 简单数据加载
+
+### 训练策略
+
+#### VQGAN 训练策略
+
+- **损失函数**:
+  - Reconstruction Loss (L1/L2)
+  - Perceptual Loss (MONAI PerceptualLoss)
+  - Codebook Loss (VQ 承诺损失)
+  - GAN Loss (判别器对抗损失)
+
+#### MaskGIT 训练策略
+
+- **损失函数**:
+  - Masked Prediction Loss
+  - Reconstruction Loss
+- **Masking**: 随机 mask 50% (默认) 的 tokens
+
+### 推理策略
+
+- **VQGAN**: 直接重建
+- **MaskGIT**: 迭代式解码 (默认 12 步)
+
+### 输出格式
+
+#### Checkpoint 结构
+
+```python
+{
+    "epoch": int,
+    "global_step": int,
+    "model_state_dict": {...},
+    "optimizer_state_dict": {...},
+    "metrics": {...}
+}
+```
+
+#### NIfTI 输出
+
+当 `output.export_nifti=true` 时，保存为 `.nii.gz` 格式：
 
 ```
 outputs/
-└── 2025-03-02/
-    └── 10-30-15_vqgan_medmnist3d/
-        ├── .hydra/           # Hydra config snapshot
-        ├── checkpoints/      # Saved checkpoints
-        ├── tensorboard/      # TensorBoard event files
-        └── predictions/      # nii.gz / npy outputs
-```
-
-### NIfTI Output Files
-
-When `output.export_nifti=true`, the following files are saved per batch:
-
-```
-outputs/
-├── predictions_batch_0.nii.gz    # Predicted masks / reconstructions
-├── probabilities_batch_0.nii.gz  # Predicted probabilities
+├── predictions_batch_0.nii.gz
+├── probabilities_batch_0.nii.gz
 └── ...
 ```
 
-Open `.nii.gz` files with [ITK-SNAP](http://www.itksnap.org), [3D Slicer](https://www.slicer.org/), or nibabel:
+### 配置系统
 
-```python
-import nibabel as nib
-img = nib.load("predictions_batch_0.nii.gz")
-data = img.get_fdata()  # shape: (D, H, W) or (C, D, H, W)
+项目使用 **Hydra** 进行配置管理，配置文件位于 `src/maskgit3d/conf/`：
+
+```
+conf/
+├── config.yaml          # 主配置
+├── model/
+│   ├── vqgan.yaml
+│   └── maskgit.yaml
+├── dataset/
+│   ├── medmnist3d.yaml
+│   └── brats.yaml
+├── training/
+│   └── default.yaml
+└── experiment/
+    ├── vqgan_brats.yaml
+    └── maskgit_medmnist.yaml
 ```
 
-### TensorBoard Visualisations
+### 测试覆盖
 
-The test pipeline logs the following per batch to TensorBoard:
+- **单元测试**: `tests/unit/`
+- **集成测试**: `tests/integration/`
+- **覆盖率**: >80%
 
-| Tag | Content |
-|-----|---------|
-| `test/input` | Input 3D volume (centre slice, greyscale) |
-| `test/prediction` | Model output (centre slice, greyscale) |
-| `test/target` | Ground-truth label (centre slice, greyscale), if available |
+### 关键文件索引
 
----
+| 文件 | 职责 |
+|------|------|
+| `cli/train.py` | 训练 CLI 入口 |
+| `cli/test.py` | 测试 CLI 入口 |
+| `application/pipeline.py` | Fabric 训练管道 |
+| `config/modules.py` | 依赖注入模块 |
+| `infrastructure/vqgan/vqvae.py` | VQVAE 实现 |
+| `infrastructure/maskgit/maskgit_model.py` | MaskGIT 实现 |
+| `infrastructure/maskgit/transformer.py` | Transformer 实现 |
+| `infrastructure/training/strategies.py` | 训练/推理策略 |
 
-## Quick Start (Python API)
-
-### Lightning Fabric Training (Distributed/Mixed Precision)
+### Python API 示例
 
 ```python
 from injector import Injector
@@ -272,12 +307,26 @@ pipeline = FabricTrainingPipeline(
 pipeline.run(num_epochs=100)
 ```
 
-### Training MaskGit with Pretrained VQGAN
+### 依赖项
 
-```bash
-# Train MaskGit with pretrained VQGAN (frozen by default)
-maskgit3d-train model=maskgit model.pretrained_vqgan_path=./checkpoints/vqgan/best.ckpt
-
-# Fine-tune without freezing VQGAN
-maskgit3d-train model=maskgit model.pretrained_vqgan_path=./checkpoints/vqgan/best.ckpt model.freeze_vqgan=false
 ```
+torch>=2.0.0
+lightning>=2.0.0
+monai>=1.0.0
+injector>=0.21.0
+hydra-core>=1.3.0
+omegaconf>=2.3.0
+medmnist>=3.0.0
+nibabel>=5.0.0
+einops>=0.7.0
+```
+
+### 注意事项
+
+1. **Stage 2 依赖 Stage 1**: MaskGIT 训练需要先完成 VQGAN 训练
+2. **VQGAN 冻结**: 默认情况下 Stage 2 会冻结 VQGAN 参数
+3. **数据格式**: 支持 NIfTI (.nii.gz) 和 NumPy 数组格式
+
+</details>
+
+<!-- Agent 文档结束 -->
