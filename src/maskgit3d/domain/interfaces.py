@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import torch
+from torch.utils.data import DataLoader
 
 # =============================================================================
 # Data Interfaces
@@ -25,34 +26,34 @@ class DataProvider(ABC):
     """
 
     @abstractmethod
-    def train_loader(self) -> Iterator[tuple[torch.Tensor, ...]]:
+    def train_loader(self) -> DataLoader:
         """
-        Returns an iterator over training batches.
+        Returns a DataLoader for training batches.
 
         Returns:
-            Iterator of tuples (input, target, ...). The first element should
-            be the input tensor, second should be the target/label.
+            DataLoader yielding tuples (input, target, ...). The first element
+            should be the input tensor, second should be the target/label.
         """
         pass
 
     @abstractmethod
-    def val_loader(self) -> Iterator[tuple[torch.Tensor, ...]]:
+    def val_loader(self) -> DataLoader:
         """
-        Returns an iterator over validation batches.
+        Returns a DataLoader for validation batches.
 
         Returns:
-            Iterator of tuples (input, target, ...).
+            DataLoader yielding tuples (input, target, ...).
         """
         pass
 
     @abstractmethod
-    def test_loader(self) -> Iterator[tuple[torch.Tensor, ...]]:
+    def test_loader(self) -> DataLoader:
         """
-        Returns an iterator over test batches.
+        Returns a DataLoader for test batches.
 
         Returns:
-            Iterator of tuples (input, target, ...). Target may be None
-            for inference-only scenarios.
+            DataLoader yielding tuples (input, target, ...). Target may be
+            None for inference-only scenarios.
         """
         pass
 

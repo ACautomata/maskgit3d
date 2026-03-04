@@ -6,7 +6,6 @@ datasets from the MedMNIST collection, supporting various organ and structure
 datasets with automatic download and preprocessing capabilities.
 """
 
-from collections.abc import Iterator
 from enum import Enum
 from typing import Any, cast
 
@@ -31,6 +30,7 @@ class MedMNIST3DDataset(str, Enum):
 
 # Mapping from dataset type to MedMNIST class
 DATASET_CLASS_MAP: dict[MedMNIST3DDataset, type] = {}
+
 
 # Lazy import to avoid errors if medmnist is not installed
 def _get_dataset_class(dataset_type: MedMNIST3DDataset) -> type:
@@ -78,8 +78,7 @@ def _get_dataset_class(dataset_type: MedMNIST3DDataset) -> type:
 
     if dataset_type not in DATASET_CLASS_MAP:
         raise ValueError(
-            f"Unsupported dataset type: {dataset_type}. "
-            f"Supported types: {list(MedMNIST3DDataset)}"
+            f"Unsupported dataset type: {dataset_type}. Supported types: {list(MedMNIST3DDataset)}"
         )
 
     return DATASET_CLASS_MAP[dataset_type]
@@ -244,8 +243,7 @@ class MedMnist3DDataProvider(DataProvider):
         # Validate input size
         if input_size not in self.SUPPORTED_INPUT_SIZES:
             raise ValueError(
-                f"input_size must be one of {self.SUPPORTED_INPUT_SIZES}, "
-                f"got {input_size}"
+                f"input_size must be one of {self.SUPPORTED_INPUT_SIZES}, got {input_size}"
             )
 
         self.spatial_size = spatial_size
@@ -326,7 +324,7 @@ class MedMnist3DDataProvider(DataProvider):
             self._test_dataset = self._create_dataset("test")
         return self._test_dataset
 
-    def train_loader(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+    def train_loader(self) -> DataLoader:
         """
         Get training data loader.
 
@@ -335,7 +333,7 @@ class MedMnist3DDataProvider(DataProvider):
             (input_tensor, target_tensor) with shapes [B, C, D, H, W]
             where values are normalized to [-1, 1].
         """
-        loader = DataLoader(
+        return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
@@ -343,9 +341,8 @@ class MedMnist3DDataProvider(DataProvider):
             pin_memory=self.pin_memory,
             drop_last=self.drop_last_train,
         )
-        return iter(loader)
 
-    def val_loader(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+    def val_loader(self) -> DataLoader:
         """
         Get validation data loader.
 
@@ -354,7 +351,7 @@ class MedMnist3DDataProvider(DataProvider):
             (input_tensor, target_tensor) with shapes [B, C, D, H, W]
             where values are normalized to [-1, 1].
         """
-        loader = DataLoader(
+        return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
             shuffle=False,
@@ -362,9 +359,8 @@ class MedMnist3DDataProvider(DataProvider):
             pin_memory=self.pin_memory,
             drop_last=False,
         )
-        return iter(loader)
 
-    def test_loader(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+    def test_loader(self) -> DataLoader:
         """
         Get test data loader.
 
@@ -373,7 +369,7 @@ class MedMnist3DDataProvider(DataProvider):
             (input_tensor, target_tensor) with shapes [B, C, D, H, W]
             where values are normalized to [-1, 1].
         """
-        loader = DataLoader(
+        return DataLoader(
             self.test_dataset,
             batch_size=self.batch_size,
             shuffle=False,
@@ -381,7 +377,6 @@ class MedMnist3DDataProvider(DataProvider):
             pin_memory=self.pin_memory,
             drop_last=False,
         )
-        return iter(loader)
 
     def get_num_classes(self) -> int:
         """

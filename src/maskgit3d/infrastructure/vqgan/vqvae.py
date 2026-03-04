@@ -47,7 +47,7 @@ class VQVAE(VQModelInterface):
         norm_eps: float = 1e-6,
         with_encoder_nonlocal_attn: bool = False,
         with_decoder_nonlocal_attn: bool = False,
-        num_splits: int = 4,
+        num_splits: int = 1,
         dim_split: int = 1,
         norm_float16: bool = False,
         use_flash_attention: bool = False,
@@ -80,6 +80,8 @@ class VQVAE(VQModelInterface):
         self._codebook_size = codebook_size
         self.embed_dim = embed_dim
         self.latent_channels = latent_channels
+        self._num_levels = len(num_channels)
+        self._cached_latent_spatial: tuple[int, int, int] | None = None
 
         # Maisi Encoder
         self.encoder = MaisiEncoder(
@@ -139,12 +141,12 @@ class VQVAE(VQModelInterface):
             - commitment_loss: Codebook commitment loss
             - info: Tuple of (perplexity, encodings, indices)
         """
-        # Deterministic encoding (no KL sampling)
         h = self.encoder(x)
         h = self.quant_conv(h)
-
-        # Vector quantization
         quant, emb_loss, info = self.quantize(h)
+
+        if self._cached_latent_spatial is None:
+            self._cached_latent_spatial = tuple(quant.shape[2:])
 
         return quant, emb_loss, info
 
@@ -256,10 +258,13 @@ class VQVAE(VQModelInterface):
         """
         Get the shape of latent representations (C, D, H, W).
 
-        Note: This requires a forward pass to determine exact shape.
-        The spatial dimensions depend on input size and network structure.
+        Returns cached shape after first encode(), or computes from num_levels.
+        Spatial dims = input_size // 2^(num_levels - 1).
         """
-        return (self.latent_channels, -1, -1, -1)  # Dynamic spatial dims
+        if self._cached_latent_spatial is not None:
+            d, h, w = self._cached_latent_spatial
+            return (self.latent_channels, d, h, w)
+        return (self.latent_channels, -1, -1, -1)
 
     # Workaround for type checking: these methods exist on nn.Module
     # but have incompatible signatures with VQModelInterface
@@ -317,7 +322,7 @@ def get_vqvae_config(
         "norm_eps": 1e-6,
         "with_encoder_nonlocal_attn": False,
         "with_decoder_nonlocal_attn": False,
-        "num_splits": 4,
+        "num_splits": 1,
         "dim_split": 1,
         "norm_float16": False,
         "use_flash_attention": False,

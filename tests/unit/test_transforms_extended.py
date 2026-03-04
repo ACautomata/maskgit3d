@@ -146,8 +146,7 @@ class TestCreateMedMnistPreprocessing:
     def test_medmnist_preprocessing_applies(self):
         """Test that MedMnist preprocessing transforms data."""
         transforms = create_medmnist_preprocessing(spatial_size=(28, 28, 28))
-        # Create sample MedMnist-style data [D, H, W]
-        data = np.random.randint(0, 256, (28, 28, 28)).astype(np.float32)
+        data = np.random.randint(0, 256, (1, 28, 28, 28)).astype(np.float32)
         result = transforms(data)
         assert result.shape == (1, 28, 28, 28)
 

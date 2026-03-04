@@ -7,7 +7,6 @@ from the BraTS (Brain Tumor Segmentation) dataset.
 
 import logging
 import random
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
 
@@ -244,7 +243,7 @@ class BraTS2023Dataset(Dataset):
             if isinstance(transformed, dict):
                 data = transformed
             data = transformed if isinstance(transformed, dict) else dict(data)
-                # Transform may return a modified dict structure
+            # Transform may return a modified dict structure
             data = transformed if isinstance(transformed, dict) else dict(data)
 
         # Use type: ignore for dict access since MONAI transforms modify dict structure
@@ -708,9 +707,9 @@ class BraTSDataProvider(DataProvider):
                 )
         return self._test_dataset
 
-    def train_loader(self) -> Iterator[tuple[torch.Tensor, ...]]:
+    def train_loader(self) -> DataLoader:
         """Get training data loader."""
-        loader = DataLoader(
+        return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
@@ -718,11 +717,10 @@ class BraTSDataProvider(DataProvider):
             pin_memory=True,
             drop_last=True,
         )
-        return iter(loader)
 
-    def val_loader(self) -> Iterator[tuple[torch.Tensor, ...]]:
+    def val_loader(self) -> DataLoader:
         """Get validation data loader."""
-        loader = DataLoader(
+        return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
             shuffle=False,
@@ -730,11 +728,10 @@ class BraTSDataProvider(DataProvider):
             pin_memory=True,
             drop_last=False,
         )
-        return iter(loader)
 
-    def test_loader(self) -> Iterator[tuple[torch.Tensor, ...]]:
+    def test_loader(self) -> DataLoader:
         """Get test data loader."""
-        loader = DataLoader(
+        return DataLoader(
             self.test_dataset,
             batch_size=self.batch_size,
             shuffle=False,
@@ -742,7 +739,6 @@ class BraTSDataProvider(DataProvider):
             pin_memory=True,
             drop_last=False,
         )
-        return iter(loader)
 
     @property
     def num_modalities(self) -> int:
