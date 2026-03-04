@@ -12,7 +12,7 @@ training:
   
   # Strategy specific parameters
   maskgit:
-    mask_ratio: 0.5
+    mask_schedule_type: cosine  # cosine, linear, square, cubic
     reconstruction_weight: 1.0
   
   vqgan:

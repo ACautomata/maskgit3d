@@ -169,7 +169,6 @@ def _create_model_params(cfg: DictConfig, model_type: str, base_params: dict) ->
             "transformer_hidden": cfg.model.get("transformer_hidden", 768),
             "transformer_layers": cfg.model.get("transformer_layers", 12),
             "transformer_heads": cfg.model.get("transformer_heads", 12),
-            "mask_ratio": cfg.model.get("mask_ratio", 0.5),
         }
     elif model_type in ("vqgan", "vqgan3d"):
         channel_multipliers = list(cfg.model.get("channel_multipliers", [1, 2]))
@@ -226,7 +225,7 @@ def _create_training_config(cfg: DictConfig, model_type: str) -> dict:
         }
     else:
         params = {
-            "mask_ratio": cfg.model.get("mask_ratio", 0.5),
+            "mask_schedule_type": cfg.model.get("mask_schedule_type", "cosine"),
             "reconstruction_weight": 1.0,
         }
     return {

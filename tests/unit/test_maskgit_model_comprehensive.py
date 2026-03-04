@@ -101,7 +101,6 @@ class TestMaskGITModelComprehensive:
         """Test model initialization."""
         assert model.vqgan is not None
         assert model.transformer is not None
-        assert model.mask_ratio == 0.5
         assert model.codebook_size == 512
 
     def test_embed_dim_property(self, model):

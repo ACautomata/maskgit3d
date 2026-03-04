@@ -970,11 +970,16 @@ class MaskGITTrainingStrategy(TrainingStrategy):
     Uses BERT-style masked token prediction where a portion of
     tokens are randomly masked and the Transformer learns to predict them.
     Supports mixed precision training.
+
+    IMPORTANT: Following the MaskGIT paper, the mask ratio is NOT fixed during training.
+    Instead, it is randomly sampled from a gamma distribution (cosine by default) for each batch.
+    This provides curriculum learning with varying difficulty levels.
     """
 
     def __init__(
         self,
         mask_ratio: float = 0.5,
+        mask_schedule_type: str = "cosine",
         reconstruction_weight: float = 1.0,
         mixed_precision: bool = False,
         amp_dtype: str = "float16",
@@ -984,16 +989,19 @@ class MaskGITTrainingStrategy(TrainingStrategy):
         Initialize MaskGIT training strategy.
 
         Args:
-            mask_ratio: Ratio of tokens to mask during training
+            mask_ratio: (DEPRECATED - for backward compatibility) Will be ignored if mask_schedule_type is set
+            mask_schedule_type: Type of gamma function for mask ratio scheduling ("cosine", "linear", "square", "cubic")
             reconstruction_weight: Weight for reconstruction loss
             mixed_precision: Enable automatic mixed precision training
             amp_dtype: Mixed precision dtype ("float16" or "bfloat16")
             grad_clip: Maximum gradient norm for clipping
         """
-        self.mask_ratio = mask_ratio
+        from maskgit3d.infrastructure.maskgit.scheduling import TrainingMaskScheduler
+
+        self.mask_schedule_type = mask_schedule_type
+        self.mask_scheduler = TrainingMaskScheduler(gamma_type=mask_schedule_type)
         self.reconstruction_weight = reconstruction_weight
 
-        # Mixed precision
         self.mixed_precision = MixedPrecisionTrainer(
             enabled=mixed_precision,
             dtype=amp_dtype,
@@ -1017,41 +1025,35 @@ class MaskGITTrainingStrategy(TrainingStrategy):
         Returns:
             Dictionary of training metrics
         """
-        # Unpack batch
         x = batch[0] if isinstance(batch, tuple | list) else batch
 
         model.train()
         maskgit_model = cast(MaskGITModelInterface, model)
 
-        # Forward pass with masking and mixed precision
+        mask_ratio = self.mask_scheduler.sample_mask_ratio()
+
         with self.mixed_precision.autocast_context():
-            # Use getattr to safely access compute_maskgit_loss if it exists
             compute_loss_fn = getattr(maskgit_model, "compute_maskgit_loss", None)
             if compute_loss_fn is not None:
-                loss, metrics = compute_loss_fn(x, mask_ratio=self.mask_ratio)
+                loss, metrics = compute_loss_fn(x, mask_ratio=mask_ratio)
             else:
-                # Manual implementation for compatibility
                 tokens = maskgit_model.encode_tokens(x)
                 B, D, H, W = tokens.shape
                 tokens_flat = tokens.view(B, -1)
+                N = D * H * W
 
-                # Random masking
-                mask = torch.rand(B, D * H * W, device=tokens.device) < self.mask_ratio
-
-                # Ensure at least one token masked per sample
+                num_masked = self.mask_scheduler.compute_num_masked(N, mask_ratio)
+                mask = torch.zeros(B, N, dtype=torch.bool, device=tokens.device)
                 for i in range(B):
-                    if not mask[i].any():
-                        mask[i, torch.randint(0, D * H * W, (1,), device=tokens.device)] = True
+                    perm = torch.randperm(N, device=tokens.device)
+                    mask[i, perm[:num_masked]] = True
 
-                # Get predictions - access transformer via the model
                 transformer = getattr(maskgit_model, "transformer", None)
                 if transformer is not None:
                     logits = transformer.forward(tokens_flat, mask_indices=mask)
                 else:
-                    # Fallback: use model directly if it has forward method
                     logits = maskgit_model.forward(tokens_flat)
 
-                # Compute loss only on masked positions
                 masked_logits = logits[mask]
                 masked_targets = tokens_flat[mask]
 
@@ -1063,10 +1065,9 @@ class MaskGITTrainingStrategy(TrainingStrategy):
                     .float()
                     .mean()
                     .item(),
-                    "mask_ratio": mask.float().mean().item(),
+                    "mask_ratio": mask_ratio,
                 }
 
-        # Backward with mixed precision on live loss tensor
         scaled_loss = self.mixed_precision.scale_loss(loss)
         scaled_loss.backward()
         self.mixed_precision.step_optimizer(optimizer, loss)
@@ -1422,6 +1423,10 @@ class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
         """
         Run sliding window latent extraction.
 
+        Uses sliding window to blend encoder outputs (before quantization),
+        then quantizes the blended latent to get indices. This ensures
+        smooth transitions while maintaining valid codebook indices.
+
         Args:
             model: VQModel instance
             batch: Input volumes [B, C, D, H, W]
@@ -1435,7 +1440,6 @@ class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
         device = model.device
         vq_model = cast(VQModelInterface, model)
 
-        # Get encoder and quant_conv for shape inspection
         encoder = cast(nn.Module, getattr(vq_model, "encoder", None))
         quant_conv = cast(nn.Module, getattr(vq_model, "quant_conv", None))
         quantize = cast(nn.Module, getattr(vq_model, "quantize", None))
@@ -1443,22 +1447,18 @@ class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
         assert encoder is not None and quant_conv is not None and quantize is not None
 
         with torch.no_grad():
-            # Test with a dummy to get actual latent size
             dummy_out = quant_conv(encoder(batch[:1]))
-            _, d_latent, h_latent, w_latent = dummy_out.shape
+            c_latent, d_latent, h_latent, w_latent = dummy_out.shape[1:]
 
         B = batch.shape[0]
-        c_latent = vq_model.latent_shape[0]
 
-        # Create predictor that returns quantized latent
         def encode_predictor(x: torch.Tensor) -> torch.Tensor:
-            quant, _ = self._encode_patch(vq_model, x)
-            return quant
+            h = encoder(x)
+            h = quant_conv(h)
+            return h
 
         with torch.no_grad():
-            # Get quantized latents via sliding window
-            quantized_latent = sliding_window_inference(
-                # type: ignore[assignment]
+            encoder_output = sliding_window_inference(
                 inputs=batch,
                 roi_size=self.roi_size,
                 sw_batch_size=self.sw_batch_size,
@@ -1471,24 +1471,8 @@ class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
                 progress=self.progress,
             )
 
-            # Now get indices from the quantized latent
-            # Reshape for quantize: (B, C, D, H, W) -> (B, D, H, W, C)
-            quant_flat = (
-                cast(torch.Tensor, quantized_latent).permute(0, 2, 3, 4, 1).reshape(-1, c_latent)
-            )
-
-            # Get indices by finding nearest codebook entry
-            embedding = cast(nn.Embedding, getattr(quantize, "embedding", None))
-            assert embedding is not None, "quantize must have embedding attribute"
-
-            dist = (
-                torch.sum(quant_flat**2, dim=1, keepdim=True)
-                + torch.sum(embedding.weight**2, dim=1)
-                - 2 * torch.matmul(quant_flat, embedding.weight.t())
-            )
-            indices = torch.argmin(dist, dim=1)
-
-            # Reshape indices to spatial
+            quantized_latent, _, info = quantize(encoder_output)
+            indices = info[2]
             indices = indices.reshape(B, d_latent, h_latent, w_latent)
 
         return indices
@@ -1516,7 +1500,6 @@ class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
         device = model.device
         vq_model = cast(VQModelInterface, model)
 
-        # Get internal components
         encoder = cast(nn.Module, getattr(vq_model, "encoder", None))
         quant_conv = cast(nn.Module, getattr(vq_model, "quant_conv", None))
         quantize = cast(nn.Module, getattr(vq_model, "quantize", None))
@@ -1524,20 +1507,17 @@ class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
         assert encoder is not None and quant_conv is not None and quantize is not None
 
         with torch.no_grad():
-            # Get latent shape
             dummy_out = quant_conv(encoder(batch[:1]))
             c_latent, d_latent, h_latent, w_latent = dummy_out.shape[1:]
 
         B = batch.shape[0]
 
         def encode_predictor(x: torch.Tensor) -> torch.Tensor:
-            """Returns encoder output (before quantization) for blending."""
             h = encoder(x)
             h = quant_conv(h)
             return h
 
         with torch.no_grad():
-            # Get encoder output via sliding window (blended)
             encoder_output = sliding_window_inference(
                 inputs=batch,
                 roi_size=self.roi_size,
@@ -1551,12 +1531,8 @@ class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
                 progress=self.progress,
             )
 
-            # Quantize the blended encoder output
             quantized_latent, _, info = quantize(encoder_output)
-
-            # Get indices from the quantized result
-            # Note: This gives indices for the blended latent, which is a reasonable approximation
-            indices = info[2]  # min_encoding_indices
+            indices = info[2]
             indices = indices.reshape(B, d_latent, h_latent, w_latent)
 
         return quantized_latent, indices

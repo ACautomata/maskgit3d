@@ -384,14 +384,14 @@ class TestMaskGITTrainingStrategy:
     def test_maskgit_strategy_creation(self):
         """Test creating MaskGITTrainingStrategy."""
         strategy = MaskGITTrainingStrategy(
-            mask_ratio=0.5,
+            mask_schedule_type="cosine",
             reconstruction_weight=1.0,
         )
-        assert strategy.mask_ratio == 0.5
+        assert strategy.mask_schedule_type == "cosine"
 
     def test_maskgit_validate_step(self):
         """Test validation step."""
-        strategy = MaskGITTrainingStrategy(mask_ratio=0.5)
+        strategy = MaskGITTrainingStrategy(mask_schedule_type="cosine")
         mock_model = MagicMock()
 
         # Mock model(x) - returns reconstruction

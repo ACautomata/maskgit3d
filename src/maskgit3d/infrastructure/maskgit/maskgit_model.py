@@ -33,18 +33,15 @@ class MaskGITModel(MaskGITModelInterface):
         Args:
             vqgan: VQVAE model for encoding/decoding
             transformer: Transformer for masked token prediction
-            mask_ratio: Ratio of tokens to mask during training
+            mask_ratio: (DEPRECATED - not used) Mask ratio is now dynamically sampled during training
         """
         super().__init__()
 
         self.vqgan = vqgan
         self.transformer = transformer
-        self.mask_ratio = mask_ratio
         self._codebook_size = vqgan.codebook_size
-        # embed_dim is derived from latent_shape
         self._latent_shape = (1,) + vqgan.latent_shape[1:]
 
-        # Sampler for inference
         self.sampler = MaskGITSampler(num_iterations=12)
 
     @property

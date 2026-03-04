@@ -206,7 +206,7 @@ class TestCliTrain:
                     "transformer_hidden": 768,
                     "transformer_layers": 12,
                     "transformer_heads": 12,
-                    "mask_ratio": 0.5,
+                    "mask_schedule_type": "cosine",
                 }
             }
         )
@@ -221,7 +221,6 @@ class TestCliTrain:
 
         assert params["codebook_size"] == 1024
         assert params["transformer_hidden"] == 768
-        assert params["mask_ratio"] == 0.5
 
     def test_create_model_params_vqgan(self):
         """Test _create_model_params for vqgan model."""
@@ -297,12 +296,12 @@ class TestCliTrain:
 
         from maskgit3d.cli.train import _create_training_config
 
-        cfg = OmegaConf.create({"model": {"type": "maskgit", "mask_ratio": 0.5}})
+        cfg = OmegaConf.create({"model": {"type": "maskgit", "mask_schedule_type": "cosine"}})
 
         config = _create_training_config(cfg, "maskgit")
 
         assert config["type"] == "maskgit"
-        assert config["params"]["mask_ratio"] == 0.5
+        assert config["params"]["mask_schedule_type"] == "cosine"
 
     def test_create_optimizer_config(self):
         """Test _create_optimizer_config function."""

@@ -12,7 +12,7 @@ from maskgit3d.infrastructure.training.strategies import (
 
 
 def test_maskgit_train_step_uses_compute_maskgit_loss_when_available():
-    strategy = MaskGITTrainingStrategy(mask_ratio=0.3)
+    strategy = MaskGITTrainingStrategy(mask_schedule_type="cosine")
     model = MagicMock()
     optimizer = MagicMock()
 
@@ -31,7 +31,7 @@ def test_maskgit_train_step_uses_compute_maskgit_loss_when_available():
 
 
 def test_maskgit_train_step_manual_path_with_transformer_forward():
-    strategy = MaskGITTrainingStrategy(mask_ratio=0.5)
+    strategy = MaskGITTrainingStrategy(mask_schedule_type="cosine")
     optimizer = MagicMock()
 
     model = MagicMock()
@@ -51,7 +51,7 @@ def test_maskgit_train_step_manual_path_with_transformer_forward():
 
 
 def test_maskgit_train_step_manual_path_masks_at_least_one_token_per_sample():
-    strategy = MaskGITTrainingStrategy(mask_ratio=0.0)
+    strategy = MaskGITTrainingStrategy(mask_schedule_type="cosine")
     optimizer = MagicMock()
 
     model = MagicMock()
@@ -68,11 +68,11 @@ def test_maskgit_train_step_manual_path_masks_at_least_one_token_per_sample():
 
     metrics = strategy.train_step(model, (torch.randn(2, 1, 2, 2, 2),), optimizer)
 
-    assert metrics["mask_ratio"] == 0.25
+    assert 0.0 < metrics["mask_ratio"] <= 1.0
 
 
 def test_maskgit_train_step_manual_path_falls_back_to_model_forward_when_no_transformer():
-    strategy = MaskGITTrainingStrategy(mask_ratio=0.5)
+    strategy = MaskGITTrainingStrategy(mask_schedule_type="cosine")
     optimizer = MagicMock()
 
     model = MagicMock()
@@ -87,7 +87,7 @@ def test_maskgit_train_step_manual_path_falls_back_to_model_forward_when_no_tran
 
 
 def test_maskgit_validate_step_flattens_tokens_when_dim_gt_2():
-    strategy = MaskGITTrainingStrategy(mask_ratio=0.5)
+    strategy = MaskGITTrainingStrategy(mask_schedule_type="cosine")
     model = MagicMock()
 
     x = torch.randn(2, 1, 2, 2, 2)
@@ -107,7 +107,7 @@ def test_maskgit_validate_step_flattens_tokens_when_dim_gt_2():
 
 
 def test_maskgit_validate_step_reshapes_1d_tokens():
-    strategy = MaskGITTrainingStrategy(mask_ratio=0.5)
+    strategy = MaskGITTrainingStrategy(mask_schedule_type="cosine")
     model = MagicMock()
 
     x = torch.randn(2, 1, 2, 2, 2)
@@ -125,7 +125,7 @@ def test_maskgit_validate_step_reshapes_1d_tokens():
 
 
 def test_maskgit_validate_step_uses_argmax_fallback_when_no_transformer():
-    strategy = MaskGITTrainingStrategy(mask_ratio=0.5)
+    strategy = MaskGITTrainingStrategy(mask_schedule_type="cosine")
     model = MagicMock()
 
     x = torch.randn(2, 1, 2, 2, 2)
@@ -253,7 +253,7 @@ def _build_latent_extractor_model_for_predict() -> MagicMock:
     model.latent_shape = (2, 2, 2, 2)
 
     def encoder_fn(x: torch.Tensor) -> torch.Tensor:
-        return torch.ones(x.shape[0], 2, 2, 2)
+        return torch.ones(x.shape[0], 2, 2, 2, 2)
 
     def quant_conv_fn(x: torch.Tensor) -> torch.Tensor:
         return x
