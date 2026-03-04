@@ -305,23 +305,25 @@ class VQGANTrainingStrategy(TrainingStrategy):
         self.discriminator = discriminator
         self.global_step = 0
 
-        # Initialize LPIPS loss (only when perceptual_weight > 0 to avoid
-        # downloading VGG weights unnecessarily)
         self.lpips_fn = None
         if perceptual_weight > 0:
             try:
-                import lpips
+                from monai.losses.perceptual import PerceptualLoss
 
-                self.lpips_fn = lpips.LPIPS(net="vgg", verbose=False)
-                # Freeze LPIPS parameters
+                self.lpips_fn = PerceptualLoss(
+                    spatial_dims=2,
+                    network_type="vgg",
+                    is_fake_3d=True,
+                    fake_3d_ratio=0.5,
+                )
                 for param in self.lpips_fn.parameters():
                     param.requires_grad = False
             except ImportError:
                 import warnings
 
                 warnings.warn(
-                    "lpips not installed. Perceptual loss will be disabled. "
-                    "Install with: pip install lpips>=0.1.4"
+                    "MONAI PerceptualLoss not available. Perceptual loss will be disabled. "
+                    "Install with: pip install monai>=1.3.0"
                 )
 
         # Mixed precision
@@ -332,45 +334,33 @@ class VQGANTrainingStrategy(TrainingStrategy):
         )
 
     def _compute_perceptual_loss(self, x: torch.Tensor, xrec: torch.Tensor) -> torch.Tensor:
-        """Compute LPIPS perceptual loss between real and reconstructed images.
-
-        LPIPS expects RGB images (3 channels) with minimum spatial dimensions.
-        For medical images with single channel, we repeat to 3 channels.
-        For small spatial dimensions, we skip LPIPS (returns 0).
-        """
         if self.lpips_fn is None or self.perceptual_weight == 0:
             return torch.tensor(0.0, device=x.device)
 
-        # LPIPS expects 2D images [B, C, H, W], need to handle 3D volumes
-        # For 3D volumes, we compute perceptual loss slice-wise
-        if x.dim() == 5:  # [B, C, D, H, W]
-            # Take middle slices along depth dimension
+        target_device = x.device
+        if next(self.lpips_fn.parameters()).device != target_device:
+            self.lpips_fn = self.lpips_fn.to(target_device)
+
+        if x.dim() == 5:
             mid_slice = x.shape[2] // 2
-            x_2d = x[:, :, mid_slice, :, :]  # [B, C, H, W]
+            x_2d = x[:, :, mid_slice, :, :]
             xrec_2d = xrec[:, :, mid_slice, :, :]
 
-            # Check minimum spatial dimensions (LPIPS VGG needs at least 32x32)
             if x_2d.shape[2] < 32 or x_2d.shape[3] < 32:
                 return torch.tensor(0.0, device=x.device)
 
-            # LPIPS expects RGB images (3 channels)
-            # For single-channel medical images, repeat to 3 channels
             if x_2d.shape[1] == 1:
-                x_2d = x_2d.repeat(1, 3, 1, 1)  # [B, 3, H, W]
+                x_2d = x_2d.repeat(1, 3, 1, 1)
                 xrec_2d = xrec_2d.repeat(1, 3, 1, 1)
 
-            # LPIPS expects input in range [-1, 1], normalize from [0, 1]
             x_norm = 2.0 * x_2d - 1.0
             xrec_norm = 2.0 * xrec_2d - 1.0
 
             return self.lpips_fn(x_norm, xrec_norm).mean()
         else:
-            # 2D case
-            # Check minimum spatial dimensions
             if x.shape[2] < 32 or x.shape[3] < 32:
                 return torch.tensor(0.0, device=x.device)
 
-            # Handle single channel
             x_2d = x if x.shape[1] == 3 else x.repeat(1, 3, 1, 1)
             xrec_2d = xrec if xrec.shape[1] == 3 else xrec.repeat(1, 3, 1, 1)
 

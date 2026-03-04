@@ -58,12 +58,14 @@ def _fake_monai_modules(perceptual_cls: type[nn.Module] | None = None) -> dict[s
     }
 
 
-class _RecordingLPIPS:
+class _RecordingLPIPS(nn.Module):
     def __init__(self) -> None:
+        super().__init__()
+        self.weight = nn.Parameter(torch.tensor(1.0))
         self.called = False
         self.inputs: tuple[torch.Tensor, torch.Tensor] | None = None
 
-    def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         self.called = True
         self.inputs = (x, y)
         return torch.tensor([0.25])
@@ -250,25 +252,36 @@ def test_mixed_precision_state_dict_and_load_state_dict_with_scaler() -> None:
     fake_scaler.load_state_dict.assert_called_once_with({"scale": 512.0})
 
 
-def test_vqgan_strategy_initializes_lpips_when_enabled() -> None:
-    class _FakeLPIPS(nn.Module):
-        def __init__(self, net: str, verbose: bool):
+def test_vqgan_strategy_initializes_perceptual_loss_when_enabled() -> None:
+    class _FakePerceptualLoss(nn.Module):
+        def __init__(
+            self,
+            spatial_dims: int,
+            network_type: str,
+            is_fake_3d: bool,
+            fake_3d_ratio: float,
+        ):
             super().__init__()
             self.weight = nn.Parameter(torch.tensor(1.0))
-            self.net = net
-            self.verbose = verbose
+            self.spatial_dims = spatial_dims
+            self.network_type = network_type
+            self.is_fake_3d = is_fake_3d
+            self.fake_3d_ratio = fake_3d_ratio
 
         def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
             return torch.tensor([0.1])
 
-    lpips_mod = types.ModuleType("lpips")
-    lpips_ctor = MagicMock(side_effect=_FakeLPIPS)
-    lpips_mod.LPIPS = lpips_ctor
+    perceptual_cls = MagicMock(side_effect=_FakePerceptualLoss)
 
-    with patch.dict(sys.modules, {"lpips": lpips_mod}):
+    with patch.dict(sys.modules, _fake_monai_modules(perceptual_cls=perceptual_cls)):
         strategy = strategies.VQGANTrainingStrategy(perceptual_weight=1.0)
 
-    lpips_ctor.assert_called_once_with(net="vgg", verbose=False)
+    perceptual_cls.assert_called_once_with(
+        spatial_dims=2,
+        network_type="vgg",
+        is_fake_3d=True,
+        fake_3d_ratio=0.5,
+    )
     assert strategy.lpips_fn is not None
     assert all(not p.requires_grad for p in strategy.lpips_fn.parameters())
 
