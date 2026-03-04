@@ -19,6 +19,7 @@ from maskgit3d.domain.interfaces import (
     ModelInterface,
     OptimizerFactory,
     TrainingStrategy,
+    VQModelInterface,
 )
 from maskgit3d.infrastructure.training.strategies import (
     AdamOptimizerFactory,
@@ -32,10 +33,9 @@ from maskgit3d.infrastructure.training.strategies import (
     VQGANTrainingStrategy,
 )
 from maskgit3d.infrastructure.vqgan import (
-    MaisiVQModel3D,
-    VQModel3D,
+    VQVAE,
     get_encoder_decoder_config_3d,
-    get_maisi_vq_config,
+    get_vqvae_config,
 )
 
 # =============================================================================
@@ -103,14 +103,8 @@ class ModelModule(Module):
             from maskgit3d.infrastructure.maskgit import MaskGITModel
 
             return MaskGITModel(**model_params)
-        elif model_type in ("vqgan3d", "vqgan"):
-            from maskgit3d.infrastructure.vqgan import VQModel3D
-
-            return VQModel3D(**model_params)
-        elif model_type == "maisi_vq":
-            from maskgit3d.infrastructure.vqgan import MaisiVQModel3D
-
-            return MaisiVQModel3D(**model_params)
+        elif model_type in ("vqgan", "vqgan3d", "vqvae"):
+            return VQVAE(**model_params)
         raise ValueError(f"Unknown model type: {model_type}")
 
 
@@ -326,36 +320,15 @@ class SystemModule(Module):
 
 
 # =============================================================================
-# VQGAN Modules (3D)
+# VQVAE Module
 # =============================================================================
 
 
-class VQGANModelModule(Module):
-    """VQGAN 3D model configuration module."""
-
-    def __init__(
-        self,
-        model_config: dict[str, Any] | None = None,
-    ):
-        self.model_config = model_config or {}
-
-    @singleton
-    @provider
-    def provide_vqgan_model(self) -> VQModel3D:
-        """Provide VQGAN 3D model instance."""
-        model_type = self.model_config.get("type", "vqgan3d")
-        model_params = self.model_config.get("params", {})
-
-        if model_type == "vqgan3d":
-            return VQModel3D(**model_params)
-        raise ValueError(f"Unknown VQ model type: {model_type}")
-
-
-class VQGANModule(Module):
+class VQVAEModule(Module):
     """
-    Composite module for 3D VQGAN tasks.
+    Composite module for VQVAE tasks.
 
-    Provides VQGAN-specific bindings for model, training, and inference.
+    Provides VQVAE-specific bindings for model, training, and inference.
     """
 
     def __init__(
@@ -367,18 +340,6 @@ class VQGANModule(Module):
         inference_config: dict[str, Any] | None = None,
         metrics_config: dict[str, Any] | None = None,
     ):
-        """
-        Initialize VQGAN module.
-
-        Args:
-            model_config: VQGAN model configuration
-            data_config: Data configuration
-            training_config: Training strategy configuration
-            optimizer_config: Optimizer configuration
-            inference_config: Inference configuration
-            metrics_config: Metrics configuration
-        """
-        self.model_module = VQGANModelModule(model_config)
         self.model_config = model_config or {}
         self.training_config = training_config or {}
         self.optimizer_config = optimizer_config or {}
@@ -386,11 +347,12 @@ class VQGANModule(Module):
         self.metrics_config = metrics_config or {}
 
     def configure(self, binder):
-        """configure VQGAN bindings."""
-        # Bind VQ Model
-        vq_model = self.model_module.provide_vqgan_model()
-        binder.bind(VQModel3D, to=lambda: vq_model)
-        binder.bind(ModelInterface, to=lambda: vq_model)
+        """Configure VQVAE bindings."""
+        # Bind VQVAE Model
+        model_params = self.model_config.get("params", {})
+        vqvae_model = VQVAE(**model_params)
+        binder.bind(VQModelInterface, to=lambda: vqvae_model)
+        binder.bind(ModelInterface, to=lambda: vqvae_model)
 
         # Training Strategy
         strategy_params = self.training_config.get("params", {})
@@ -412,195 +374,7 @@ class VQGANModule(Module):
             binder.bind(Metrics, to=lambda: VQGANMetrics(**self.metrics_config.get("params", {})))
 
 
-def create_vqgan_module(
-    image_size: int = 64,
-    in_channels: int = 1,
-    n_embed: int = 1024,
-    embed_dim: int = 256,
-    latent_channels: int = 256,
-    lr: float = 4.5e-6,
-    batch_size: int = 1,
-    num_train: int = 1000,
-    num_val: int = 100,
-) -> VQGANModule:
-    """
-    Factory function to create a 3D VQGAN module with sensible defaults.
-
-    Args:
-        image_size: Input volume size
-        in_channels: Number of input channels
-        n_embed: Number of codebook entries
-        embed_dim: Codebook embedding dimension
-        latent_channels: Latent space channels
-        lr: Learning rate
-        batch_size: Batch size
-        num_train: Number of training samples
-        num_val: Number of validation samples
-
-    Returns:
-        Configured VQGANModule
-    """
-    # Validate parameters
-    _validate_param("image_size", image_size, min_val=8)
-    _validate_param("in_channels", in_channels, min_val=1)
-    _validate_param("n_embed", n_embed, min_val=1)
-    _validate_param("embed_dim", embed_dim, min_val=1)
-    _validate_param("latent_channels", latent_channels, min_val=1)
-    _validate_float_param("lr", lr, min_val=1e-10)
-    _validate_param("batch_size", batch_size, min_val=1)
-    _validate_param("num_train", num_train, min_val=1)
-    _validate_param("num_val", num_val, min_val=1)
-
-    # Derive channel and attention settings compatible with VQModel3D
-    ddconfig = get_encoder_decoder_config_3d(
-        volume_size=image_size,
-        in_channels=in_channels,
-        out_channels=in_channels,
-        latent_channels=latent_channels,
-    )["ddconfig"]
-
-    channel_multipliers = tuple(ddconfig["channel_multipliers"])
-    num_res_blocks = ddconfig["num_res_blocks"]
-    attn_resolutions = tuple(ddconfig["attn_resolutions"])
-    dropout = ddconfig["dropout"]
-
-    # Model config
-    model_config = {
-        "type": "vqgan3d",
-        "params": {
-            "in_channels": in_channels,
-            "codebook_size": n_embed,
-            "embed_dim": embed_dim,
-            "latent_channels": latent_channels,
-            "resolution": image_size,
-            "channel_multipliers": channel_multipliers,
-            "num_res_blocks": num_res_blocks,
-            "attn_resolutions": attn_resolutions,
-            "dropout": dropout,
-        },
-    }
-
-    # Training config
-    training_config = {
-        "type": "vqgan",
-        "params": {
-            "codebook_weight": 1.0,
-            "pixel_loss_weight": 1.0,
-        },
-    }
-
-    optimizer_config = {
-        "type": "vqgan",
-        "params": {
-            "lr_g": lr,
-            "lr_d": lr,
-            "betas": (0.5, 0.9),
-        },
-    }
-
-    # Inference config
-    inference_config = {
-        "type": "vqgan",
-        "params": {
-            "mode": "reconstruct",
-        },
-    }
-
-    # Metrics config
-    metrics_config = {
-        "type": "vqgan",
-        "params": {
-            "data_range": 1.0,
-            "spatial_dims": 3,
-        },
-    }
-
-    return VQGANModule(
-        model_config=model_config,
-        training_config=training_config,
-        optimizer_config=optimizer_config,
-        inference_config=inference_config,
-        metrics_config=metrics_config,
-    )
-
-
-# =============================================================================
-# MAISI VQGAN Modules
-# =============================================================================
-
-
-class MaisiVQModelModule(Module):
-    """MAISI VQGAN model configuration module."""
-
-    def __init__(
-        self,
-        model_config: dict[str, Any] | None = None,
-    ):
-        self.model_config = model_config or {}
-
-    @singleton
-    @provider
-    def provide_maisi_vq_model(self) -> MaisiVQModel3D:
-        """Provide MAISI VQGAN model instance."""
-        model_type = self.model_config.get("type", "maisi_vq")
-        model_params = self.model_config.get("params", {})
-
-        if model_type == "maisi_vq":
-            return MaisiVQModel3D(**model_params)
-        raise ValueError(f"Unknown MAISI VQ model type: {model_type}")
-
-
-class MaisiVQModule(Module):
-    """
-    Composite module for MAISI VQGAN tasks.
-
-    Provides MAISI VQGAN-specific bindings for model, training, and inference.
-    """
-
-    def __init__(
-        self,
-        model_config: dict[str, Any] | None = None,
-        data_config: dict[str, Any] | None = None,
-        training_config: dict[str, Any] | None = None,
-        optimizer_config: dict[str, Any] | None = None,
-        inference_config: dict[str, Any] | None = None,
-        metrics_config: dict[str, Any] | None = None,
-    ):
-        self.model_module = MaisiVQModelModule(model_config)
-        self.model_config = model_config or {}
-        self.training_config = training_config or {}
-        self.optimizer_config = optimizer_config or {}
-        self.inference_config = inference_config or {}
-        self.metrics_config = metrics_config or {}
-
-    def configure(self, binder):
-        """Configure MAISI VQGAN bindings."""
-        # Bind MAISI VQ Model
-        maisi_model = self.model_module.provide_maisi_vq_model()
-        binder.bind(MaisiVQModel3D, to=lambda: maisi_model)
-        binder.bind(ModelInterface, to=lambda: maisi_model)
-
-        # Training Strategy (reuse VQGAN strategy)
-        strategy_params = self.training_config.get("params", {})
-        binder.bind(TrainingStrategy, to=lambda: VQGANTrainingStrategy(**strategy_params))
-
-        # Optimizer Factory
-        binder.bind(
-            VQGANOptimizerFactory,
-            to=lambda: VQGANOptimizerFactory(**self.optimizer_config.get("params", {})),
-        )
-
-        # Inference Strategy
-        inf_params = self.inference_config.get("params", {})
-        binder.bind(InferenceStrategy, to=lambda: VQGANInference(**inf_params))
-
-        # Metrics
-        metrics_type = self.metrics_config.get("type")
-        if metrics_type == "vqgan":
-            binder.bind(Metrics, to=lambda: VQGANMetrics(**self.metrics_config.get("params", {})))
-
-
-def create_maisi_vq_module(
+def create_vqvae_module(
     image_size: int = 64,
     in_channels: int = 1,
     codebook_size: int = 1024,
@@ -611,9 +385,9 @@ def create_maisi_vq_module(
     attention_levels: tuple[bool, ...] = (False, False, False),
     lr: float = 1e-4,
     batch_size: int = 1,
-) -> MaisiVQModule:
+) -> VQVAEModule:
     """
-    Factory function to create a MAISI VQGAN module with sensible defaults.
+    Factory function to create a VQVAE module with sensible defaults.
 
     Args:
         image_size: Input volume size (for reference)
@@ -624,11 +398,11 @@ def create_maisi_vq_module(
         num_channels: Channel numbers for each level
         num_res_blocks: Number of residual blocks per level
         attention_levels: Whether to use attention at each level
-        lr: Learning rate
+        lr: Learning rate (same for both Generator and Discriminator)
         batch_size: Batch size
 
     Returns:
-        Configured MaisiVQModule
+        Configured VQVAEModule
     """
     # Validate parameters
     _validate_param("image_size", image_size, min_val=8)
@@ -641,8 +415,8 @@ def create_maisi_vq_module(
 
     # Model config
     model_config = {
-        "type": "maisi_vq",
-        "params": get_maisi_vq_config(
+        "type": "vqvae",
+        "params": get_vqvae_config(
             image_size=image_size,
             in_channels=in_channels,
             codebook_size=codebook_size,
@@ -666,11 +440,12 @@ def create_maisi_vq_module(
         },
     }
 
+    # Use same learning rate for both Generator and Discriminator
     optimizer_config = {
         "type": "vqgan",
         "params": {
-            "lr_g": lr,
-            "lr_d": lr,
+            "lr": lr,  # Single learning rate for both G and D
+            "weight_decay": 0.01,
             "betas": (0.5, 0.9),
         },
     }
@@ -692,13 +467,28 @@ def create_maisi_vq_module(
         },
     }
 
-    return MaisiVQModule(
+    return VQVAEModule(
         model_config=model_config,
         training_config=training_config,
         optimizer_config=optimizer_config,
         inference_config=inference_config,
         metrics_config=metrics_config,
     )
+
+
+# =============================================================================
+# Backward Compatibility Aliases
+# =============================================================================
+
+# Keep old names for backward compatibility
+VQGANModelModule = VQVAEModule
+VQGANModule = VQVAEModule
+MaisiVQModelModule = VQVAEModule
+MaisiVQModule = VQVAEModule
+
+# Aliases for factory functions
+create_vqgan_module = create_vqvae_module
+create_maisi_vq_module = create_vqvae_module
 
 
 # =============================================================================
@@ -712,12 +502,12 @@ class MaskGITModelModule(Module):
     def __init__(
         self,
         model_config: dict[str, Any] | None = None,
-        pretrained_vqgan_path: str | None = None,
-        freeze_vqgan: bool = True,
+        pretrained_vqvae_path: str | None = None,
+        freeze_vqvae: bool = True,
     ):
         self.model_config = model_config or {}
-        self.pretrained_vqgan_path = pretrained_vqgan_path
-        self.freeze_vqgan = freeze_vqgan
+        self.pretrained_vqvae_path = pretrained_vqvae_path
+        self.freeze_vqvae = freeze_vqvae
 
     @singleton
     @provider
@@ -729,22 +519,19 @@ class MaskGITModelModule(Module):
         if model_type == "maskgit":
             from maskgit3d.infrastructure.maskgit import MaskGITModel
             from maskgit3d.infrastructure.maskgit.transformer import MaskGITTransformer
-            from maskgit3d.infrastructure.vqgan.vqgan_model_3d import VQModel3D
 
-            vqgan = VQModel3D(
+            vqvae = VQVAE(
                 in_channels=model_params["in_channels"],
                 codebook_size=model_params["codebook_size"],
                 embed_dim=model_params["embed_dim"],
                 latent_channels=model_params["latent_channels"],
-                resolution=model_params["resolution"],
-                channel_multipliers=model_params["channel_multipliers"],
             )
 
-            if self.pretrained_vqgan_path is not None:
-                self._load_pretrained_vqgan(vqgan, self.pretrained_vqgan_path)
+            if self.pretrained_vqvae_path is not None:
+                self._load_pretrained_vqvae(vqvae, self.pretrained_vqvae_path)
 
-            if self.freeze_vqgan:
-                for param in vqgan.parameters():
+            if self.freeze_vqvae:
+                for param in vqvae.parameters():
                     param.requires_grad = False
 
             transformer = MaskGITTransformer(
@@ -755,17 +542,17 @@ class MaskGITModelModule(Module):
             )
 
             model = MaskGITModel(
-                vqgan=vqgan,
+                vqgan=vqvae,
                 transformer=transformer,
                 mask_ratio=model_params.get("mask_ratio", 0.5),
             )
             return model
         raise ValueError(f"Unknown MaskGIT model type: {model_type}")
 
-    def _load_pretrained_vqgan(self, vqgan: "VQModel3D", checkpoint_path: str) -> None:
-        """Load pretrained VQGAN weights from checkpoint.
+    def _load_pretrained_vqvae(self, vqvae: "VQVAE", checkpoint_path: str) -> None:
+        """Load pretrained VQVAE weights from checkpoint.
 
-        Handles both stage 1 format (model_state_dict) and stage 2 format (vqgan).
+        Handles both stage 1 format (model_state_dict) and stage 2 format (vqvae).
         """
         import torch
 
@@ -774,13 +561,15 @@ class MaskGITModelModule(Module):
         checkpoint = load_checkpoint(checkpoint_path, map_location="cpu")
 
         if "model_state_dict" in checkpoint:
-            vqgan.load_state_dict(checkpoint["model_state_dict"])
+            vqvae.load_state_dict(checkpoint["model_state_dict"])
+        elif "vqvae" in checkpoint:
+            vqvae.load_state_dict(checkpoint["vqvae"])
         elif "vqgan" in checkpoint:
-            vqgan.load_state_dict(checkpoint["vqgan"])
+            vqvae.load_state_dict(checkpoint["vqgan"])
         elif "state_dict" in checkpoint:
-            vqgan.load_state_dict(checkpoint["state_dict"])
+            vqvae.load_state_dict(checkpoint["state_dict"])
         else:
-            vqgan.load_state_dict(checkpoint)
+            vqvae.load_state_dict(checkpoint)
 
 
 class MaskGITModule(Module):
@@ -798,8 +587,8 @@ class MaskGITModule(Module):
         optimizer_config: dict[str, Any] | None = None,
         inference_config: dict[str, Any] | None = None,
         metrics_config: dict[str, Any] | None = None,
-        pretrained_vqgan_path: str | None = None,
-        freeze_vqgan: bool = True,
+        pretrained_vqvae_path: str | None = None,
+        freeze_vqvae: bool = True,
     ):
         """
         Initialize MaskGIT module.
@@ -811,13 +600,13 @@ class MaskGITModule(Module):
             optimizer_config: Optimizer configuration
             inference_config: Inference configuration
             metrics_config: Metrics configuration
-            pretrained_vqgan_path: Path to pretrained VQGAN checkpoint
-            freeze_vqgan: Whether to freeze VQGAN weights
+            pretrained_vqvae_path: Path to pretrained VQVAE checkpoint
+            freeze_vqvae: Whether to freeze VQVAE weights
         """
         self.model_module = MaskGITModelModule(
             model_config,
-            pretrained_vqgan_path=pretrained_vqgan_path,
-            freeze_vqgan=freeze_vqgan,
+            pretrained_vqvae_path=pretrained_vqvae_path,
+            freeze_vqvae=freeze_vqvae,
         )
         self.model_config = model_config or {}
         self.training_config = training_config or {}
@@ -864,8 +653,8 @@ def create_maskgit_module(
     batch_size: int = 1,
     num_train: int = 1000,
     num_val: int = 100,
-    pretrained_vqgan_path: str | None = None,
-    freeze_vqgan: bool = True,
+    pretrained_vqvae_path: str | None = None,
+    freeze_vqvae: bool = True,
 ) -> MaskGITModule:
     """
     Factory function to create a MaskGIT module with sensible defaults.
@@ -884,8 +673,8 @@ def create_maskgit_module(
         batch_size: Batch size
         num_train: Number of training samples
         num_val: Number of validation samples
-        pretrained_vqgan_path: Path to pretrained VQGAN checkpoint from stage 1
-        freeze_vqgan: Whether to freeze VQGAN weights during training
+        pretrained_vqvae_path: Path to pretrained VQVAE checkpoint from stage 1
+        freeze_vqvae: Whether to freeze VQVAE weights during training
 
     Returns:
         Configured MaskGITModule
@@ -913,8 +702,6 @@ def create_maskgit_module(
             "codebook_size": codebook_size,
             "embed_dim": embed_dim,
             "latent_channels": latent_channels,
-            "resolution": image_size,
-            "channel_multipliers": (1, 1, 2, 2, 4),
             "transformer_hidden": transformer_hidden,
             "transformer_layers": transformer_layers,
             "transformer_heads": transformer_heads,
@@ -963,8 +750,8 @@ def create_maskgit_module(
         optimizer_config=optimizer_config,
         inference_config=inference_config,
         metrics_config=metrics_config,
-        pretrained_vqgan_path=pretrained_vqgan_path,
-        freeze_vqgan=freeze_vqgan,
+        pretrained_vqvae_path=pretrained_vqvae_path,
+        freeze_vqvae=freeze_vqvae,
     )
 
 

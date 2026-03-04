@@ -6,13 +6,14 @@ Implements the MaskGIT decoding algorithm:
 2. Iteratively predict and unmask a fraction of tokens
 3. Use confidence-based scheduling to determine which tokens to unmask
 """
+
 import math
 
 import torch
 import torch.nn.functional as F
 
 from maskgit3d.infrastructure.maskgit.transformer import MaskGITTransformer
-from maskgit3d.infrastructure.vqgan.vqgan_model_3d import VQModel3D
+from maskgit3d.infrastructure.vqgan import VQVAE
 
 
 class MaskGITSampler:
@@ -60,7 +61,7 @@ class MaskGITSampler:
         model: MaskGITTransformer,
         shape: tuple[int, int, int, int],
         device: torch.device,
-        vqgan_model: VQModel3D | None = None,
+        vqgan_model: VQVAE | None = None,
         cond_tokens: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
@@ -120,14 +121,10 @@ class MaskGITSampler:
                 # Handle different mask types
                 if self.mask_type == "confidence":
                     # Reveal most confident predictions
-                    reveal_mask = self._get_confidence_based_mask(
-                        confidence, mask, num_to_reveal
-                    )
+                    reveal_mask = self._get_confidence_based_mask(confidence, mask, num_to_reveal)
                 else:
                     # Random reveal
-                    reveal_mask = self._get_random_mask(
-                        mask, num_to_reveal
-                    )
+                    reveal_mask = self._get_random_mask(mask, num_to_reveal)
 
                 # Update tokens with predictions
                 tokens[reveal_mask] = pred_tokens[reveal_mask]
@@ -170,7 +167,7 @@ class MaskGITSampler:
         for i in range(B):
             # Get confidence only for currently masked positions
             masked_conf = confidence[i].clone()
-            masked_conf[~current_mask[i]] = -float('inf')  # Exclude already revealed
+            masked_conf[~current_mask[i]] = -float("inf")  # Exclude already revealed
 
             # Get top-k indices
             if num_to_reveal > 0:
@@ -200,7 +197,7 @@ class MaskGITSamplerWithVQGAN:
     def sample(
         self,
         maskgit_model: MaskGITTransformer,
-        vqgan_model: VQModel3D,
+        vqgan_model: VQVAE,
         shape: tuple[int, int, int, int],
         device: torch.device,
     ) -> torch.Tensor:

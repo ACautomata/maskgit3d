@@ -6,7 +6,7 @@ import hydra
 from injector import Injector
 from omegaconf import DictConfig, OmegaConf
 
-from maskgit3d.application.pipeline import FabricTrainingPipeline, TrainingPipeline
+from maskgit3d.application.pipeline import FabricTrainingPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -112,12 +112,12 @@ def create_module_from_config(cfg: DictConfig):
             self.inference_module = InferenceModule(inference_config)
             if model_type == "maskgit":
                 model_params = _create_model_params(cfg, model_type, base_params)
-                pretrained_path = cfg.model.get("pretrained_vqgan_path", None)
-                freeze_vqgan = cfg.model.get("freeze_vqgan", True)
+                pretrained_path = cfg.model.get("pretrained_vqvae_path", None)
+                freeze_vqvae = cfg.model.get("freeze_vqvae", True)
                 self.model_module = MaskGITModelModule(
                     {"type": model_type, "params": model_params},
-                    pretrained_vqgan_path=pretrained_path,
-                    freeze_vqgan=freeze_vqgan,
+                    pretrained_vqvae_path=pretrained_path,
+                    freeze_vqvae=freeze_vqvae,
                 )
                 self.maskgit_model = self.model_module.provide_maskgit_model()
             else:
@@ -219,8 +219,6 @@ def main(cfg: DictConfig) -> None:
     logger.info("Configuration:\n%s", OmegaConf.to_yaml(cfg))
     module = create_module_from_config(cfg)
     injector = Injector([module])
-    use_fabric = cfg.training.fabric.get("enabled", False)
-    pipeline_class = FabricTrainingPipeline if use_fabric else TrainingPipeline
     from maskgit3d.domain.interfaces import (
         DataProvider,
         ModelInterface,
@@ -232,7 +230,7 @@ def main(cfg: DictConfig) -> None:
     data_provider = injector.get(DataProvider)
     training_strategy = injector.get(TrainingStrategy)
     optimizer_factory = injector.get(OptimizerFactory)
-    pipeline = pipeline_class(
+    pipeline = FabricTrainingPipeline(
         model=model,
         data_provider=data_provider,
         training_strategy=training_strategy,
