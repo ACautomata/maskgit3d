@@ -4,7 +4,6 @@ Unit tests for config modules.
 These tests verify the functionality of configuration and dependency injection.
 """
 
-import inspect
 
 import pytest
 

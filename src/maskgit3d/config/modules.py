@@ -34,7 +34,6 @@ from maskgit3d.infrastructure.training.strategies import (
 )
 from maskgit3d.infrastructure.vqgan import (
     VQVAE,
-    get_encoder_decoder_config_3d,
     get_vqvae_config,
 )
 
@@ -554,7 +553,6 @@ class MaskGITModelModule(Module):
 
         Handles both stage 1 format (model_state_dict) and stage 2 format (vqvae).
         """
-        import torch
 
         from maskgit3d.infrastructure.checkpoints import load_checkpoint
 

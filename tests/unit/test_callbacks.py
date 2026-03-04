@@ -1,7 +1,6 @@
 """Tests for training callbacks."""
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import torch
@@ -39,16 +38,17 @@ class TestModelCheckpoint:
             dirpath=str(tmp_path),
         )
 
-        mock_fabric = MagicMock()
-        mock_fabric.is_global_zero = True
-        mock_fabric._current_metrics = {"val_loss": 0.5}
+        mock_trainer = MagicMock()
+        mock_trainer.callback_metrics = {"val_loss": torch.tensor(0.5)}
+        mock_model = torch.nn.Linear(2, 2)
+        mock_trainer.optimizers = [torch.optim.SGD(mock_model.parameters(), lr=0.01)]
 
-        mock_model = MagicMock()
-        mock_optimizer = MagicMock()
+        callback.on_validation_epoch_end(mock_trainer, mock_model)
 
-        callback.on_validation_epoch_end(mock_fabric, mock_model, mock_optimizer)
-
-        assert callback.current_epoch == 1
+        assert callback._current_epoch == 1
+        # Check that last checkpoint file was created
+        last_file = tmp_path / "last.ckpt"
+        assert last_file.exists()
 
     def test_checkpoint_saves_best(self, tmp_path):
         """Test that best checkpoints are tracked."""
@@ -56,24 +56,23 @@ class TestModelCheckpoint:
             monitor="val_loss",
             mode="min",
             save_top_k=2,
-            save_best=True,
+            save_last=False,
             dirpath=str(tmp_path),
         )
 
-        mock_fabric = MagicMock()
-        mock_fabric.is_global_zero = True
-        mock_model = MagicMock()
-        mock_optimizer = MagicMock()
+        mock_trainer = MagicMock()
+        mock_model = torch.nn.Linear(2, 2)
+        mock_trainer.optimizers = [torch.optim.SGD(mock_model.parameters(), lr=0.01)]
 
         # First validation epoch
-        mock_fabric._current_metrics = {"val_loss": 0.5}
-        callback.on_validation_epoch_end(mock_fabric, mock_model, mock_optimizer)
+        mock_trainer.callback_metrics = {"val_loss": torch.tensor(0.5)}
+        callback.on_validation_epoch_end(mock_trainer, mock_model)
 
         # Second validation epoch (better)
-        mock_fabric._current_metrics = {"val_loss": 0.3}
-        callback.on_validation_epoch_end(mock_fabric, mock_model, mock_optimizer)
+        mock_trainer.callback_metrics = {"val_loss": torch.tensor(0.3)}
+        callback.on_validation_epoch_end(mock_trainer, mock_model)
 
-        assert len(callback.best_scores) > 0
+        assert len(callback._best_scores) > 0
 
 
 class TestEarlyStopping:
@@ -102,34 +101,34 @@ class TestEarlyStopping:
             min_delta=0.01,
         )
 
-        mock_fabric = MagicMock()
-        mock_fabric.is_global_zero = True
+        mock_trainer = MagicMock()
         mock_model = MagicMock()
-        mock_optimizer = MagicMock()
 
         # Initial validation
-        mock_fabric._current_metrics = {"val_loss": 1.0}
-        callback.on_validation_epoch_end(mock_fabric, mock_model, mock_optimizer)
+        mock_trainer.callback_metrics = {"val_loss": torch.tensor(1.0)}
+        callback.on_validation_epoch_end(mock_trainer, mock_model)
         assert not callback.should_stop
 
         # Worse validation (no improvement)
-        mock_fabric._current_metrics = {"val_loss": 1.1}
-        callback.on_validation_epoch_end(mock_fabric, mock_model, mock_optimizer)
+        mock_trainer.callback_metrics = {"val_loss": torch.tensor(1.1)}
+        callback.on_validation_epoch_end(mock_trainer, mock_model)
         assert not callback.should_stop
 
         # Another worse validation
-        callback.on_validation_epoch_end(mock_fabric, mock_model, mock_optimizer)
+        callback.on_validation_epoch_end(mock_trainer, mock_model)
         assert callback.should_stop
 
     def test_early_stopping_reset(self):
         """Test that early stopping resets properly."""
         callback = EarlyStopping(monitor="val_loss", mode="min", patience=5)
 
-        mock_fabric = MagicMock()
-        callback.on_fit_start(mock_fabric)
+        mock_trainer = MagicMock()
+        mock_model = torch.nn.Linear(2, 2)
+        callback.on_fit_start(mock_trainer, mock_model)
 
-        assert callback.best_score is None
-        assert callback.counter == 0
+        # After on_fit_start, best_score is initialized to inf for min mode
+        assert callback._early_stopping.best_score == float("inf")
+        assert callback._early_stopping.wait_count == 0
         assert not callback.should_stop
 
 
@@ -147,42 +146,44 @@ class TestNaNMonitor:
         """Test that NaN monitor detects NaN in loss."""
         callback = NaNMonitor(check_interval=1, raise_on_nan=True)
 
-        mock_fabric = MagicMock()
-        mock_fabric.is_global_zero = True
+        mock_trainer = MagicMock()
         mock_model = MagicMock()
-        mock_optimizer = MagicMock()
+        mock_batch = MagicMock()
+
+        # Pass NaN in a dict as outputs
+        nan_output = {"loss": torch.tensor(float("nan"))}
 
         with pytest.raises(RuntimeError, match="NaN"):
-            callback.on_train_batch_end(
-                mock_fabric, mock_model, mock_optimizer, None, 0, float("nan")
-            )
+            callback.on_train_batch_end(mock_trainer, mock_model, nan_output, mock_batch, 0)
 
     def test_nan_monitor_detects_inf_loss(self):
         """Test that NaN monitor detects Inf in loss."""
         callback = NaNMonitor(check_interval=1, raise_on_nan=True)
 
-        mock_fabric = MagicMock()
-        mock_fabric.is_global_zero = True
+        mock_trainer = MagicMock()
         mock_model = MagicMock()
-        mock_optimizer = MagicMock()
+        mock_batch = MagicMock()
+
+        # Pass Inf in a dict as outputs
+        inf_output = {"loss": torch.tensor(float("inf"))}
 
         with pytest.raises(RuntimeError, match="NaN"):
-            callback.on_train_batch_end(
-                mock_fabric, mock_model, mock_optimizer, None, 0, float("inf")
-            )
+            callback.on_train_batch_end(mock_trainer, mock_model, inf_output, mock_batch, 0)
 
     def test_nan_monitor_skips_normal_loss(self):
         """Test that NaN monitor skips normal loss values."""
         callback = NaNMonitor(check_interval=1, raise_on_nan=True)
 
-        mock_fabric = MagicMock()
-        mock_fabric.is_global_zero = True
+        mock_trainer = MagicMock()
         mock_model = MagicMock()
-        mock_optimizer = MagicMock()
+        mock_batch = MagicMock()
+
+        # Pass normal loss in a dict as outputs
+        normal_output = {"loss": torch.tensor(0.5)}
 
         # Should not raise
-        callback.on_train_batch_end(mock_fabric, mock_model, mock_optimizer, None, 0, 0.5)
-        assert callback.batch_count == 1
+        callback.on_train_batch_end(mock_trainer, mock_model, normal_output, mock_batch, 0)
+        assert callback._batch_count == 1
 
 
 class TestMetricsLogger:
@@ -199,28 +200,25 @@ class TestMetricsLogger:
         """Test that metrics are logged."""
         callback = MetricsLogger(log_dir=str(tmp_path), log_interval=1)
 
-        mock_fabric = MagicMock()
-        mock_fabric._current_metrics = {"train_loss": 0.5, "val_loss": 0.3}
+        mock_trainer = MagicMock()
+        mock_trainer.callback_metrics = {"train_loss": torch.tensor(0.5)}
         mock_model = MagicMock()
-        mock_optimizer = MagicMock()
 
-        callback.on_train_epoch_end(mock_fabric, mock_model, mock_optimizer)
+        callback.on_train_epoch_end(mock_trainer, mock_model)
 
         assert "train_loss" in callback.history
-        assert "val_loss" in callback.history
         assert len(callback.history["train_loss"]) == 1
 
     def test_metrics_logger_exports_files(self, tmp_path):
         """Test that metrics are exported to files."""
         callback = MetricsLogger(log_dir=str(tmp_path), log_interval=1)
 
-        mock_fabric = MagicMock()
-        mock_fabric._current_metrics = {"train_loss": 0.5}
+        mock_trainer = MagicMock()
+        mock_trainer.callback_metrics = {"train_loss": torch.tensor(0.5)}
         mock_model = MagicMock()
-        mock_optimizer = MagicMock()
 
-        callback.on_train_epoch_end(mock_fabric, mock_model, mock_optimizer)
-        callback.on_fit_end(mock_fabric)
+        callback.on_train_epoch_end(mock_trainer, mock_model)
+        callback.on_fit_end(mock_trainer, mock_model)
 
         json_path = tmp_path / "metrics.json"
         csv_path = tmp_path / "metrics.csv"
@@ -232,15 +230,14 @@ class TestMetricsLogger:
         """Test that logging respects interval."""
         callback = MetricsLogger(log_dir=str(tmp_path), log_interval=2)
 
-        mock_fabric = MagicMock()
-        mock_fabric._current_metrics = {"train_loss": 0.5}
+        mock_trainer = MagicMock()
+        mock_trainer.callback_metrics = {"train_loss": torch.tensor(0.5)}
         mock_model = MagicMock()
-        mock_optimizer = MagicMock()
 
         # First epoch (should not log)
-        callback.on_train_epoch_end(mock_fabric, mock_model, mock_optimizer)
+        callback.on_train_epoch_end(mock_trainer, mock_model)
         assert len(callback.history) == 0
 
         # Second epoch (should log)
-        callback.on_train_epoch_end(mock_fabric, mock_model, mock_optimizer)
+        callback.on_train_epoch_end(mock_trainer, mock_model)
         assert len(callback.history) > 0

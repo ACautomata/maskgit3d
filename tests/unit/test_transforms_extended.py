@@ -7,11 +7,11 @@ from monai.transforms.compose import Compose
 
 from maskgit3d.infrastructure.data.transforms import (
     create_3d_preprocessing,
-    create_brats_preprocessing,
     create_brats2023_inference_preprocessing,
     create_brats2023_preprocessing,
     create_brats2023_training_preprocessing,
     create_brats_inference_preprocessing,
+    create_brats_preprocessing,
     create_brats_training_preprocessing,
     create_medmnist_inference_preprocessing,
     create_medmnist_preprocessing,

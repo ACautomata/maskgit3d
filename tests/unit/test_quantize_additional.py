@@ -1,8 +1,6 @@
 """Additional tests for quantize module to improve coverage."""
 
-import pytest
 import torch
-import torch.nn as nn
 
 from maskgit3d.infrastructure.vqgan.quantize import (
     EMAVectorQuantizer,
