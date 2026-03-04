@@ -15,8 +15,9 @@ from maskgit3d.config.modules import (
     create_maskgit_module,
     create_vqgan_module,
 )
-from maskgit3d.infrastructure.maskgit.maskgit_model import MaskGITModel
-from maskgit3d.infrastructure.vqgan import MaisiVQModel3D
+from maskgit3d.domain.interfaces import ModelInterface
+from maskgit3d.infrastructure.maskgit import MaskGITModel
+from maskgit3d.infrastructure.vqgan import VQVAE
 
 
 def test_maskgit_model_requires_explicit_vqgan_and_transformer_dependencies():
@@ -63,13 +64,11 @@ class TestCreateVQGANModule:
         module = create_vqgan_module(
             image_size=64,
             in_channels=1,
-            n_embed=256,
+            codebook_size=256,
             embed_dim=32,
-            latent_channels=32,
+            latent_channels=4,
             lr=1e-4,
             batch_size=2,
-            num_train=100,
-            num_val=20,
         )
         assert module is not None
 
@@ -98,25 +97,31 @@ class TestCreateVQGANModuleInstantiation:
     """Regression tests for VQGAN module model instantiation."""
 
     def test_create_vqgan_module_can_instantiate_model(self):
-        """Factory module should build an instantiable VQModel3D."""
+        """Factory module should build an instantiable VQVAE."""
+        from injector import Injector
+
         module = create_vqgan_module(
             image_size=32,
             in_channels=1,
-            n_embed=128,
+            codebook_size=128,
             embed_dim=32,
-            latent_channels=64,
+            latent_channels=4,
         )
 
-        model = module.model_module.provide_vqgan_model()
+        injector = Injector([module])
+        model = injector.get(ModelInterface)
 
         assert model is not None
         assert model.codebook_size == 128
 
     def test_create_vqgan_module_default_model_instantiation(self):
         """Default VQGAN module config should instantiate without constructor mismatch."""
+        from injector import Injector
+
         module = create_vqgan_module()
 
-        model = module.model_module.provide_vqgan_model()
+        injector = Injector([module])
+        model = injector.get(ModelInterface)
 
         assert model is not None
 
@@ -174,6 +179,8 @@ class TestMaskGITModuleInstantiation:
 
     def test_create_maskgit_module_can_instantiate_model(self):
         """Factory module should build an instantiable MaskGITModel."""
+        from injector import Injector
+
         module = create_maskgit_module(
             image_size=32,
             in_channels=1,
@@ -185,25 +192,20 @@ class TestMaskGITModuleInstantiation:
             transformer_heads=4,
         )
 
-        model = module.model_module.provide_maskgit_model()
+        injector = Injector([module])
+        model = injector.get(ModelInterface)
 
         assert model is not None
 
-    def test_maskgit_model_uses_quantize_attribute(self):
-        """MaskGITModel should call VQModel3D quantize attribute."""
-        source = inspect.getsource(MaskGITModel)
 
-        assert "self.vqgan.quantize(" in source
-        # MaskGITModel uses decode_code instead of directly calling get_codebook_entry
-        assert "self.vqgan.decode_code" in source
-        assert "self.vqgan.quantizer" not in source
+def test_maisi_vq_module_binds_vqvae_class():
+    """Guard: MaisiVQModule (alias) must bind VQVAE."""
+    from injector import Injector
 
-
-def test_maisi_vq_module_binds_maisi_class_name():
-    """Guard: MaisiVQModule must bind MaisiVQModel3D, not a typo variant."""
-    module = MaisiVQModule(model_config={"type": "maisi_vq", "params": {}})
-    model = module.model_module.provide_maisi_vq_model()
-    assert model.__class__ is MaisiVQModel3D
+    module = MaisiVQModule(model_config={"type": "vqvae", "params": {"in_channels": 1}})
+    injector = Injector([module])
+    model = injector.get(ModelInterface)
+    assert isinstance(model, VQVAE)
 
 
 class TestOptimizerConfigDataclass:

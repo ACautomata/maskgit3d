@@ -30,13 +30,14 @@ class TestVQGANTrainingStrategy:
         strategy = VQGANTrainingStrategy(
             codebook_weight=1.0,
             pixel_loss_weight=1.0,
+            perceptual_weight=0.0,
         )
         assert strategy.codebook_weight == 1.0
         assert strategy.pixel_loss_weight == 1.0
 
     def test_vqgan_train_step_with_mock_model(self):
         """Test training step with mock model."""
-        strategy = VQGANTrainingStrategy()
+        strategy = VQGANTrainingStrategy(perceptual_weight=0.0)
         mock_model = MagicMock()
 
         # Mock model output: (reconstructed, quantizer_loss)
@@ -59,7 +60,7 @@ class TestVQGANTrainingStrategy:
 
     def test_vqgan_validate_step(self):
         """Test validation step."""
-        strategy = VQGANTrainingStrategy()
+        strategy = VQGANTrainingStrategy(perceptual_weight=0.0)
         mock_model = MagicMock()
 
         mock_model.forward_with_loss.return_value = (
@@ -261,35 +262,36 @@ class TestVQGANOptimizerFactory:
     def test_vqgan_optimizer_factory_creation(self):
         """Test creating VQGANOptimizerFactory."""
         factory = VQGANOptimizerFactory(
-            lr_g=1e-4,
-            lr_d=2e-4,
+            lr=1e-4,
             weight_decay=0.01,
-            betas=(0.9, 0.999),
+            betas=(0.5, 0.9),
         )
-        assert factory.lr_g == 1e-4
-        assert factory.lr_d == 2e-4
+        assert factory.lr == 1e-4
 
     def test_vqgan_optimizer_factory_implements_gan_optimizer_factory(self):
         """VQGANOptimizerFactory must implement GANOptimizerFactory."""
         from maskgit3d.domain.interfaces import GANOptimizerFactory
         from maskgit3d.infrastructure.training.strategies import VQGANOptimizerFactory
+
         factory = VQGANOptimizerFactory()
         assert isinstance(factory, GANOptimizerFactory)
 
     def test_vqgan_optimizer_factory_creates_dual_optimizers(self):
-        """VQGANOptimizerFactory.create() must return two optimizers."""
+        """VQGANOptimizerFactory.create() must return two optimizers with same lr."""
         from maskgit3d.infrastructure.training.strategies import VQGANOptimizerFactory
-        factory = VQGANOptimizerFactory(lr_g=1e-4, lr_d=2e-4)
+
+        factory = VQGANOptimizerFactory(lr=1e-4)
         params_g = [torch.nn.Parameter(torch.randn(10, 10))]
         params_d = [torch.nn.Parameter(torch.randn(5, 5))]
         opt_g, opt_d = factory.create(iter(params_g), iter(params_d))
         assert opt_g.param_groups[0]["lr"] == 1e-4  # type: ignore[union-attr]
-        assert opt_d.param_groups[0]["lr"] == 2e-4  # type: ignore[union-attr]
+        assert opt_d.param_groups[0]["lr"] == 1e-4  # type: ignore[union-attr]  # Same lr
 
     def test_vqgan_optimizer_factory_creates_generator_only(self):
         """VQGANOptimizerFactory.create() can return just generator optimizer."""
         from maskgit3d.infrastructure.training.strategies import VQGANOptimizerFactory
-        factory = VQGANOptimizerFactory(lr_g=1e-4)
+
+        factory = VQGANOptimizerFactory(lr=1e-4)
         params_g = [torch.nn.Parameter(torch.randn(10, 10))]
         opt_g, opt_d = factory.create(iter(params_g), None)
         assert opt_g.param_groups[0]["lr"] == 1e-4  # type: ignore[union-attr]
@@ -382,6 +384,7 @@ class TestMaskGITTrainingStrategy:
 
 class TestMaskGITInference:
     """Tests for MaskGITInference."""
+
     def test_maskgit_inference_creation(self):
         """Test creating MaskGITInference."""
         inference = MaskGITInference(

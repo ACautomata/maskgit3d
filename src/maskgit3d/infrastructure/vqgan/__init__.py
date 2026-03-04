@@ -1,13 +1,13 @@
 """
-VQGAN Infrastructure.
+VQVAE Infrastructure.
 
-This module provides 3D VQGAN implementations including:
+This module provides 3D VQVAE implementations including:
 - 3D Encoder/Decoder architectures
 - Vector quantization
 - Discriminator
-- Complete VQModel3D
-- MAISI-based VQGAN model
+- Complete VQVAE model
 """
+
 from maskgit3d.infrastructure.vqgan.discriminator import (
     IdentityDiscriminator,
     NLayerDiscriminator,
@@ -17,17 +17,16 @@ from maskgit3d.infrastructure.vqgan.encoder_decoder_3d import (
     Encoder3d,
     get_encoder_decoder_config_3d,
 )
-from maskgit3d.infrastructure.vqgan.maisi_vq_model import (
-    MaisiVQModel3D,
-    get_maisi_vq_config,
-)
 from maskgit3d.infrastructure.vqgan.quantize import (
     EMAVectorQuantizer,
     VectorQuantizer,
     VectorQuantizer2,
 )
-from maskgit3d.infrastructure.vqgan.vqgan_model_3d import (
-    VQModel3D,
+from maskgit3d.infrastructure.vqgan.vqvae import (
+    MaisiVQModel3D,
+    VQVAE,
+    get_maisi_vq_config,
+    get_vqvae_config,
 )
 
 __all__ = [
@@ -42,9 +41,10 @@ __all__ = [
     "Encoder3d",
     "Decoder3d",
     "get_encoder_decoder_config_3d",
-    # Model (3D)
-    "VQModel3D",
-    # MAISI Model (3D)
+    # Model (VQVAE)
+    "VQVAE",
+    # Backward compatibility aliases
     "MaisiVQModel3D",
     "get_maisi_vq_config",
+    "get_vqvae_config",
 ]

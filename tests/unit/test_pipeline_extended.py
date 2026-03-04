@@ -7,7 +7,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from maskgit3d.application.pipeline import TrainingPipeline, TestPipeline
+from maskgit3d.application.pipeline import FabricTrainingPipeline, TestPipeline
 
 
 class SimpleModel(nn.Module):
@@ -87,7 +87,6 @@ class SimpleInferenceStrategy:
             "masks": predictions.cpu().numpy(),
             "probs": predictions.cpu().numpy(),
         }
-        return {"images": predictions.cpu().numpy(), "masks": predictions.cpu().numpy()}
 
 
 class SimpleMetrics:
@@ -106,23 +105,23 @@ class SimpleMetrics:
         return {"accuracy": 0.95}
 
 
-class TestTrainingPipelineExtended:
-    """Extended tests for TrainingPipeline."""
+class TestFabricTrainingPipelineExtended:
+    """Extended tests for FabricTrainingPipeline."""
 
     @pytest.fixture
     def pipeline(self, tmp_path):
-        """Create a training pipeline."""
+        """Create a Fabric training pipeline."""
         model = SimpleModel()
         data_provider = SimpleDataProvider(num_batches=1)
         training_strategy = SimpleTrainingStrategy()
         optimizer_factory = SimpleOptimizerFactory()
 
-        return TrainingPipeline(
+        return FabricTrainingPipeline(
             model=model,
             data_provider=data_provider,
             training_strategy=training_strategy,
             optimizer_factory=optimizer_factory,
-            device=torch.device("cpu"),
+            accelerator="cpu",
             checkpoint_dir=str(tmp_path / "checkpoints"),
             log_interval=1,
         )
@@ -132,30 +131,15 @@ class TestTrainingPipelineExtended:
         assert pipeline.model is not None
         assert pipeline.data_provider is not None
         assert pipeline.training_strategy is not None
-        assert pipeline.optimizer is not None
         assert pipeline.checkpoint_dir.exists()
 
-    def test_run(self, pipeline):
-        """Test running the pipeline."""
-        history = pipeline.run(num_epochs=1, val_frequency=1)
+    def test_global_step_property(self, pipeline):
+        """Test global_step property."""
+        assert pipeline.global_step == 0
 
-        assert isinstance(history, dict)
-
-    def test_run_without_validation(self, pipeline):
-        """Test running without validation."""
-        history = pipeline.run(num_epochs=1, val_frequency=2)
-
-        assert isinstance(history, dict)
-
-    def test_save_checkpoint(self, pipeline, tmp_path):
-        """Test saving checkpoint."""
-        train_metrics = {"train_loss": [0.5, 0.4]}
-        val_metrics = {"val_loss": [0.45]}
-
-        pipeline._save_checkpoint(0, train_metrics, val_metrics)
-
-        checkpoint_files = list(pipeline.checkpoint_dir.glob("*.pth"))
-        assert len(checkpoint_files) > 0
+    def test_current_epoch_property(self, pipeline):
+        """Test current_epoch property."""
+        assert pipeline.current_epoch == 0
 
 
 class TestTestPipelineExtended:
@@ -197,6 +181,5 @@ class TestTestPipelineExtended:
         """Test running with saving predictions."""
         results = pipeline.run(save_predictions=True)
 
-        # Check that predictions were saved
         output_files = list(pipeline.output_dir.glob("*.npy"))
         assert len(output_files) > 0

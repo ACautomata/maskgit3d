@@ -218,17 +218,15 @@ class AdamWOptimizerFactory(OptimizerFactory):
 
 
 class VQGANOptimizerFactory(GANOptimizerFactory):
-    """Factory for VQGAN optimizer with separate G/D optimizers."""
+    """Factory for VQGAN optimizer with separate G/D optimizers using same learning rate."""
 
     def __init__(
         self,
-        lr_g: float = 1e-4,
-        lr_d: float = 2e-4,
+        lr: float = 1e-4,
         weight_decay: float = 0.01,
-        betas: tuple[float, float] = (0.9, 0.999),
+        betas: tuple[float, float] = (0.5, 0.9),
     ):
-        self.lr_g = lr_g
-        self.lr_d = lr_d
+        self.lr = lr
         self.weight_decay = weight_decay
         self.betas = betas
 
@@ -239,14 +237,14 @@ class VQGANOptimizerFactory(GANOptimizerFactory):
     ) -> tuple[torch.optim.Optimizer, torch.optim.Optimizer | None]:
         opt_g = torch.optim.AdamW(
             gen_params,
-            lr=self.lr_g,
+            lr=self.lr,
             weight_decay=self.weight_decay,
             betas=self.betas,
         )
         if disc_params is not None:
             opt_d = torch.optim.AdamW(
                 disc_params,
-                lr=self.lr_d,
+                lr=self.lr,  # Same learning rate for discriminator
                 weight_decay=self.weight_decay,
                 betas=self.betas,
             )
@@ -307,22 +305,24 @@ class VQGANTrainingStrategy(TrainingStrategy):
         self.discriminator = discriminator
         self.global_step = 0
 
-        # Initialize LPIPS loss
-        try:
-            import lpips
+        # Initialize LPIPS loss (only when perceptual_weight > 0 to avoid
+        # downloading VGG weights unnecessarily)
+        self.lpips_fn = None
+        if perceptual_weight > 0:
+            try:
+                import lpips
 
-            self.lpips_fn = lpips.LPIPS(net="vgg", verbose=False)
-            # Freeze LPIPS parameters
-            for param in self.lpips_fn.parameters():
-                param.requires_grad = False
-        except ImportError:
-            import warnings
+                self.lpips_fn = lpips.LPIPS(net="vgg", verbose=False)
+                # Freeze LPIPS parameters
+                for param in self.lpips_fn.parameters():
+                    param.requires_grad = False
+            except ImportError:
+                import warnings
 
-            warnings.warn(
-                "lpips not installed. Perceptual loss will be disabled. "
-                "Install with: pip install lpips>=0.1.4"
-            )
-            self.lpips_fn = None
+                warnings.warn(
+                    "lpips not installed. Perceptual loss will be disabled. "
+                    "Install with: pip install lpips>=0.1.4"
+                )
 
         # Mixed precision
         self.mixed_precision = MixedPrecisionTrainer(

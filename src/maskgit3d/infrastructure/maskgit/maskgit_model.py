@@ -9,10 +9,9 @@ Complete MaskGIT model combining:
 import torch
 import torch.nn as nn
 
-from maskgit3d.domain.interfaces import MaskGITModelInterface
+from maskgit3d.domain.interfaces import MaskGITModelInterface, VQModelInterface
 from maskgit3d.infrastructure.maskgit.sampling import MaskGITSampler
 from maskgit3d.infrastructure.maskgit.transformer import MaskGITTransformer
-from maskgit3d.infrastructure.vqgan.vqgan_model_3d import VQModel3D
 
 
 class MaskGITModel(MaskGITModelInterface):
@@ -20,19 +19,19 @@ class MaskGITModel(MaskGITModelInterface):
     Complete MaskGIT model for 3D medical image generation.
 
     Combines:
-    - VQGAN tokenizer: encodes images to discrete tokens
+    - VQVAE tokenizer: encodes images to discrete tokens
     - Transformer: bidirectional model for token prediction
     """
 
     def __init__(
         self,
-        vqgan: VQModel3D,
+        vqgan: VQModelInterface,
         transformer: MaskGITTransformer,
         mask_ratio: float = 0.5,
     ):
         """
         Args:
-            vqgan: VQGAN model for encoding/decoding
+            vqgan: VQVAE model for encoding/decoding
             transformer: Transformer for masked token prediction
             mask_ratio: Ratio of tokens to mask during training
         """
