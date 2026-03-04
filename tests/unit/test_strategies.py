@@ -182,6 +182,86 @@ class TestVQGANMetrics:
         result = metrics.compute()
         assert result["psnr"] == 0.0
 
+    def test_vqgan_metrics_with_lpips(self):
+        """Test metrics with LPIPS enabled."""
+        try:
+            metrics = VQGANMetrics(data_range=1.0, spatial_dims=3, enable_lpips=True)
+        except TypeError:
+            pytest.skip("MONAI SSIMMetric API changed")
+
+        predictions = torch.randn(2, 1, 8, 8, 8)
+        targets = torch.randn(2, 1, 8, 8, 8)
+
+        metrics.update(predictions, targets)
+        result = metrics.compute()
+
+        assert "psnr" in result
+        assert "ssim" in result
+
+    def test_vqgan_metrics_compute_with_stats(self):
+        """Test compute_with_stats method."""
+        try:
+            metrics = VQGANMetrics(data_range=1.0, spatial_dims=3)
+        except TypeError:
+            pytest.skip("MONAI SSIMMetric API changed")
+
+        predictions = torch.randn(2, 1, 8, 8, 8)
+        targets = torch.randn(2, 1, 8, 8, 8)
+
+        metrics.update(predictions, targets)
+        stats = metrics.compute_with_stats()
+
+        assert "psnr" in stats
+        assert "mean" in stats["psnr"]
+        assert "std" in stats["psnr"]
+        assert "min" in stats["psnr"]
+        assert "max" in stats["psnr"]
+        assert "count" in stats["psnr"]
+
+    def test_vqgan_metrics_export_json(self, tmp_path):
+        """Test export to JSON."""
+        try:
+            metrics = VQGANMetrics(data_range=1.0, spatial_dims=3)
+        except TypeError:
+            pytest.skip("MONAI SSIMMetric API changed")
+
+        predictions = torch.randn(2, 1, 8, 8, 8)
+        targets = torch.randn(2, 1, 8, 8, 8)
+
+        metrics.update(predictions, targets)
+        json_path = tmp_path / "metrics.json"
+        metrics.export_json(str(json_path))
+
+        assert json_path.exists()
+        import json
+
+        with open(json_path) as f:
+            data = json.load(f)
+        assert "summary" in data
+        assert "detailed_stats" in data
+
+    def test_vqgan_metrics_export_csv(self, tmp_path):
+        """Test export to CSV."""
+        try:
+            metrics = VQGANMetrics(data_range=1.0, spatial_dims=3)
+        except TypeError:
+            pytest.skip("MONAI SSIMMetric API changed")
+
+        predictions = torch.randn(2, 1, 8, 8, 8)
+        targets = torch.randn(2, 1, 8, 8, 8)
+
+        metrics.update(predictions, targets)
+        csv_path = tmp_path / "metrics.csv"
+        metrics.export_csv(str(csv_path))
+
+        assert csv_path.exists()
+        import csv
+
+        with open(csv_path) as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+        assert len(rows) >= 2  # Header + at least one data row
+
 
 class TestAdamOptimizerFactory:
     """Tests for AdamOptimizerFactory."""
