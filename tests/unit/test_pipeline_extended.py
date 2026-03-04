@@ -1,7 +1,5 @@
 """Extended tests for pipeline module to improve coverage."""
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 import torch

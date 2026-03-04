@@ -7,13 +7,12 @@ Supports both custom implementations and Lightning's built-in callbacks.
 
 from __future__ import annotations
 
-import math
 import logging
+import math
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
-
 from lightning.pytorch.callbacks import Callback as _LightningCallback
 from lightning.pytorch.callbacks import EarlyStopping as _LightningEarlyStopping
 from lightning.pytorch.callbacks import ModelCheckpoint as _LightningModelCheckpoint
@@ -51,23 +50,23 @@ class Callback(_LightningCallback):
         """Get the Fabric instance if available."""
         return self._fabric
 
-    def on_fit_start(self, trainer: "Trainer", pl_module: torch.nn.Module) -> None:
+    def on_fit_start(self, trainer: Trainer, pl_module: torch.nn.Module) -> None:
         """Called at the very beginning of fit."""
         self._trainer = trainer
 
-    def on_train_start(self, trainer: "Trainer", pl_module: torch.nn.Module) -> None:
+    def on_train_start(self, trainer: Trainer, pl_module: torch.nn.Module) -> None:
         """Called at the beginning of training."""
         pass
 
-    def on_train_end(self, trainer: "Trainer", pl_module: torch.nn.Module) -> None:
+    def on_train_end(self, trainer: Trainer, pl_module: torch.nn.Module) -> None:
         """Called at the end of training."""
         pass
 
-    def on_validation_start(self, trainer: "Trainer", pl_module: torch.nn.Module) -> None:
+    def on_validation_start(self, trainer: Trainer, pl_module: torch.nn.Module) -> None:
         """Called at the beginning of validation."""
         pass
 
-    def on_validation_end(self, trainer: "Trainer", pl_module: torch.nn.Module) -> None:
+    def on_validation_end(self, trainer: Trainer, pl_module: torch.nn.Module) -> None:
         """Called at the end of validation."""
         pass
 
@@ -115,7 +114,7 @@ class ModelCheckpoint(Callback):
         self._current_epoch = 0
         self._best_scores: list[tuple[float, Path]] = []
 
-    def on_fit_start(self, trainer: "Trainer", pl_module: torch.nn.Module) -> None:
+    def on_fit_start(self, trainer: Trainer, pl_module: torch.nn.Module) -> None:
         """Initialize state at the start of training."""
         super().on_fit_start(trainer, pl_module)
         self._current_epoch = 0
@@ -123,7 +122,7 @@ class ModelCheckpoint(Callback):
 
     def on_validation_epoch_end(
         self,
-        trainer: "Trainer",
+        trainer: Trainer,
         pl_module: torch.nn.Module,
     ) -> None:
         """Save checkpoints after validation epoch."""
@@ -150,7 +149,7 @@ class ModelCheckpoint(Callback):
         self,
         pl_module: torch.nn.Module,
         score: float,
-        trainer: "Trainer",
+        trainer: Trainer,
     ) -> None:
         is_better = False
         if not self._best_scores:
@@ -181,7 +180,7 @@ class ModelCheckpoint(Callback):
         self,
         pl_module: torch.nn.Module,
         filename: str,
-        trainer: "Trainer",
+        trainer: Trainer,
     ) -> None:
         filepath = self.dirpath / f"{filename}.ckpt"
 
@@ -314,7 +313,7 @@ class EarlyStopping(Callback):
 
         self.should_stop = False
 
-    def on_fit_start(self, trainer: "Trainer", pl_module: torch.nn.Module) -> None:
+    def on_fit_start(self, trainer: Trainer, pl_module: torch.nn.Module) -> None:
         """Initialize state at the start of training."""
         super().on_fit_start(trainer, pl_module)
         torch_inf = torch.tensor(torch.inf)
@@ -327,7 +326,7 @@ class EarlyStopping(Callback):
 
     def on_validation_epoch_end(
         self,
-        trainer: "Trainer",
+        trainer: Trainer,
         pl_module: torch.nn.Module,
     ) -> None:
         """Check for early stopping condition after validation."""
@@ -441,14 +440,14 @@ class NaNMonitor(Callback):
         self.on_nan_action = on_nan_action
         self._batch_count = 0
 
-    def on_fit_start(self, trainer: "Trainer", pl_module: torch.nn.Module) -> None:
+    def on_fit_start(self, trainer: Trainer, pl_module: torch.nn.Module) -> None:
         """Initialize state at the start of training."""
         super().on_fit_start(trainer, pl_module)
         self._batch_count = 0
 
     def on_train_batch_end(
         self,
-        trainer: "Trainer",
+        trainer: Trainer,
         pl_module: torch.nn.Module,
         outputs: Any,
         batch: Any,
@@ -535,7 +534,7 @@ class MetricsLogger(Callback):
 
     def on_train_epoch_end(
         self,
-        trainer: "Trainer",
+        trainer: Trainer,
         pl_module: torch.nn.Module,
     ) -> None:
         """Record metrics after training epoch."""
@@ -557,7 +556,7 @@ class MetricsLogger(Callback):
 
         self._save_metrics()
 
-    def on_fit_end(self, trainer: "Trainer", pl_module: torch.nn.Module) -> None:
+    def on_fit_end(self, trainer: Trainer, pl_module: torch.nn.Module) -> None:
         """Save metrics at the end of training."""
         self._save_metrics()
 

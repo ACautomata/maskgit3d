@@ -1,11 +1,12 @@
 """Tests for data/augmentation.py"""
 
 import pytest
+
 from maskgit3d.infrastructure.data.augmentation import (
     NnUNetAugmentationConfig,
+    create_brats_training_transforms_with_augmentation,
     create_nnunet_augmentation_transforms,
     create_training_transforms_with_augmentation,
-    create_brats_training_transforms_with_augmentation,
 )
 
 

@@ -1,11 +1,9 @@
 """Shared pytest fixtures for maskgit-3d tests."""
 
+
+import numpy as np
 import pytest
 import torch
-import numpy as np
-import tempfile
-import os
-from pathlib import Path
 
 
 @pytest.fixture(scope="session")

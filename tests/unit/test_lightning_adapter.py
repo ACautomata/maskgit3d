@@ -3,7 +3,6 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-import torch
 
 # Try importing lightning, skip if not available
 try:

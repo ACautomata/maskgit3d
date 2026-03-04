@@ -1,6 +1,7 @@
 """Tests for config/registry.py"""
 
 import pytest
+
 from maskgit3d.config.registry import resolve_component
 
 

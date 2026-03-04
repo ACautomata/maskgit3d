@@ -23,8 +23,8 @@ from maskgit3d.infrastructure.vqgan.quantize import (
     VectorQuantizer2,
 )
 from maskgit3d.infrastructure.vqgan.vqvae import (
-    MaisiVQModel3D,
     VQVAE,
+    MaisiVQModel3D,
     get_maisi_vq_config,
     get_vqvae_config,
 )

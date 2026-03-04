@@ -1,7 +1,5 @@
 """Integration tests for training pipeline components."""
 
-import pytest
-import torch
 
 from maskgit3d.infrastructure.data.dataset import SimpleDataProvider
 

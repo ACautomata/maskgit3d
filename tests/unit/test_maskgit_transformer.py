@@ -2,6 +2,7 @@
 
 import pytest
 import torch
+
 from maskgit3d.infrastructure.maskgit.transformer import (
     MaskGITTransformer,
     MaskGITTransformerConfig,
