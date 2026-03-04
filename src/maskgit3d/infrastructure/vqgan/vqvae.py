@@ -1,7 +1,7 @@
 """
-MAISI-based VQGAN Model Implementation.
+VQVAE Model Implementation.
 
-This module provides a VQGAN model using MONAI's MaisiEncoder/MaisiDecoder
+This module provides a VQVAE model using MONAI's MaisiEncoder/MaisiDecoder
 architecture with vector quantization, without KL regularization.
 """
 
@@ -19,9 +19,9 @@ from maskgit3d.domain.interfaces import VQModelInterface
 from maskgit3d.infrastructure.vqgan.quantize import VectorQuantizer2
 
 
-class MaisiVQModel3D(VQModelInterface):
+class VQVAE(VQModelInterface):
     """
-    MAISI-based VQGAN Model for volumetric medical images.
+    VQVAE Model for volumetric medical images.
 
     This model combines:
     - MONAI's MaisiEncoder for feature extraction
@@ -54,7 +54,7 @@ class MaisiVQModel3D(VQModelInterface):
         beta: float = 0.25,
     ):
         """
-        Initialize MAISI VQGAN model.
+        Initialize VQVAE model.
 
         Args:
             in_channels: Number of input channels (1 for MRI/CT)
@@ -81,7 +81,7 @@ class MaisiVQModel3D(VQModelInterface):
         self.embed_dim = embed_dim
         self.latent_channels = latent_channels
 
-        # MAISI Encoder
+        # Maisi Encoder
         self.encoder = MaisiEncoder(
             spatial_dims=3,
             in_channels=in_channels,
@@ -109,7 +109,7 @@ class MaisiVQModel3D(VQModelInterface):
             beta=beta,
         )
 
-        # MAISI Decoder
+        # Maisi Decoder
         self.decoder = MaisiDecoder(
             spatial_dims=3,
             num_channels=num_channels,
@@ -263,23 +263,23 @@ class MaisiVQModel3D(VQModelInterface):
 
     # Workaround for type checking: these methods exist on nn.Module
     # but have incompatible signatures with VQModelInterface
-    def to(self, *args: Any, **kwargs: Any) -> "MaisiVQModel3D":
+    def to(self, *args: Any, **kwargs: Any) -> "VQVAE":
         """Move model to device - delegates to nn.Module.to"""
         super().to(*args, **kwargs)  # type: ignore[return-value]
         return self
 
-    def train(self, mode: bool = True) -> "MaisiVQModel3D":
+    def train(self, mode: bool = True) -> "VQVAE":
         """Set training mode - delegates to nn.Module.train"""
         super().train(mode)  # type: ignore[return-value]
         return self
 
-    def eval(self) -> "MaisiVQModel3D":
+    def eval(self) -> "VQVAE":
         """Set eval mode - delegates to nn.Module.eval"""
         super().eval()  # type: ignore[return-value]
         return self
 
 
-def get_maisi_vq_config(
+def get_vqvae_config(
     image_size: int = 64,
     in_channels: int = 1,
     codebook_size: int = 1024,
@@ -290,7 +290,7 @@ def get_maisi_vq_config(
     attention_levels: Sequence[bool] = (False, False, False),
 ) -> dict:
     """
-    Generate MAISI VQGAN configuration.
+    Generate VQVAE configuration.
 
     Args:
         image_size: Input volume size (for reference)
@@ -323,3 +323,8 @@ def get_maisi_vq_config(
         "use_flash_attention": False,
         "beta": 0.25,
     }
+
+
+# Backward compatibility aliases
+MaisiVQModel3D = VQVAE
+get_maisi_vq_config = get_vqvae_config
