@@ -38,9 +38,18 @@ def nonlinearity(x: torch.Tensor) -> torch.Tensor:
     return x * torch.sigmoid(x)
 
 
+def _compute_groups(num_channels: int, max_groups: int = 32) -> int:
+    """Compute valid group count for GroupNorm."""
+    for g in range(max_groups, 0, -1):
+        if num_channels % g == 0:
+            return g
+    return 1
+
+
 def Normalize3d(in_channels: int) -> nn.GroupNorm:
     """Group normalization layer for 3D inputs."""
-    return nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True)
+    num_groups = _compute_groups(in_channels)
+    return nn.GroupNorm(num_groups=num_groups, num_channels=in_channels, eps=1e-6, affine=True)
 
 
 class Upsample3d(nn.Module):
@@ -151,7 +160,7 @@ class AttnBlock3d(nn.Module):
         k = k.reshape(b, c, d * h * w).transpose(1, 2)
         v = v.reshape(b, c, d * h * w).transpose(1, 2)
 
-        attn = torch.bmm(q, k.transpose(2, 1))
+        attn = torch.bmm(q, k.transpose(2, 1)) * (c**-0.5)
         attn = torch.softmax(attn, dim=-1)
 
         h_ = torch.bmm(attn, v)

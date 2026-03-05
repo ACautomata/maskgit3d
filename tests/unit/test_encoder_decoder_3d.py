@@ -214,6 +214,39 @@ class TestAttnBlock3d:
         # Output should be different from input (residual added)
         assert not torch.equal(result, x)
 
+    def test_forward_scales_attention_logits(self):
+        channels = 4
+        attn = AttnBlock3d(in_channels=channels)
+        attn.norm = nn.Identity()
+
+        with torch.no_grad():
+            for conv in (attn.q, attn.k, attn.v, attn.proj_out):
+                conv.weight.zero_()
+                conv.bias.zero_()
+                for i in range(channels):
+                    conv.weight[i, i, 0, 0, 0] = 1.0
+
+        x = torch.tensor(
+            [
+                [
+                    [[[1.0, 0.0]]],
+                    [[[0.0, 1.0]]],
+                    [[[1.0, 1.0]]],
+                    [[[0.5, -0.5]]],
+                ]
+            ]
+        )
+        result = attn(x)
+
+        b, c, d, h, w = x.shape
+        tokens = x.reshape(b, c, d * h * w).transpose(1, 2)
+        logits = torch.bmm(tokens, tokens.transpose(2, 1)) * (c**-0.5)
+        weights = torch.softmax(logits, dim=-1)
+        expected_update = torch.bmm(weights, tokens).transpose(1, 2).reshape(b, c, d, h, w)
+        expected = x + expected_update
+
+        assert torch.allclose(result, expected, atol=1e-6)
+
 
 class TestEncoder3d:
     """Tests for Encoder3d module."""
