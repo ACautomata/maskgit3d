@@ -216,6 +216,7 @@ class TrainingModule(Module):
             "adam": AdamOptimizerFactory,
             "sgd": SGDOptimizerFactory,
             "adamw": AdamWOptimizerFactory,
+            "vqgan": VQGANOptimizerFactory,
         }
 
         if optimizer_type not in optimizers:
@@ -535,6 +536,7 @@ class MaskGITModelModule(Module):
 
             transformer = MaskGITTransformer(
                 vocab_size=model_params["codebook_size"] + 1,
+                mask_token_id=model_params.get("mask_token_id", model_params["codebook_size"]),
                 hidden_size=model_params["transformer_hidden"],
                 num_layers=model_params["transformer_layers"],
                 num_heads=model_params["transformer_heads"],

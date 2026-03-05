@@ -18,6 +18,8 @@ class MockVQGAN(nn.Module):
         self._codebook_size = 512
         self._latent_shape = (1, 256, 4, 4, 4)
         self.quantize = MockQuantize(512, 256)
+        self.fixed_indices = None
+        self.last_decoded_codes = None
 
     @property
     def codebook_size(self):
@@ -30,7 +32,10 @@ class MockVQGAN(nn.Module):
     def encode(self, x):
         batch_size = x.shape[0]
         z = torch.randn(batch_size, 256, 4, 4, 4, device=x.device)
-        indices = torch.randint(0, 512, (batch_size, 4, 4, 4), device=x.device)
+        if self.fixed_indices is not None:
+            indices = self.fixed_indices.to(x.device)
+        else:
+            indices = torch.randint(0, 512, (batch_size, 4, 4, 4), device=x.device)
         info = (None, None, indices)
         return z, torch.tensor(0.1), info
 
@@ -40,6 +45,7 @@ class MockVQGAN(nn.Module):
 
     def decode_code(self, codes):
         batch_size = codes.shape[0]
+        self.last_decoded_codes = codes.detach().clone()
         return torch.randn(batch_size, 1, 16, 16, 16, device=codes.device)
 
 
@@ -143,6 +149,38 @@ class TestMaskGITModelComprehensive:
 
         assert tokens.shape[0] == batch_size
         assert len(tokens.shape) == 4
+
+    def test_encode_tokens_shifts_vq_indices_with_wraparound(self, model):
+        x = torch.randn(1, 1, 16, 16, 16)
+        fixed = torch.zeros(1, 4, 4, 4, dtype=torch.long)
+        fixed[0, 0, 0, 0] = 0
+        fixed[0, 0, 0, 1] = 1
+        fixed[0, 0, 0, 2] = 511
+        model.vqgan.fixed_indices = fixed
+
+        tokens = model.encode_tokens(x)
+
+        expected = (fixed + 1) % model.codebook_size
+        assert torch.equal(tokens, expected)
+        assert tokens[0, 0, 0, 0].item() == 1
+
+    def test_decode_tokens_unshifts_transformer_indices_with_wraparound(self, model):
+        tokens = torch.zeros(1, 4, 4, 4, dtype=torch.long)
+        tokens[0, 0, 0, 0] = 1
+        tokens[0, 0, 0, 1] = 2
+        tokens[0, 0, 0, 2] = 0
+
+        _ = model.decode_tokens(tokens)
+
+        expected = (tokens - 1) % model.codebook_size
+        assert model.vqgan.last_decoded_codes is not None
+        assert torch.equal(model.vqgan.last_decoded_codes, expected)
+
+    def test_decode_tokens_rejects_mask_token_id(self, model):
+        mask_tokens = torch.full((1, 4, 4, 4), model.codebook_size, dtype=torch.long)
+
+        with pytest.raises(ValueError, match="mask token"):
+            model.decode_tokens(mask_tokens)
 
     def test_decode_tokens_4d(self, model):
         """Test decode_tokens with 4D tokens."""

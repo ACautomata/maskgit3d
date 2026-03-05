@@ -122,6 +122,7 @@ class MaskGITTransformer(nn.Module):
     def __init__(
         self,
         vocab_size: int,  # codebook_size + 1 (for mask token)
+        mask_token_id: int | None = None,
         hidden_size: int = 768,
         num_layers: int = 12,
         num_heads: int = 12,
@@ -132,6 +133,7 @@ class MaskGITTransformer(nn.Module):
         """
         Args:
             vocab_size: Size of vocabulary (codebook_size + 1 for mask)
+            mask_token_id: Token index reserved for mask token
             hidden_size: Hidden dimension size
             num_layers: Number of transformer layers
             num_heads: Number of attention heads
@@ -141,11 +143,17 @@ class MaskGITTransformer(nn.Module):
         """
         super().__init__()
         self.vocab_size = vocab_size
+        if mask_token_id is None:
+            mask_token_id = vocab_size - 1
+        if mask_token_id < 0 or mask_token_id >= vocab_size:
+            raise ValueError(
+                f"mask_token_id={mask_token_id} out of range for vocab_size={vocab_size}"
+            )
+        self.mask_token_id = mask_token_id
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.num_heads = num_heads
 
-        # Token embedding (includes mask token at index 0)
         self.token_embed = nn.Embedding(vocab_size, hidden_size)
         nn.init.normal_(self.token_embed.weight, std=0.02)
 
@@ -251,9 +259,7 @@ class MaskGITTransformer(nn.Module):
         # Create input with mask tokens
         input_tokens = tokens.clone()
 
-        # Replace masked positions with mask token
-        mask_token_id = 0  # Assume mask token is at index 0
-        input_tokens[mask_indices] = mask_token_id
+        input_tokens[mask_indices] = self.mask_token_id
 
         # Get embeddings
         x = self.token_embed(input_tokens)
@@ -296,7 +302,7 @@ class MaskGITTransformer(nn.Module):
         # Ensure at least one token is masked per sample
         for i in range(B):
             if not mask[i].any():
-                mask[i, torch.randint(0, N, (1,))] = True
+                mask[i, torch.randint(0, N, (1,), device=device)] = True
 
         # Get predictions
         logits = self.forward(tokens, mask_indices=mask)
@@ -314,6 +320,7 @@ class MaskGITTransformerConfig:
     # Base config (similar to BERT-base)
     BASE = {
         "vocab_size": 1025,  # codebook_size + 1
+        "mask_token_id": 1024,
         "hidden_size": 768,
         "num_layers": 12,
         "num_heads": 12,
@@ -324,6 +331,7 @@ class MaskGITTransformerConfig:
     # Large config (similar to BERT-large)
     LARGE = {
         "vocab_size": 1025,
+        "mask_token_id": 1024,
         "hidden_size": 1024,
         "num_layers": 24,
         "num_heads": 16,
@@ -334,6 +342,7 @@ class MaskGITTransformerConfig:
     # Small config for faster training
     SMALL = {
         "vocab_size": 1025,
+        "mask_token_id": 1024,
         "hidden_size": 384,
         "num_layers": 6,
         "num_heads": 6,

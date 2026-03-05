@@ -56,6 +56,21 @@ class MaskGITSampler:
         reveal_ratios = schedule[1:] - schedule[:-1]
         return reveal_ratios
 
+    def _resolve_mask_token_id(self, model: MaskGITTransformer) -> int:
+        mask_token_id = getattr(model, "mask_token_id", None)
+        if isinstance(mask_token_id, int):
+            return mask_token_id
+
+        vocab_size = getattr(model, "vocab_size", None)
+        if isinstance(vocab_size, int):
+            return vocab_size - 1
+
+        codebook_size = getattr(model, "codebook_size", None)
+        if isinstance(codebook_size, int):
+            return codebook_size
+
+        return 0
+
     def sample(
         self,
         model: MaskGITTransformer,
@@ -84,8 +99,7 @@ class MaskGITSampler:
         tokens = torch.zeros(B, N, dtype=torch.long, device=device)
         mask = torch.ones(B, N, dtype=torch.bool, device=device)  # All masked
 
-        # Get mask token id (assumed to be 0)
-        mask_token_id = 0
+        mask_token_id = self._resolve_mask_token_id(model)
 
         # Iterative decoding
         for iteration in range(self.num_iterations):
@@ -96,6 +110,9 @@ class MaskGITSampler:
             # Get predictions
             with torch.no_grad():
                 logits = model.encode(tokens_input, return_logits=True)
+
+            if 0 <= mask_token_id < logits.shape[-1]:
+                logits[..., mask_token_id] = -float("inf")
 
             # Apply temperature
             if self.temperature > 0:
@@ -113,7 +130,11 @@ class MaskGITSampler:
                 pred_tokens = logits.argmax(dim=-1)
 
             # Determine which tokens to reveal this iteration
-            num_to_reveal = int(N * self.schedule[iteration].item())
+            remaining_masked = mask.sum(dim=1)
+            if iteration == self.num_iterations - 1:
+                num_to_reveal = int(remaining_masked.max().item())
+            else:
+                num_to_reveal = int(N * self.schedule[iteration].item())
             if num_to_reveal > 0:
                 # Get confidence scores (probability of predicted token)
                 confidence = probs.gather(2, pred_tokens.unsqueeze(2)).squeeze(2)
@@ -145,7 +166,9 @@ class MaskGITSampler:
             masked_indices = torch.where(current_mask[i])[0]
             if len(masked_indices) > 0:
                 num = min(num_to_reveal, len(masked_indices))
-                selected = masked_indices[torch.randperm(len(masked_indices))[:num]]
+                selected = masked_indices[
+                    torch.randperm(len(masked_indices), device=masked_indices.device)[:num]
+                ]
                 reveal_mask[i, selected] = True
 
         return reveal_mask

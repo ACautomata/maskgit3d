@@ -40,6 +40,7 @@ class MaskGITModel(MaskGITModelInterface):
         self.vqgan = vqgan
         self.transformer = transformer
         self._codebook_size = vqgan.codebook_size
+        self.mask_token_id = self._codebook_size
         self._latent_shape = (1,) + vqgan.latent_shape[1:]
 
         self.sampler = MaskGITSampler(num_iterations=12)
@@ -69,6 +70,19 @@ class MaskGITModel(MaskGITModelInterface):
         """Shape of latent representations (B, D, H, W)."""
         return self._latent_shape
 
+    def _to_transformer_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
+        return (tokens.long() + 1) % self.codebook_size
+
+    def _to_vq_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
+        tokens = tokens.long()
+        if bool(torch.any(tokens == self.mask_token_id)):
+            raise ValueError("Cannot decode tokens that still contain mask token id")
+        if bool(torch.any(tokens < 0)) or bool(torch.any(tokens >= self.codebook_size)):
+            raise ValueError(
+                f"Token indices out of range for decode: expected [0, {self.codebook_size - 1}]"
+            )
+        return (tokens - 1) % self.codebook_size
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass (reconstruction).
@@ -94,13 +108,9 @@ class MaskGITModel(MaskGITModelInterface):
         Returns:
             Token indices [B, D, H, W]
         """
-        # Encode through VQGAN
-        z, _, info = self.vqgan.encode(x)
-        # Get quantized latents
-        quant, _, _ = self.vqgan.quantize(z)  # type: ignore[operator]
-        # Get indices
-        indices = info[2]  # Codebook indices
-        return indices
+        _, _, info = self.vqgan.encode(x)
+        indices = info[2]
+        return self._to_transformer_tokens(indices)
 
     def decode_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
         """
@@ -112,8 +122,7 @@ class MaskGITModel(MaskGITModelInterface):
         Returns:
             Reconstructed images [B, C, D', H', W']
         """
-        # Use VQGAN's decode_code method which handles all shape logic
-        return self.vqgan.decode_code(tokens)
+        return self.vqgan.decode_code(self._to_vq_tokens(tokens))
 
     def generate(
         self,
