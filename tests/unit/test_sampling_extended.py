@@ -78,6 +78,27 @@ class TestMaskGITSampler:
 
         assert tokens.shape == (batch_size, d, h, w)
 
+    def test_sample_reveals_all_tokens_after_final_iteration(self):
+        class DeterministicTransformer:
+            def __init__(self):
+                self.codebook_size = 8
+
+            def encode(self, tokens, return_logits=False):
+                batch_size, seq_len = tokens.shape
+                logits = torch.full((batch_size, seq_len, self.codebook_size), -1e9)
+                logits[..., 1] = 0.0
+                return logits
+
+        sampler = MaskGITSampler(num_iterations=4, temperature=1.0, mask_type="random")
+
+        tokens = sampler.sample(
+            model=DeterministicTransformer(),
+            shape=(1, 2, 2, 2),
+            device=torch.device("cpu"),
+        )
+
+        assert torch.all(tokens == 1)
+
     def test_get_random_mask(self, sampler):
         """Test random mask generation."""
         batch_size = 2
