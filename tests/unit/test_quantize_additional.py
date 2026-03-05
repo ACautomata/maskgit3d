@@ -1,3 +1,4 @@
+# pyright: reportArgumentType=false, reportCallIssue=false
 """Additional tests for quantize module to improve coverage."""
 
 import torch
@@ -11,7 +12,6 @@ from maskgit3d.infrastructure.vqgan.quantize import (
 
 class TestVectorQuantizerAdditional:
     """Additional tests for VectorQuantizer."""
-
 
     def test_get_codebook_entry_reshaped(self):
         """Test get_codebook_entry with reshaping."""

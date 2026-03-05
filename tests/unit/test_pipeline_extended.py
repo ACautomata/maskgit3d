@@ -1,3 +1,5 @@
+# pyright: reportArgumentType=false, reportIncompatibleMethodOverride=false
+# ruff: noqa: ARG002
 """Extended tests for pipeline module to improve coverage."""
 
 import pytest

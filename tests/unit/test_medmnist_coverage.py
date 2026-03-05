@@ -1,3 +1,4 @@
+# pyright: reportArgumentType=false
 from typing import Any
 
 import numpy as np
@@ -8,7 +9,13 @@ import maskgit3d.infrastructure.data.medmnist_provider as med
 
 
 class _FakeBaseDataset:
-    def __init__(self, root: str, split: str, download: bool):
+    def __init__(
+        self,
+        root: str,
+        split: str,
+        download: bool,
+        size: int = 28,  # noqa: ARG002
+    ):
         self.root = root
         self.split = split
         self.download = download

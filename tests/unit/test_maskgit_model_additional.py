@@ -1,3 +1,4 @@
+# pyright: reportArgumentType=false
 """Additional tests for maskgit_model to improve coverage."""
 
 import pytest

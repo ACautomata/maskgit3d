@@ -1,3 +1,4 @@
+# pyright: reportArgumentType=false
 """Additional tests for maskgit_model to reach 90%+ coverage."""
 
 from unittest.mock import patch

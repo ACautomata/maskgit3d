@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Extended tests for transforms module to improve coverage."""
 
 import numpy as np
