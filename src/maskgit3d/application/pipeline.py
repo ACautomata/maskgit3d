@@ -5,6 +5,7 @@ This module provides high-level pipelines that orchestrate
 the training, validation, and testing workflows using Lightning Fabric.
 """
 
+import inspect
 import logging
 from pathlib import Path
 from typing import Any, Literal
@@ -77,7 +78,7 @@ class TestPipeline:
         if self.metrics:
             self.metrics.reset()
 
-        all_predictions = []
+        num_samples = 0
 
         test_loader = self.data_provider.test_loader()
 
@@ -94,7 +95,8 @@ class TestPipeline:
                 raw_predictions = self.inference_strategy.predict(self.model, images)
                 processed = self.inference_strategy.post_process(raw_predictions)
 
-                all_predictions.append(processed)
+                batch_size = processed["masks"].shape[0] if "masks" in processed else 1
+                num_samples += batch_size
 
                 if self.metrics and targets is not None:
                     self.metrics.update(processed, targets)
@@ -111,7 +113,7 @@ class TestPipeline:
                 print(f"  {key}: {value:.4f}")
             return final_metrics
 
-        return {"num_samples": len(all_predictions)}
+        return {"num_samples": num_samples}
 
     def _load_checkpoint(self, checkpoint_path: str) -> None:
         checkpoint = load_ckpt(checkpoint_path, map_location=self.device)
@@ -268,7 +270,7 @@ class FabricTestPipeline:
             tb_dir.mkdir(parents=True, exist_ok=True)
             writer = SummaryWriter(str(tb_dir))
 
-        all_predictions = []
+        num_samples = 0
 
         self._call_callbacks("on_test_epoch_start")
 
@@ -287,7 +289,8 @@ class FabricTestPipeline:
                 raw_predictions = self.inference_strategy.predict(self.model, images)
                 processed = self.inference_strategy.post_process(raw_predictions)
 
-                all_predictions.append(processed)
+                batch_size = processed["masks"].shape[0] if "masks" in processed else 1
+                num_samples += batch_size
 
                 if self.metrics and targets is not None:
                     self.metrics.update(processed, targets)
@@ -319,7 +322,7 @@ class FabricTestPipeline:
                     print(f"  {key}: {value:.4f}")
             return final_metrics
 
-        return {"num_samples": len(all_predictions)}
+        return {"num_samples": num_samples}
 
     def _load_checkpoint(self, checkpoint_path: str) -> None:
         """
@@ -677,27 +680,42 @@ class FabricTrainingPipeline:
         for batch_idx, batch in enumerate(pbar):
             self._call_callbacks("on_train_batch_start", batch, batch_idx)
 
-            x = batch[0] if isinstance(batch, tuple | list) else batch
-
-            output = self.model(x)
-
-            if hasattr(self.training_strategy, "compute_loss"):
-                loss = self.training_strategy.compute_loss(self.model, batch, output)  # type: ignore[union-attr]
-            else:
-                target = batch[1] if isinstance(batch, tuple | list) and len(batch) > 1 else x
-                loss = torch.nn.functional.mse_loss(output, target)
-
             optimizer = self._optimizer
-            fabric = self._fabric
-            assert optimizer is not None and fabric is not None
-            optimizer.zero_grad()
-            fabric.backward(loss)
-            optimizer.step()
+            assert optimizer is not None
+
+            train_step_params = inspect.signature(self.training_strategy.train_step).parameters
+            if len(train_step_params) >= 3:
+                step_output = self.training_strategy.train_step(self.model, batch, optimizer)
+            else:
+                step_output = self.training_strategy.train_step(self.model, batch)  # type: ignore[call-arg]
+
+            if isinstance(step_output, dict):
+                step_metrics = step_output
+            elif isinstance(step_output, torch.Tensor):
+                step_metrics = {"loss": float(step_output.detach().item())}
+            elif isinstance(step_output, int | float):
+                step_metrics = {"loss": float(step_output)}
+            else:
+                raise TypeError(
+                    "Training strategy train_step must return a metrics dict or scalar loss"
+                )
+
+            if "loss" not in step_metrics:
+                raise KeyError("Training strategy train_step must return metrics including 'loss'")
 
             self._global_step += 1
 
-            loss_value = loss.item()
-            metrics_history.setdefault("train_loss", []).append(loss_value)
+            loss_value = float(step_metrics["loss"])
+
+            for key, value in step_metrics.items():
+                if not isinstance(value, int | float):
+                    continue
+
+                metric_name = "train_loss" if key == "loss" else key
+                if not metric_name.startswith("train_"):
+                    metric_name = f"train_{metric_name}"
+
+                metrics_history.setdefault(metric_name, []).append(float(value))
 
             self._call_callbacks("on_train_batch_end", batch, batch_idx, loss_value)
 

@@ -510,21 +510,25 @@ class TestFabricTrainingPipelineComprehensive:
         captured = capsys.readouterr()
         assert "Epoch" in captured.out
 
-    def test_train_epoch_with_compute_loss(self, pipeline):
-        """Test _train_epoch with compute_loss method."""
-
-        # Strategy with compute_loss
+    def test_train_epoch_prefers_train_step_over_compute_loss(self, pipeline):
         class StrategyWithComputeLoss(TrainingStrategy):
+            def __init__(self):
+                self.train_step_called = False
+                self.compute_loss_called = False
+
             def train_step(self, model, batch, optimizer):
-                return {"loss": 0.5}
+                self.train_step_called = True
+                return {"loss": 0.5, "acc": 0.9}
 
             def compute_loss(self, model, batch, output):
-                return torch.nn.functional.mse_loss(output, batch[0])
+                self.compute_loss_called = True
+                raise AssertionError("compute_loss should not be called")
 
             def validate_step(self, model, batch):
                 return {"val_loss": 0.5}
 
-        pipeline.training_strategy = StrategyWithComputeLoss()
+        strategy = StrategyWithComputeLoss()
+        pipeline.training_strategy = strategy
         pipeline.model = MagicMock()
         pipeline.model.train = MagicMock()
         pipeline.model.return_value = torch.randn(2, 1, 8, 8, 8, requires_grad=True)
@@ -535,6 +539,9 @@ class TestFabricTrainingPipelineComprehensive:
         metrics = pipeline._train_epoch(epoch=0, train_loader=pipeline.data_provider.train_loader())
 
         assert isinstance(metrics, dict)
+        assert strategy.train_step_called is True
+        assert strategy.compute_loss_called is False
+        assert metrics["train_loss"][0] == pytest.approx(0.5)
 
     def test_global_step_property(self, pipeline):
         """Test global_step property."""

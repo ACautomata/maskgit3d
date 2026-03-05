@@ -805,23 +805,30 @@ class VQGANMetrics(Metrics):
     def _compute_lpips(self, pred: torch.Tensor, target: torch.Tensor) -> float:
         return self.lpips_loss(pred, target).mean().item()
 
-    def _compute_ssim_fallback(self, img1: torch.Tensor, img2: torch.Tensor) -> torch.Tensor:
-        """Fallback SSIM computation using torchmetrics if available."""
+    def _compute_ssim_fallback(
+        self,
+        pred: torch.Tensor,
+        target: torch.Tensor,
+    ) -> torch.Tensor:
         try:
             from torchmetrics.functional import structural_similarity_index_measure
 
-            result = structural_similarity_index_measure(
-                img1.unsqueeze(0) if img1.dim() == 3 else img1,
-                img2.unsqueeze(0) if img2.dim() == 3 else img2,
+            ssim = structural_similarity_index_measure(
+                pred,
+                target,
                 data_range=self.data_range,
             )
-            # Handle both single tensor and tuple returns
-            if isinstance(result, tuple):
-                return result[0]
-            return result
-        except ImportError:
-            # Ultimate fallback: simple correlation-based metric
-            return torch.tensor(1.0 - F.mse_loss(img1, img2) / (self.data_range**2))
+
+            if isinstance(ssim, tuple):
+                ssim = ssim[0]
+
+            if not isinstance(ssim, torch.Tensor):
+                return torch.tensor(float(ssim), device=pred.device)
+
+            return ssim if ssim.numel() == 1 else ssim.mean()
+        except Exception:
+            mse = torch.mean((pred - target) ** 2)
+            return 1.0 / (1.0 + mse)
 
     def compute(self) -> dict[str, float]:
         """Compute final metrics with mean±std statistics."""
@@ -1390,36 +1397,6 @@ class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
         self.mode = mode
         self.sigma_scale = sigma_scale
         self.progress = progress
-
-    def _encode_patch(
-        self,
-        model: VQModelInterface,
-        patch: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        Encode a single patch to latent and indices.
-
-        Args:
-            model: VQModel instance
-            patch: Input patch [B, C, D, H, W]
-
-        Returns:
-            Tuple of (quantized_latent, indices)
-        """
-        # Access internal components using getattr with type assertion
-        encoder = cast(nn.Module, getattr(model, "encoder", None))
-        quant_conv = cast(nn.Module, getattr(model, "quant_conv", None))
-        quantize = cast(nn.Module, getattr(model, "quantize", None))
-
-        assert encoder is not None, "Model must have encoder attribute"
-        assert quant_conv is not None, "Model must have quant_conv attribute"
-        assert quantize is not None, "Model must have quantize attribute"
-
-        h = encoder(patch)
-        h = quant_conv(h)
-        quant, _, info = quantize(h)
-        indices = info[2]  # min_encoding_indices
-        return quant, indices
 
     def predict(
         self,
