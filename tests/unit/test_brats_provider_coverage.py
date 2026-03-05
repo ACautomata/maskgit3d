@@ -21,7 +21,7 @@ def test_brats2021_dataset_handles_missing_modality_and_numpy_transform(tmp_path
         data_dir=tmp_path,
         patient_ids=[patient_id],
         modalities=["t1", "t2"],
-        transform=lambda x: x.numpy(),
+        transform=lambda x: x.numpy(),  # type: ignore[arg-type]
         spatial_size=(4, 4, 4),
     )
 

@@ -323,7 +323,8 @@ class VQGANTrainingStrategy(TrainingStrategy):
 
                 warnings.warn(
                     "MONAI PerceptualLoss not available. Perceptual loss will be disabled. "
-                    "Install with: pip install monai>=1.3.0"
+                    "Install with: pip install monai>=1.3.0",
+                    stacklevel=2,
                 )
 
         # Mixed precision
@@ -722,7 +723,9 @@ class VQGANMetrics(Metrics):
             except ImportError:
                 import warnings
 
-                warnings.warn("MONAI PerceptualLoss not available. Upgrade MONAI to >=1.3")
+                warnings.warn(
+                    "MONAI PerceptualLoss not available. Upgrade MONAI to >=1.3", stacklevel=2
+                )
                 self.enable_lpips = False
 
         self.reset()

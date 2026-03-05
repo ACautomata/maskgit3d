@@ -1,10 +1,7 @@
 """Tests for config/modules.py to improve coverage."""
 
-from unittest.mock import MagicMock, patch
 
 import pytest
-import torch
-from omegaconf import DictConfig, OmegaConf
 
 from maskgit3d.config.modules import (
     DataModule,
@@ -66,6 +63,7 @@ class TestDataModule:
     def test_data_module_unknown(self):
         """Test DataModule with unknown dataset type raises error."""
         from injector import Injector
+
         from maskgit3d.domain.interfaces import DataProvider
 
         config = {"type": "unknown", "params": {}}
@@ -98,6 +96,7 @@ class TestModelModule:
     def test_model_module_unknown(self):
         """Test ModelModule with unknown model type raises error."""
         from injector import Injector
+
         from maskgit3d.domain.interfaces import ModelInterface
 
         config = {"type": "unknown", "params": {}}
@@ -164,6 +163,7 @@ class TestTrainingModule:
     def test_training_module_unknown(self):
         """Test TrainingModule with unknown strategy type raises error."""
         from injector import Injector
+
         from maskgit3d.domain.interfaces import TrainingStrategy
 
         training_config = {"type": "unknown", "params": {}}
@@ -193,6 +193,7 @@ class TestInferenceModule:
     def test_inference_module_unknown(self):
         """Test InferenceModule with unknown type raises error."""
         from injector import Injector
+
         from maskgit3d.domain.interfaces import InferenceStrategy
 
         config = {"type": "unknown", "params": {}}

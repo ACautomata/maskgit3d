@@ -1,6 +1,5 @@
 """Extended tests for pipeline module to improve coverage."""
 
-
 import pytest
 import torch
 import torch.nn as nn
@@ -177,7 +176,7 @@ class TestTestPipelineExtended:
 
     def test_run_save_predictions(self, pipeline):
         """Test running with saving predictions."""
-        results = pipeline.run(save_predictions=True)
+        pipeline.run(save_predictions=True)
 
         output_files = list(pipeline.output_dir.glob("*.npy"))
         assert len(output_files) > 0

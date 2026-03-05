@@ -105,7 +105,7 @@ class TestMaskGITModelInit:
         """Test model initialization."""
         vqgan = MockVQGAN()
         transformer = MockTransformer()
-        model = MaskGITModel(vqgan=vqgan, transformer=transformer, mask_ratio=0.5)
+        model = MaskGITModel(vqgan=vqgan, transformer=transformer, mask_ratio=0.5)  # type: ignore[arg-type]
 
         assert model.vqgan is not None
         assert model.transformer is not None
@@ -115,7 +115,7 @@ class TestMaskGITModelInit:
         """Test num_tokens property."""
         vqgan = MockVQGAN()
         transformer = MockTransformer()
-        model = MaskGITModel(vqgan=vqgan, transformer=transformer)
+        model = MaskGITModel(vqgan=vqgan, transformer=transformer)  # type: ignore[arg-type]
 
         # Should be codebook_size + 1 (for mask token)
         assert model.num_tokens == 513
@@ -124,7 +124,7 @@ class TestMaskGITModelInit:
         """Test device property."""
         vqgan = MockVQGAN()
         transformer = MockTransformer()
-        model = MaskGITModel(vqgan=vqgan, transformer=transformer)
+        model = MaskGITModel(vqgan=vqgan, transformer=transformer)  # type: ignore[arg-type]
 
         device = model.device
         assert isinstance(device, torch.device)

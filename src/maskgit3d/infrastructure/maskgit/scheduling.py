@@ -7,7 +7,7 @@ This module provides mask ratio scheduling following the MaskGIT paper:
 """
 
 import math
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 import torch

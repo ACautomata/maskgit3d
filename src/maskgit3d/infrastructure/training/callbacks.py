@@ -480,11 +480,12 @@ class NaNMonitor(Callback):
         # Check gradients
         has_nan_grad = False
         for name, param in pl_module.named_parameters():
-            if param.grad is not None:
-                if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
-                    has_nan_grad = True
-                    logger.warning(f"NaN/Inf detected in gradient of {name}")
-                    break
+            if param.grad is not None and (
+                torch.isnan(param.grad).any() or torch.isinf(param.grad).any()
+            ):
+                has_nan_grad = True
+                logger.warning(f"NaN/Inf detected in gradient of {name}")
+                break
 
         if has_nan_grad:
             self._handle_nan("gradient", None)
@@ -549,7 +550,7 @@ class MetricsLogger(Callback):
         for key, value in metrics.items():
             if isinstance(value, torch.Tensor):
                 value = value.item()
-            if isinstance(value, (int, float)):
+            if isinstance(value, int | float):
                 if key not in self._history:
                     self._history[key] = []
                 self._history[key].append(value)
@@ -579,7 +580,7 @@ class MetricsLogger(Callback):
             max_len = max(len(v) for v in self._history.values())
             for i in range(max_len):
                 row: list[Any] = [i]
-                for key in self._history.keys():
+                for key in self._history:
                     if i < len(self._history[key]):
                         row.append(self._history[key][i])
                     else:
@@ -605,7 +606,7 @@ class FabricModelCheckpoint(ModelCheckpoint):
     where callbacks receive fabric, model, and optimizer as separate arguments.
     """
 
-    def on_validation_epoch_end(
+    def on_validation_epoch_end(  # type: ignore[override]
         self,
         fabric: Fabric,
         model: Any,
@@ -614,7 +615,7 @@ class FabricModelCheckpoint(ModelCheckpoint):
         """Legacy method for FabricTrainingPipeline compatibility."""
         # For Fabric, we need to get metrics from fabric._current_metrics
         if hasattr(fabric, "_current_metrics"):
-            score = fabric._current_metrics.get(self.monitor)
+            score = fabric._current_metrics.get(self.monitor)  # type: ignore[union-attr]
         else:
             score = None
 
@@ -678,7 +679,7 @@ class FabricModelCheckpoint(ModelCheckpoint):
 
         fabric.save(filepath, checkpoint)
 
-    def on_fit_start(self, fabric: Fabric) -> None:
+    def on_fit_start(self, fabric: Fabric) -> None:  # type: ignore[override]
         """Legacy method for FabricTrainingPipeline compatibility."""
         self._current_epoch = 0
         self._best_scores = []
@@ -691,7 +692,7 @@ class FabricEarlyStopping(EarlyStopping):
     This class maintains compatibility with the old Fabric-based API.
     """
 
-    def on_validation_epoch_end(
+    def on_validation_epoch_end(  # type: ignore[override]
         self,
         fabric: Fabric,
         model: Any,
@@ -700,7 +701,7 @@ class FabricEarlyStopping(EarlyStopping):
         """Legacy method for FabricTrainingPipeline compatibility."""
         # For Fabric, we need to get metrics from fabric._current_metrics
         if hasattr(fabric, "_current_metrics"):
-            score = fabric._current_metrics.get(self.monitor)
+            score = fabric._current_metrics.get(self.monitor)  # type: ignore[union-attr]
         else:
             score = None
 
@@ -737,7 +738,7 @@ class FabricEarlyStopping(EarlyStopping):
                         f"Best {self.monitor}: {self._early_stopping.best_score.item():.6f}"
                     )
 
-    def on_fit_start(self, fabric: Fabric) -> None:
+    def on_fit_start(self, fabric: Fabric) -> None:  # type: ignore[override]
         """Legacy method for FabricTrainingPipeline compatibility."""
         torch_inf = torch.tensor(torch.inf)
         self._early_stopping.best_score = (
@@ -756,7 +757,7 @@ class FabricNaNMonitor(NaNMonitor):
     where the loss is passed explicitly.
     """
 
-    def on_train_batch_end(
+    def on_train_batch_end(  # type: ignore[override]
         self,
         fabric: Fabric,
         model: Any,
@@ -777,17 +778,18 @@ class FabricNaNMonitor(NaNMonitor):
 
         has_nan_grad = False
         for name, param in model.named_parameters():
-            if param.grad is not None:
-                if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
-                    has_nan_grad = True
-                    if fabric.is_global_zero:
-                        logger.warning(f"NaN/Inf detected in gradient of {name}")
-                    break
+            if param.grad is not None and (
+                torch.isnan(param.grad).any() or torch.isinf(param.grad).any()
+            ):
+                has_nan_grad = True
+                if fabric.is_global_zero:
+                    logger.warning(f"NaN/Inf detected in gradient of {name}")
+                break
 
         if has_nan_grad:
             self._handle_nan("gradient", None)
 
-    def on_fit_start(self, fabric: Fabric) -> None:
+    def on_fit_start(self, fabric: Fabric) -> None:  # type: ignore[override]
         """Legacy method for FabricTrainingPipeline compatibility."""
         self._batch_count = 0
 
@@ -799,7 +801,7 @@ class FabricMetricsLogger(MetricsLogger):
     This class maintains compatibility with the old Fabric-based API.
     """
 
-    def on_train_epoch_end(
+    def on_train_epoch_end(  # type: ignore[override]
         self,
         fabric: Fabric,
         model: Any,
@@ -820,6 +822,6 @@ class FabricMetricsLogger(MetricsLogger):
 
         self._save_metrics()
 
-    def on_fit_end(self, fabric: Fabric) -> None:
+    def on_fit_end(self, fabric: Fabric) -> None:  # type: ignore[override]
         """Legacy method for FabricTrainingPipeline compatibility."""
         self._save_metrics()

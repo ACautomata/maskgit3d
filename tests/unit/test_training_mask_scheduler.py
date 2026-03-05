@@ -1,6 +1,5 @@
 """Unit tests for TrainingMaskScheduler."""
 
-import math
 
 import pytest
 import torch

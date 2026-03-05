@@ -6,7 +6,7 @@ import pytest
 
 # Try importing lightning, skip if not available
 try:
-    import lightning as L
+    import lightning as L  # noqa: F401
 
     LIGHTNING_AVAILABLE = True
 except ImportError:

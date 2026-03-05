@@ -290,10 +290,24 @@ class MedMnist3DDataProvider(DataProvider):
         # MedMNIST uses 'val' for validation split
         medmnist_split = "val" if split == "val" else split
 
+        # Check if dataset file already exists to avoid download attempts
+        # MedMNIST naming convention: {dataset_name}.npz or {dataset_name}_{size}.npz
+        from pathlib import Path
+
+        data_root_path = Path(self.data_root)
+        dataset_filename = f"{self.dataset_type.value}.npz"
+        dataset_filename_sized = f"{self.dataset_type.value}_{self.input_size}.npz"
+
+        file_exists = (data_root_path / dataset_filename).exists() or (
+            data_root_path / dataset_filename_sized
+        ).exists()
+        should_download = self.download and not file_exists
+
         base_dataset = dataset_class(
             root=self.data_root,
             split=medmnist_split,
-            download=self.download,
+            download=should_download,
+            size=self.input_size,
         )
 
         # Wrap with preprocessing

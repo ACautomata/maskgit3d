@@ -5,21 +5,12 @@ This module provides high-level pipelines that orchestrate
 the training, validation, and testing workflows using Lightning Fabric.
 """
 
+import logging
 from pathlib import Path
 from typing import Any, Literal
 
 import torch
 from tqdm import tqdm
-
-from maskgit3d.infrastructure.checkpoints import load_checkpoint as load_ckpt
-
-try:
-    import lightning as L
-
-    LIGHTNING_AVAILABLE = True
-except ImportError:
-    L = None
-    LIGHTNING_AVAILABLE = False
 
 from maskgit3d.domain.interfaces import (
     DataProvider,
@@ -29,6 +20,17 @@ from maskgit3d.domain.interfaces import (
     OptimizerFactory,
     TrainingStrategy,
 )
+from maskgit3d.infrastructure.checkpoints import load_checkpoint as load_ckpt
+
+logger = logging.getLogger(__name__)
+
+try:
+    import lightning as L
+
+    LIGHTNING_AVAILABLE = True
+except ImportError:
+    L = None  # type: ignore[misc,assignment]
+    LIGHTNING_AVAILABLE = False
 
 
 class TestPipeline:
@@ -225,22 +227,23 @@ class FabricTestPipeline:
         tensorboard_dir: str | None = None,
     ) -> dict[str, float]:
         """
-        Run the testing loop with Fabric.
+                Run the testing loop with Fabric.
 
-        Args:
-            save_predictions: Whether to save prediction outputs
-            export_nifti: Whether to export predictions as NIfTI files
-            enable_tensorboard: Whether to enable TensorBoard logging
-            tensorboard_dir: Directory for TensorBoard logs (default: output_dir/tensorboard)
+                Args:
+                    save_predictions: Whether to save prediction outputs
+                    export_nifti: Whether to export predictions as NIfTI files
+                    enable_tensorboard: Whether to enable TensorBoard logging
+                    tensorboard_dir: Directory for TensorBoard logs (default: output_dir/tensorboard)
 
         Returns:
-            Dictionary of test metrics
+                    Dictionary of test metrics
         """
+        assert L is not None, "Lightning is not installed"
         self._fabric = L.Fabric(
             accelerator=self._accelerator,
             devices=self._devices,
             strategy=self._strategy,
-            precision=self._precision,
+            precision=self._precision,  # type: ignore[arg-type]
             callbacks=self.callbacks,
         )
         self._fabric.launch()
@@ -591,21 +594,37 @@ class FabricTrainingPipeline:
         Returns:
             Dictionary of training history
         """
+        logger.info("Creating Fabric instance...")
+        assert L is not None, "Lightning is not installed"
         self._fabric = L.Fabric(
             accelerator=self._accelerator,
             devices=self._devices,
             strategy=self._strategy,
-            precision=self._precision,
+            precision=self._precision,  # type: ignore[arg-type]
             callbacks=self.callbacks,
         )
+        logger.info("Launching Fabric...")
         self._fabric.launch()
+        logger.info("Fabric launched successfully")
 
+        logger.info("Creating optimizer...")
         self._optimizer = self.optimizer_factory.create(self.model.parameters())
 
+        logger.info("Setting up model and optimizer with Fabric...")
         self.model, self._optimizer = self._fabric.setup(self.model, self._optimizer)
+        logger.info("Model and optimizer setup complete")
 
-        train_loader = self._fabric.setup_dataloaders(self.data_provider.train_loader())
-        val_loader = self._fabric.setup_dataloaders(self.data_provider.val_loader())
+        logger.info("Setting up dataloaders...")
+        logger.info(f"Getting train loader from data_provider: {self.data_provider}")
+        train_loader_orig = self.data_provider.train_loader()
+        logger.info(f"Train loader created: {len(train_loader_orig)} batches")
+        train_loader = self._fabric.setup_dataloaders(train_loader_orig)
+        logger.info("Train loader setup complete")
+        logger.info(f"Getting val loader from data_provider: {self.data_provider}")
+        val_loader_orig = self.data_provider.val_loader()
+        logger.info(f"Val loader created: {len(val_loader_orig)} batches")
+        val_loader = self._fabric.setup_dataloaders(val_loader_orig)
+        logger.info("Validation loader setup complete")
 
         start_epoch = 0
         if resume_from:
@@ -663,14 +682,17 @@ class FabricTrainingPipeline:
             output = self.model(x)
 
             if hasattr(self.training_strategy, "compute_loss"):
-                loss = self.training_strategy.compute_loss(self.model, batch, output)
+                loss = self.training_strategy.compute_loss(self.model, batch, output)  # type: ignore[union-attr]
             else:
                 target = batch[1] if isinstance(batch, tuple | list) and len(batch) > 1 else x
                 loss = torch.nn.functional.mse_loss(output, target)
 
-            self._optimizer.zero_grad()
-            self._fabric.backward(loss)
-            self._optimizer.step()
+            optimizer = self._optimizer
+            fabric = self._fabric
+            assert optimizer is not None and fabric is not None
+            optimizer.zero_grad()
+            fabric.backward(loss)
+            optimizer.step()
 
             self._global_step += 1
 
