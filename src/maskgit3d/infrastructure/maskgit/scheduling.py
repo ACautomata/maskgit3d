@@ -182,7 +182,9 @@ def mask_by_random_topk(
     B, N = confidence.shape
 
     # Add Gumbel noise for randomness
-    gumbel_noise = -torch.log(-torch.log(torch.rand_like(confidence)))
+    uniform_noise = torch.rand_like(confidence)
+    uniform_noise = uniform_noise.clamp(1e-6, 1 - 1e-6)
+    gumbel_noise = -torch.log(-torch.log(uniform_noise))
 
     # Adjust confidence with temperature-scaled Gumbel noise
     # Higher temperature = more random selection

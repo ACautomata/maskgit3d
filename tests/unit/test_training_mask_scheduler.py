@@ -1,6 +1,5 @@
 """Unit tests for TrainingMaskScheduler."""
 
-
 import pytest
 import torch
 
@@ -157,3 +156,25 @@ class TestMaskByRandomTopk:
         mask_low_temp = mask_by_random_topk(topk, confidence, temperature=0.01)
         mask_high_temp = mask_by_random_topk(topk, confidence, temperature=100.0)
         assert not torch.equal(mask_low_temp, mask_high_temp)
+
+    def test_clamps_uniform_samples_to_avoid_inf_scores(self, monkeypatch):
+        confidence = torch.ones(1, 4)
+        topk = 2
+
+        boundary_uniform = torch.tensor([[0.0, 1.0, 0.0, 1.0]], dtype=confidence.dtype)
+        monkeypatch.setattr(
+            torch,
+            "rand_like",
+            lambda tensor: boundary_uniform.to(device=tensor.device, dtype=tensor.dtype),
+        )
+
+        original_topk = torch.topk
+
+        def _topk_with_finite_check(input_tensor, *args, **kwargs):
+            assert torch.isfinite(input_tensor).all().item()
+            return original_topk(input_tensor, *args, **kwargs)
+
+        monkeypatch.setattr(torch, "topk", _topk_with_finite_check)
+
+        mask = mask_by_random_topk(topk, confidence)
+        assert mask.sum().item() == topk
