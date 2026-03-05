@@ -59,5 +59,6 @@ training:
     enabled: true
     max_norm: 1.0
 
+# Checkpoint configuration uses Hydra output directory
 checkpoint:
-  save_dir: ./checkpoints/vqgan_brats
+  save_dir: null

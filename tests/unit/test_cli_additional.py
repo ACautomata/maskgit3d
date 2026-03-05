@@ -177,10 +177,15 @@ class TestCliTestAdditional:
                 mock_injector_class.return_value = mock_injector
                 mock_injector.get.return_value = MagicMock()
 
-                with patch("maskgit3d.cli.test.FabricTestPipeline") as mock_pipeline:
-                    run_testing(cfg)
+                with patch("maskgit3d.cli.test.HydraConfig") as mock_hydra_config:
+                    mock_runtime = MagicMock()
+                    mock_runtime.output_dir = "/tmp/test_output"
+                    mock_hydra_config.get.return_value.runtime = mock_runtime
 
-                    mock_pipeline.assert_called_once()
+                    with patch("maskgit3d.cli.test.FabricTestPipeline") as mock_pipeline:
+                        run_testing(cfg)
+
+                        mock_pipeline.assert_called_once()
 
     def test_run_testing_with_metrics(self):
         """Test run_testing with metrics."""
@@ -205,8 +210,13 @@ class TestCliTestAdditional:
                 mock_injector_class.return_value = mock_injector
                 mock_injector.get.return_value = MagicMock()
 
-                with patch("maskgit3d.cli.test.FabricTestPipeline") as mock_pipeline:
-                    run_testing(cfg)
+                with patch("maskgit3d.cli.test.HydraConfig") as mock_hydra_config:
+                    mock_runtime = MagicMock()
+                    mock_runtime.output_dir = "/tmp/test_output"
+                    mock_hydra_config.get.return_value.runtime = mock_runtime
+
+                    with patch("maskgit3d.cli.test.FabricTestPipeline") as mock_pipeline:
+                        run_testing(cfg)
 
                     mock_pipeline.assert_called_once()
 

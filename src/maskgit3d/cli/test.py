@@ -1,11 +1,12 @@
 """Testing CLI for maskgit3d with Hydra configuration."""
 
 import logging
-import os
 import sys
+from pathlib import Path
 
 from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
+from hydra.core.hydra_config import HydraConfig
 from injector import Injector
 from omegaconf import DictConfig, OmegaConf
 
@@ -37,8 +38,10 @@ def run_testing(cfg: DictConfig) -> None:
     except Exception:
         metrics = None
 
-    output_dir = cfg.output.get("output_dir", "./outputs")
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir = Path(HydraConfig.get().runtime.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Output directory: %s", output_dir)
 
     checkpoint_path = cfg.checkpoint.get("load_from")
 
@@ -58,7 +61,7 @@ def run_testing(cfg: DictConfig) -> None:
         strategy=strategy,
         precision=precision,
         checkpoint_path=checkpoint_path,
-        output_dir=output_dir,
+        output_dir=str(output_dir),
     )
 
     logger.info(

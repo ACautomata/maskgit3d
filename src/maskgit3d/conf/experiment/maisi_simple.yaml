@@ -30,5 +30,6 @@ training:
     type: adam
     lr: 1.0e-4
 
+# Checkpoint configuration uses Hydra output directory
 checkpoint:
-  save_dir: ./checkpoints/maisi_simple
+  save_dir: null

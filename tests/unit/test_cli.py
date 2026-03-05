@@ -346,7 +346,10 @@ class TestCliTest:
     @patch("maskgit3d.cli.test.FabricTestPipeline")
     @patch("maskgit3d.cli.test.create_module_from_config")
     @patch("maskgit3d.cli.test.Injector")
-    def test_run_testing(self, mock_injector_class, mock_create_module, mock_pipeline_class):
+    @patch("maskgit3d.cli.test.HydraConfig")
+    def test_run_testing(
+        self, mock_hydra_config, mock_injector_class, mock_create_module, mock_pipeline_class
+    ):
         """Test run_testing function."""
         from omegaconf import OmegaConf
 
@@ -360,6 +363,11 @@ class TestCliTest:
         mock_injector.get.return_value = MagicMock()
         mock_pipeline = MagicMock()
         mock_pipeline_class.return_value = mock_pipeline
+
+        # Mock HydraConfig
+        mock_runtime = MagicMock()
+        mock_runtime.output_dir = "/tmp/test_output"
+        mock_hydra_config.get.return_value.runtime = mock_runtime
 
         cfg = OmegaConf.create(
             {

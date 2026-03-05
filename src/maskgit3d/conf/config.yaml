@@ -26,14 +26,14 @@ mode: train
 
 # Checkpoint paths
 checkpoint:
-  save_dir: ./checkpoints
+  save_dir: null  # Uses Hydra output directory (output_dir/checkpoints)
   resume_from: null  # Path to checkpoint to resume from
   load_from: null    # Path to checkpoint to load for testing
 
 # Output configuration
 output:
   save_predictions: false
-  output_dir: ./outputs
+  output_dir: null  # Uses Hydra output directory
   export_nifti: false           # Save input/prediction/target as .nii.gz files
   enable_tensorboard: false     # Log sample slices to TensorBoard
   tensorboard_dir: null         # TensorBoard log dir (defaults to output_dir/tensorboard)

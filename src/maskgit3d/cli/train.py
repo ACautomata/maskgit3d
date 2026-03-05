@@ -1,8 +1,10 @@
 """Training CLI for maskgit3d with Hydra configuration."""
 
 import logging
+from pathlib import Path
 
 import hydra
+from hydra.core.hydra_config import HydraConfig
 from injector import Injector
 from omegaconf import DictConfig, OmegaConf
 
@@ -252,6 +254,14 @@ def _create_inference_config(cfg: DictConfig, model_type: str) -> dict:
 @hydra.main(config_path="pkg://maskgit3d.conf", config_name="config", version_base=None)
 def main(cfg: DictConfig) -> None:
     logger.info("Configuration:\n%s", OmegaConf.to_yaml(cfg))
+
+    # Get Hydra's runtime output directory
+    output_dir = Path(HydraConfig.get().runtime.output_dir)
+    checkpoint_dir = output_dir / "checkpoints"
+
+    logger.info("Output directory: %s", output_dir)
+    logger.info("Checkpoint directory: %s", checkpoint_dir)
+
     module = create_module_from_config(cfg)
     injector = Injector([module])
     from maskgit3d.domain.interfaces import (
@@ -265,11 +275,24 @@ def main(cfg: DictConfig) -> None:
     data_provider = injector.get(DataProvider)
     training_strategy = injector.get(TrainingStrategy)
     optimizer_factory = injector.get(OptimizerFactory)
+
+    # Use Fabric configuration from config
+    fabric_cfg = cfg.get("training", {}).get("fabric", {})
+    accelerator = fabric_cfg.get("accelerator", "auto")
+    devices = fabric_cfg.get("devices", "auto")
+    strategy = fabric_cfg.get("strategy", "auto")
+    precision = fabric_cfg.get("precision", "32-true")
+
     pipeline = FabricTrainingPipeline(
         model=model,
         data_provider=data_provider,
         training_strategy=training_strategy,
         optimizer_factory=optimizer_factory,
+        accelerator=accelerator,
+        devices=devices,
+        strategy=strategy,
+        precision=precision,
+        checkpoint_dir=str(checkpoint_dir),
     )
     num_epochs = cfg.training.num_epochs
     logger.info(

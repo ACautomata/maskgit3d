@@ -112,9 +112,9 @@ def test_create_module_from_config_maskgit_binds_interfaces(monkeypatch) -> None
 def test_main_builds_pipeline_and_runs(monkeypatch) -> None:
     cfg = OmegaConf.create(
         {
-            "model": {"type": "vqgan"},
-            "dataset": {"type": "simple"},
-            "training": {"num_epochs": 3, "optimizer": {"lr": 1e-4, "type": "adam"}},
+            "model": {"type": "vqgan", "name": "vqgan"},
+            "dataset": {"type": "simple", "name": "simple"},
+            "training": {"num_epochs": 3, "optimizer": {"lr": 1e-4, "type": "adam"}, "fabric": {}},
         }
     )
 
@@ -124,6 +124,13 @@ def test_main_builds_pipeline_and_runs(monkeypatch) -> None:
     fake_injector = MagicMock()
     fake_injector.get.return_value = object()
     monkeypatch.setattr(train_cli, "Injector", lambda modules: fake_injector)
+
+    # Mock HydraConfig
+    mock_hydra_config = MagicMock()
+    mock_runtime = MagicMock()
+    mock_runtime.output_dir = "/tmp/test_output"
+    mock_hydra_config.get.return_value.runtime = mock_runtime
+    monkeypatch.setattr(train_cli, "HydraConfig", mock_hydra_config)
 
     pipeline = MagicMock()
     monkeypatch.setattr(train_cli, "FabricTrainingPipeline", lambda **kwargs: pipeline)
