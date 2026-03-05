@@ -5,6 +5,7 @@ This module provides concrete implementations of TrainingStrategy
 including loss functions, optimization, and metrics computation.
 """
 
+import logging
 from collections.abc import Iterator
 from typing import Any, cast
 
@@ -23,6 +24,8 @@ from maskgit3d.domain.interfaces import (
     TrainingStrategy,
     VQModelInterface,
 )
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Mixed Precision Training
@@ -787,8 +790,8 @@ class VQGANMetrics(Metrics):
                 lpips_val = self._compute_lpips(pred_normalized, target_normalized)
                 self.lpips_values.append(lpips_val)
                 self._lpips_sum += lpips_val
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to compute LPIPS metric: {e}")
 
         self._count += 1
 
