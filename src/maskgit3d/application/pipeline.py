@@ -453,7 +453,7 @@ class FabricTestPipeline:
         targets: "torch.Tensor | None",
         batch_idx: int,
     ) -> None:
-        """Log input, prediction, and target centre slices to TensorBoard.
+        """Log input, prediction, target centre slices and metrics to TensorBoard.
 
         For 3D volumes (B, C, D, H, W) the centre axial slice is extracted.
         Images are normalised to [0, 1] before logging.
@@ -462,6 +462,7 @@ class FabricTestPipeline:
         - ``test/input``      — centre slice of the input volume
         - ``test/prediction`` — centre slice of the predicted mask / reconstruction
         - ``test/target``     — centre slice of the ground-truth (if available)
+        - ``test/metrics/*``  — PSNR, SSIM, LPIPS metrics (if available)
         """
         import numpy as np
 
@@ -488,6 +489,17 @@ class FabricTestPipeline:
 
         if targets is not None:
             writer.add_image("test/target", _centre_slice(targets), step, dataformats="HW")
+
+        # Log PSNR/SSIM/LPIPS metrics to TensorBoard
+        if self.metrics is not None:
+            try:
+                metrics = self.metrics.compute()
+                for key, value in metrics.items():
+                    if isinstance(value, (int, float)):
+                        writer.add_scalar(f"test/metrics/{key}", value, step)
+            except Exception:
+                # Silently skip if metrics computation fails
+                pass
 
     def _call_callbacks(self, hook_name: str, *args, **kwargs) -> None:
         """Call callback hooks if they exist."""

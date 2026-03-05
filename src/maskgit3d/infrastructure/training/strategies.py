@@ -285,6 +285,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
         mixed_precision: bool = False,
         amp_dtype: str = "float16",
         grad_clip: float | None = None,
+        enable_val_metrics: bool = False,
     ):
         """
         Initialize VQGAN training strategy.
@@ -299,6 +300,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
             mixed_precision: Enable automatic mixed precision training
             amp_dtype: Mixed precision dtype ("float16" or "bfloat16")
             grad_clip: Maximum gradient norm for clipping
+            enable_val_metrics: Enable PSNR/SSIM/LPIPS metrics computation during validation
         """
         self.codebook_weight = codebook_weight
         self.pixel_loss_weight = pixel_loss_weight
@@ -307,6 +309,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
         self.disc_start = disc_start
         self.discriminator = discriminator
         self.global_step = 0
+        self.enable_val_metrics = enable_val_metrics
 
         self.lpips_fn = None
         if perceptual_weight > 0:
@@ -336,6 +339,19 @@ class VQGANTrainingStrategy(TrainingStrategy):
             dtype=amp_dtype,
             grad_clip=grad_clip,
         )
+
+        # Validation metrics
+        self._val_metrics: VQGANMetrics | None = None
+        if enable_val_metrics:
+            try:
+                self._val_metrics = VQGANMetrics(
+                    data_range=2.0,  # [-1, 1] range
+                    spatial_dims=3,  # 3D volumes
+                    enable_lpips=True,
+                )
+                logger.info("Enabled PSNR/SSIM/LPIPS metrics for validation")
+            except Exception as e:
+                logger.warning(f"Failed to initialize validation metrics: {e}")
 
     def _compute_perceptual_loss(self, x: torch.Tensor, xrec: torch.Tensor) -> torch.Tensor:
         if self.lpips_fn is None or self.perceptual_weight == 0:
@@ -545,7 +561,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
             batch: Tuple of (input_images,)
 
         Returns:
-            Dictionary of validation metrics
+            Dictionary of validation metrics including PSNR/SSIM/LPIPS if enabled
         """
         model.eval()
         vq_model = cast(VQModelInterface, model)
@@ -557,12 +573,30 @@ class VQGANTrainingStrategy(TrainingStrategy):
             rec_loss = torch.abs(x - xrec).mean()
             perceptual_loss = self._compute_perceptual_loss(x, xrec)
 
-        return {
+        metrics = {
             "val_loss": rec_loss.item(),
             "val_rec_loss": rec_loss.item(),
             "val_perceptual_loss": perceptual_loss.item(),
             "val_codebook_loss": qloss.mean().item(),
         }
+
+        # Compute PSNR/SSIM/LPIPS metrics if enabled
+        if self._val_metrics is not None:
+            try:
+                self._val_metrics.reset()
+                processed = {"images": xrec.cpu().numpy()}
+                self._val_metrics.update(processed, x.cpu().numpy())
+                computed_metrics = self._val_metrics.compute()
+                # Add to metrics with val_ prefix
+                for key, value in computed_metrics.items():
+                    if not key.startswith("val_"):
+                        metrics[f"val_{key}"] = value
+                    else:
+                        metrics[key] = value
+            except Exception as e:
+                logger.warning(f"Failed to compute validation metrics: {e}")
+
+        return metrics
 
 
 # =============================================================================
@@ -672,6 +706,23 @@ class VQGANMetrics(Metrics):
     Computes reconstruction metrics including PSNR, SSIM, LPIPS using MONAI.
     Tracks per-batch values and computes mean±std statistics.
     Supports TensorBoard logging and JSON/CSV export.
+
+    Input Normalization:
+        This class expects input tensors in the range [-1, 1]. During metric
+        computation, inputs are normalized to [0, data_range] using:
+            normalized = (input + 1) / 2 * data_range
+
+        For reproducibility:
+        - PSNR/SSIM: Computed on normalized [0, data_range] images
+        - LPIPS: Uses MONAI PerceptualLoss with the specified backbone network
+
+    LPIPS Configuration:
+        The LPIPS metric uses a pretrained CNN backbone. Available options:
+        - "alex": AlexNet-based LPIPS (default, recommended for perceptual similarity)
+        - "vgg": VGG16-based LPIPS (alternative, may give different perceptual scores)
+
+        For 3D volumes, MONAI applies 2D perceptual loss to central slices with
+        fake_3d_ratio=0.5, combining axial, sagittal, and coronal views.
     """
 
     def __init__(
@@ -679,18 +730,30 @@ class VQGANMetrics(Metrics):
         data_range: float = 1.0,
         spatial_dims: int = 2,
         enable_lpips: bool = True,
+        lpips_backbone: str = "alex",
     ):
         """
         Initialize VQGAN metrics.
 
         Args:
-            data_range: Data range of input images (e.g., 1.0 for [-1,1], 255 for [0,255])
+            data_range: Data range of input images (e.g., 1.0 for [-1,1], 255 for [0,255]).
+                       Note: Inputs are expected in [-1, 1] and normalized internally.
             spatial_dims: Number of spatial dimensions (2 for images, 3 for volumetric)
             enable_lpips: Whether to enable LPIPS perceptual metric
+            lpips_backbone: Backbone network for LPIPS ("alex" or "vgg").
+                           AlexNet is recommended for perceptual similarity tasks.
+                           See https://github.com/richzhang/PerceptualSimilarity for details.
         """
         self.data_range = data_range
         self.spatial_dims = spatial_dims
         self.enable_lpips = enable_lpips
+        self.lpips_backbone = lpips_backbone
+
+        # Validate LPIPS backbone
+        if lpips_backbone not in ("alex", "vgg"):
+            raise ValueError(
+                f"Invalid lpips_backbone: {lpips_backbone}. Must be one of: 'alex', 'vgg'"
+            )
 
         # Use MONAI for PSNR and SSIM
         try:
@@ -717,12 +780,16 @@ class VQGANMetrics(Metrics):
 
                 self.lpips_loss = PerceptualLoss(
                     spatial_dims=spatial_dims,
-                    network_type="alex",
+                    network_type=lpips_backbone,
                     is_fake_3d=True,
                     fake_3d_ratio=0.5,
                 )
                 for param in self.lpips_loss.parameters():
                     param.requires_grad = False
+                logger.info(
+                    f"Initialized LPIPS with {lpips_backbone.upper()} backbone "
+                    f"for {spatial_dims}D volumes"
+                )
             except ImportError:
                 import warnings
 
@@ -852,6 +919,7 @@ class VQGANMetrics(Metrics):
             metrics["psnr"] = psnr_mean
             metrics["psnr_mean"] = psnr_mean
             metrics["psnr_std"] = psnr_std
+            logger.info(f"PSNR: {psnr_mean:.4f} ± {psnr_std:.4f}")
 
         # SSIM
         if self.ssim_values:
@@ -864,6 +932,7 @@ class VQGANMetrics(Metrics):
             metrics["ssim"] = ssim_mean
             metrics["ssim_mean"] = ssim_mean
             metrics["ssim_std"] = ssim_std
+            logger.info(f"SSIM: {ssim_mean:.4f} ± {ssim_std:.4f}")
 
         # LPIPS
         if self.lpips_values:
@@ -877,6 +946,7 @@ class VQGANMetrics(Metrics):
             metrics["lpips"] = lpips_mean
             metrics["lpips_mean"] = lpips_mean
             metrics["lpips_std"] = lpips_std
+            logger.info(f"LPIPS ({self.lpips_backbone}): {lpips_mean:.4f} ± {lpips_std:.4f}")
 
         return metrics
 

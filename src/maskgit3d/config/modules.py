@@ -464,6 +464,8 @@ def create_vqvae_module(
         "params": {
             "data_range": 1.0,
             "spatial_dims": 3,
+            "enable_lpips": True,
+            "lpips_backbone": "alex",
         },
     }
 
