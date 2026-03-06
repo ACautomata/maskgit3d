@@ -384,3 +384,126 @@ class TestCliTest:
         mock_create_module.assert_called_once_with(cfg)
         mock_pipeline_class.assert_called_once()
         mock_pipeline.run.assert_called_once()
+
+
+class TestCreateDataConfigCropRoiSize:
+    """Tests for crop_size and roi_size extraction in _create_data_config."""
+
+    def test_create_data_config_extracts_crop_and_roi_from_medmnist3d(self):
+        """Test that CLI extracts crop_size and roi_size from medmnist3d config."""
+        from omegaconf import OmegaConf
+
+        from maskgit3d.cli.train import _create_data_config
+
+        cfg = OmegaConf.create(
+            {
+                "dataset": {
+                    "type": "medmnist3d",
+                    "crop_size": [32, 32, 32],
+                    "roi_size": [64, 64, 64],
+                    "batch_size": 8,
+                    "dataset_name": "organmnist3d",
+                    "data_dir": "./data",
+                },
+                "model": {"image_size": 64},
+            }
+        )
+
+        data_config = _create_data_config(cfg)
+        params = data_config["params"]
+
+        assert params["crop_size"] == (32, 32, 32)
+        assert params["roi_size"] == (64, 64, 64)
+
+    def test_create_data_config_extracts_crop_and_roi_from_brats(self):
+        """Test that CLI extracts crop_size and roi_size from brats config."""
+        from omegaconf import OmegaConf
+
+        from maskgit3d.cli.train import _create_data_config
+
+        cfg = OmegaConf.create(
+            {
+                "dataset": {
+                    "type": "brats",
+                    "crop_size": [48, 48, 48],
+                    "roi_size": [128, 128, 128],
+                    "batch_size": 2,
+                    "data_dir": "/data/brats",
+                },
+                "model": {"image_size": 64},
+            }
+        )
+
+        data_config = _create_data_config(cfg)
+        params = data_config["params"]
+
+        assert params["crop_size"] == (48, 48, 48)
+        assert params["roi_size"] == (128, 128, 128)
+
+    def test_create_data_config_fallback_to_image_size(self):
+        """Test that crop_size and roi_size fallback to image_size when not specified."""
+        from omegaconf import OmegaConf
+
+        from maskgit3d.cli.train import _create_data_config
+
+        cfg = OmegaConf.create(
+            {
+                "dataset": {
+                    "type": "simple",
+                    "batch_size": 4,
+                },
+                "model": {"image_size": 64},
+            }
+        )
+
+        data_config = _create_data_config(cfg)
+        params = data_config["params"]
+
+        assert params["crop_size"] == (64, 64, 64)
+        assert params["roi_size"] == (64, 64, 64)
+
+    def test_create_data_config_custom_fallback_image_size(self):
+        """Test that crop_size and roi_size use custom image_size fallback."""
+        from omegaconf import OmegaConf
+
+        from maskgit3d.cli.train import _create_data_config
+
+        cfg = OmegaConf.create(
+            {
+                "dataset": {
+                    "type": "simple",
+                    "batch_size": 4,
+                },
+                "model": {"image_size": 128},
+            }
+        )
+
+        data_config = _create_data_config(cfg)
+        params = data_config["params"]
+
+        assert params["crop_size"] == (128, 128, 128)
+        assert params["roi_size"] == (128, 128, 128)
+
+    def test_create_data_config_tuple_values_pass_through(self):
+        """Test that tuple values in config are passed through correctly."""
+        from omegaconf import OmegaConf
+
+        from maskgit3d.cli.train import _create_data_config
+
+        cfg = OmegaConf.create(
+            {
+                "dataset": {
+                    "type": "simple",
+                    "crop_size": (32, 32, 32),
+                    "roi_size": (64, 64, 64),
+                    "batch_size": 4,
+                },
+                "model": {"image_size": 64},
+            }
+        )
+
+        data_config = _create_data_config(cfg)
+        params = data_config["params"]
+
+        assert params["crop_size"] == (32, 32, 32)
+        assert params["roi_size"] == (64, 64, 64)

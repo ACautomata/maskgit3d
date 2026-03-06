@@ -39,14 +39,22 @@ def _create_data_config(cfg: DictConfig) -> dict:
     model = cfg.model
     dataset_type = dataset.get("type", "simple")
 
+    # Helper to convert list to tuple
+    def to_tuple(val):
+        return tuple(val) if isinstance(val, list) else val
+
     common_params = {
         "batch_size": dataset.get("batch_size", 4),
+        "num_workers": dataset.get("num_workers", 0),
+        # Use crop_size/roi_size from dataset config, fallback to image_size
+        "crop_size": to_tuple(dataset.get("crop_size", (model.get("image_size", 64),) * 3)),
+        "roi_size": to_tuple(dataset.get("roi_size", (model.get("image_size", 64),) * 3)),
+        # Keep spatial_size for backward compatibility
         "spatial_size": (
             model.get("image_size", 64),
             model.get("image_size", 64),
             model.get("image_size", 64),
         ),
-        "num_workers": dataset.get("num_workers", 0),
     }
 
     if dataset_type == "simple":
