@@ -14,7 +14,10 @@ from monai.transforms.compose import Compose
 from torch.utils.data import DataLoader, Dataset
 
 from maskgit3d.domain.interfaces import DataProvider
-from maskgit3d.infrastructure.data.transforms import create_medmnist_preprocessing
+from maskgit3d.infrastructure.data.transforms import (
+    create_medmnist_inference_preprocessing,
+    create_medmnist_training_preprocessing,
+)
 
 
 class MedMNIST3DDataset(str, Enum):
@@ -199,6 +202,8 @@ class MedMnist3DDataProvider(DataProvider):
         self,
         dataset_type: str = "organ",
         spatial_size: tuple[int, int, int] = (64, 64, 64),
+        crop_size: tuple[int, int, int] | None = None,
+        roi_size: tuple[int, int, int] | None = None,
         input_size: int = 28,
         batch_size: int = 16,
         num_workers: int = 4,
@@ -216,6 +221,10 @@ class MedMnist3DDataProvider(DataProvider):
                 "organ", "nodule", "adrenal", "vessel", "fracture", "synapse"
             spatial_size: Target spatial dimensions (D, H, W) after preprocessing.
                 Default is (64, 64, 64).
+            crop_size: Crop spatial dimensions (D, H, W) for training. If None,
+                defaults to spatial_size. Used for random crop during training.
+            roi_size: ROI spatial dimensions (D, H, W) for inference. If None,
+                defaults to spatial_size. Used for sliding window inference.
             input_size: Input size of MedMNIST dataset. Either 28 or 64.
                 Default is 28 (28x28x28 resolution).
             batch_size: Batch size for data loaders. Default is 16.
@@ -247,6 +256,8 @@ class MedMnist3DDataProvider(DataProvider):
             )
 
         self.spatial_size = spatial_size
+        self.crop_size = crop_size if crop_size is not None else spatial_size
+        self.roi_size = roi_size if roi_size is not None else spatial_size
         self.input_size = input_size
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -256,11 +267,17 @@ class MedMnist3DDataProvider(DataProvider):
         self.pin_memory = pin_memory
         self.drop_last_train = drop_last_train
 
-        # Create preprocessing transform
-        self.transform = create_medmnist_preprocessing(
-            spatial_size=spatial_size,
+        # Training transform with random crop
+        self.train_transform = create_medmnist_training_preprocessing(
+            crop_size=self.crop_size,
             input_size=input_size,
         )
+
+        # Inference transform (no crop, keeps original size for sliding window)
+        self.inference_transform = create_medmnist_inference_preprocessing()
+
+        # Keep legacy transform for backward compatibility
+        self.transform = self.train_transform
 
         # Load datasets lazily
         self._train_dataset: MedMNIST3DDatasetWrapper | None = None
@@ -274,16 +291,21 @@ class MedMnist3DDataProvider(DataProvider):
     def _create_dataset(
         self,
         split: str,
+        transform: Compose | None = None,
     ) -> MedMNIST3DDatasetWrapper:
         """
         Create a MedMNIST dataset for the specified split.
 
         Args:
             split: Dataset split ("train", "val", or "test")
+            transform: Optional transform to use (defaults to self.transform)
 
         Returns:
             Wrapped dataset with preprocessing transforms
         """
+        if transform is None:
+            transform = self.transform
+
         dataset_class = self._get_dataset_class()
 
         # Create underlying MedMNIST dataset
@@ -313,7 +335,7 @@ class MedMnist3DDataProvider(DataProvider):
         # Wrap with preprocessing
         return MedMNIST3DDatasetWrapper(
             dataset=base_dataset,
-            transform=self.transform,
+            transform=transform,
             spatial_size=self.spatial_size,
         )
 
@@ -321,21 +343,21 @@ class MedMnist3DDataProvider(DataProvider):
     def train_dataset(self) -> MedMNIST3DDatasetWrapper:
         """Get training dataset (lazy loaded)."""
         if self._train_dataset is None:
-            self._train_dataset = self._create_dataset("train")
+            self._train_dataset = self._create_dataset("train", transform=self.train_transform)
         return self._train_dataset
 
     @property
     def val_dataset(self) -> MedMNIST3DDatasetWrapper:
         """Get validation dataset (lazy loaded)."""
         if self._val_dataset is None:
-            self._val_dataset = self._create_dataset("val")
+            self._val_dataset = self._create_dataset("val", transform=self.inference_transform)
         return self._val_dataset
 
     @property
     def test_dataset(self) -> MedMNIST3DDatasetWrapper:
         """Get test dataset (lazy loaded)."""
         if self._test_dataset is None:
-            self._test_dataset = self._create_dataset("test")
+            self._test_dataset = self._create_dataset("test", transform=self.inference_transform)
         return self._test_dataset
 
     def train_loader(self) -> DataLoader:
