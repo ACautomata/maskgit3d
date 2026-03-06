@@ -106,6 +106,36 @@ class TestCreateBratsPreprocessing:
         )
         assert isinstance(transforms, Compose)
 
+    def test_create_brats_training_preprocessing_no_warning_when_divisible(self):
+        """Test no warning when crop_size is divisible by 16."""
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            transforms = create_brats_training_preprocessing(
+                crop_size=(128, 128, 128),
+                normalize_mode="zscore",
+            )
+            assert isinstance(transforms, Compose)
+            # No warnings should be raised
+            assert len(w) == 0
+
+    def test_create_brats_training_preprocessing_warns_when_not_divisible(self):
+        """Test warning when crop_size is not divisible by 16."""
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            transforms = create_brats_training_preprocessing(
+                crop_size=(100, 100, 100),  # Not divisible by 16
+                normalize_mode="zscore",
+            )
+            assert isinstance(transforms, Compose)
+            # Warning should be raised
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
+            assert "not divisible by 16" in str(w[0].message)
+
     def test_create_brats_inference_preprocessing(self):
         """Test BraTS inference preprocessing."""
         transforms = create_brats_inference_preprocessing(normalize_mode="zscore")
@@ -138,6 +168,36 @@ class TestCreateMedMnistPreprocessing:
             input_size=28,
         )
         assert isinstance(transforms, Compose)
+
+    def test_create_medmnist_training_preprocessing_no_warning_when_divisible(self):
+        """Test no warning when crop_size is divisible by 16."""
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            transforms = create_medmnist_training_preprocessing(
+                crop_size=(32, 32, 32),
+                input_size=28,
+            )
+            assert isinstance(transforms, Compose)
+            # No warnings should be raised
+            assert len(w) == 0
+
+    def test_create_medmnist_training_preprocessing_warns_when_not_divisible(self):
+        """Test warning when crop_size is not divisible by 16."""
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            transforms = create_medmnist_training_preprocessing(
+                crop_size=(28, 28, 28),  # Not divisible by 16
+                input_size=28,
+            )
+            assert isinstance(transforms, Compose)
+            # Warning should be raised
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
+            assert "not divisible by 16" in str(w[0].message)
 
     def test_create_medmnist_inference_preprocessing(self):
         """Test MedMnist inference preprocessing."""

@@ -238,6 +238,19 @@ def create_brats_training_preprocessing(
     Returns:
         MONAI Compose object with BraTS training preprocessing
     """
+    import warnings
+
+    downsampling_factor = 16
+    for dim in crop_size:
+        if dim % downsampling_factor != 0:
+            warnings.warn(
+                f"crop_size {crop_size} is not divisible by {downsampling_factor}. "
+                "This may cause issues with VQVAE decoder.",
+                UserWarning,
+                stacklevel=2,
+            )
+            break
+
     transforms = [
         EnsureType(),
         EnsureChannelFirst(channel_dim="no_channel"),
@@ -285,6 +298,19 @@ def create_medmnist_training_preprocessing(
     Returns:
         MONAI Compose object with MedMnist3D training preprocessing
     """
+    import warnings
+
+    downsampling_factor = 16
+    for dim in crop_size:
+        if dim % downsampling_factor != 0:
+            warnings.warn(
+                f"crop_size {crop_size} is not divisible by {downsampling_factor}. "
+                "This may cause issues with VQVAE decoder.",
+                UserWarning,
+                stacklevel=2,
+            )
+            break
+
     transforms = [
         EnsureType(),
         # MedMNIST3D data already has channel dim (1, D, H, W), no need for EnsureChannelFirst
