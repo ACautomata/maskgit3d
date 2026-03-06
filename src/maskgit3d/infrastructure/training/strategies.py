@@ -13,17 +13,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from maskgit3d.domain.interfaces import (
-    DiscriminatorInterface,
-    GANOptimizerFactory,
-    InferenceStrategy,
-    MaskGITModelInterface,
-    Metrics,
-    ModelInterface,
-    OptimizerFactory,
-    TrainingStrategy,
-    VQModelInterface,
-)
+from maskgit3d.domain.interfaces import (DiscriminatorInterface,
+                                         GANOptimizerFactory,
+                                         InferenceStrategy,
+                                         MaskGITModelInterface, Metrics,
+                                         ModelInterface, OptimizerFactory,
+                                         TrainingStrategy, VQModelInterface)
 
 logger = logging.getLogger(__name__)
 
@@ -369,7 +364,8 @@ class VQGANTrainingStrategy(TrainingStrategy):
         self._fid_2p5d_metric: "FID2p5DMetric | None" = None
         if enable_fid_2p5d:
             try:
-                from maskgit3d.infrastructure.metrics.fid_2p5d import FID2p5DMetric
+                from maskgit3d.infrastructure.metrics.fid_2p5d import \
+                    FID2p5DMetric
 
                 self._fid_2p5d_metric = FID2p5DMetric(
                     model_name=fid_2p5d_model,
@@ -605,6 +601,8 @@ class VQGANTrainingStrategy(TrainingStrategy):
             "val_rec_loss": rec_loss.item(),
             "val_perceptual_loss": perceptual_loss.item(),
             "val_codebook_loss": qloss.mean().item(),
+            "images": ((xrec + 1) / 2).clamp(0, 1).cpu().numpy(),
+            "targets": ((x + 1) / 2).clamp(0, 1).cpu().numpy(),
         }
 
         # Compute PSNR/SSIM/LPIPS metrics if enabled
@@ -914,7 +912,8 @@ class VQGANMetrics(Metrics):
         target: torch.Tensor,
     ) -> torch.Tensor:
         try:
-            from torchmetrics.functional import structural_similarity_index_measure
+            from torchmetrics.functional import \
+                structural_similarity_index_measure
 
             ssim = structural_similarity_index_measure(
                 pred,
@@ -1123,7 +1122,8 @@ class MaskGITTrainingStrategy(TrainingStrategy):
             fid_2p5d_center_ratio: Ratio of center slices to use for FID
             fid_2p5d_xy_only: If True, only compute FID for XY plane
         """
-        from maskgit3d.infrastructure.maskgit.scheduling import TrainingMaskScheduler
+        from maskgit3d.infrastructure.maskgit.scheduling import \
+            TrainingMaskScheduler
 
         self.mask_schedule_type = mask_schedule_type
         self.mask_scheduler = TrainingMaskScheduler(gamma_type=mask_schedule_type)
@@ -1139,7 +1139,8 @@ class MaskGITTrainingStrategy(TrainingStrategy):
         self._fid_2p5d_metric: "FID2p5DMetric | None" = None
         if enable_fid_2p5d:
             try:
-                from maskgit3d.infrastructure.metrics.fid_2p5d import FID2p5DMetric
+                from maskgit3d.infrastructure.metrics.fid_2p5d import \
+                    FID2p5DMetric
 
                 self._fid_2p5d_metric = FID2p5DMetric(
                     model_name=fid_2p5d_model,
@@ -1466,7 +1467,8 @@ class SlidingWindowVQGANInference(InferenceStrategy):
             )
 
             if self.original_size is not None:
-                from maskgit3d.infrastructure.data.padding import compute_output_crop
+                from maskgit3d.infrastructure.data.padding import \
+                    compute_output_crop
 
                 padded_size = (batch.shape[2], batch.shape[3], batch.shape[4])
                 crop_slices = compute_output_crop(self.original_size, padded_size)

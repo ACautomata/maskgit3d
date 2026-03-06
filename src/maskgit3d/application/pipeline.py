@@ -13,14 +13,9 @@ from typing import Any, Literal
 import torch
 from tqdm import tqdm
 
-from maskgit3d.domain.interfaces import (
-    DataProvider,
-    InferenceStrategy,
-    Metrics,
-    ModelInterface,
-    OptimizerFactory,
-    TrainingStrategy,
-)
+from maskgit3d.domain.interfaces import (DataProvider, InferenceStrategy,
+                                         Metrics, ModelInterface,
+                                         OptimizerFactory, TrainingStrategy)
 from maskgit3d.infrastructure.checkpoints import load_checkpoint as load_ckpt
 
 logger = logging.getLogger(__name__)
@@ -162,24 +157,26 @@ class FabricTestPipeline:
         accelerator: str = "auto",
         devices: int | list[int] | str = "auto",
         strategy: str = "auto",
-        precision: Literal[
-            64,
-            32,
-            16,
-            "transformer-engine",
-            "transformer-engine-float16",
-            "16-true",
-            "16-mixed",
-            "bf16-true",
-            "bf16-mixed",
-            "32-true",
-            "64-true",
-            "64",
-            "32",
-            "16",
-            "bf16",
-        ]
-        | None = "32-true",
+        precision: (
+            Literal[
+                64,
+                32,
+                16,
+                "transformer-engine",
+                "transformer-engine-float16",
+                "16-true",
+                "16-mixed",
+                "bf16-true",
+                "bf16-mixed",
+                "32-true",
+                "64-true",
+                "64",
+                "32",
+                "16",
+                "bf16",
+            ]
+            | None
+        ) = "32-true",
         checkpoint_path: str | None = None,
         output_dir: str = "./outputs",
         callbacks: list[Any] | None = None,
@@ -270,6 +267,13 @@ class FabricTestPipeline:
             tb_dir.mkdir(parents=True, exist_ok=True)
             writer = SummaryWriter(str(tb_dir))
 
+        slice_callbacks = [cb for cb in self.callbacks if hasattr(cb, "on_test_batch_end")]
+
+        if writer is not None:
+            for cb in slice_callbacks:
+                if hasattr(cb, "set_writer"):
+                    cb.set_writer(writer)
+
         num_samples = 0
 
         self._call_callbacks("on_test_epoch_start")
@@ -307,7 +311,7 @@ class FabricTestPipeline:
                 self._global_step += 1
                 pbar.set_postfix({"batch": batch_idx + 1})
 
-                self._call_callbacks("on_test_batch_end", batch, batch_idx)
+                self._call_callbacks("on_test_batch_end", batch, batch_idx, processed)
 
         self._call_callbacks("on_test_epoch_end")
 
@@ -531,24 +535,26 @@ class FabricTrainingPipeline:
         accelerator: str = "auto",
         devices: int | list[int] | str = "auto",
         strategy: str = "auto",
-        precision: Literal[
-            64,
-            32,
-            16,
-            "transformer-engine",
-            "transformer-engine-float16",
-            "16-true",
-            "16-mixed",
-            "bf16-true",
-            "bf16-mixed",
-            "32-true",
-            "64-true",
-            "64",
-            "32",
-            "16",
-            "bf16",
-        ]
-        | None = "32-true",
+        precision: (
+            Literal[
+                64,
+                32,
+                16,
+                "transformer-engine",
+                "transformer-engine-float16",
+                "16-true",
+                "16-mixed",
+                "bf16-true",
+                "bf16-mixed",
+                "32-true",
+                "64-true",
+                "64",
+                "32",
+                "16",
+                "bf16",
+            ]
+            | None
+        ) = "32-true",
         checkpoint_dir: str = "./checkpoints",
         log_interval: int = 10,
         callbacks: list[Any] | None = None,
@@ -759,7 +765,8 @@ class FabricTrainingPipeline:
                     prefixed_key = key if key.startswith("val_") else f"val_{key}"
                     metrics_history.setdefault(prefixed_key, []).append(float(value))
 
-                self._call_callbacks("on_validation_batch_end", batch, batch_idx)
+                outputs = {k: v for k, v in metrics.items() if not isinstance(v, int | float)}
+                self._call_callbacks("on_validation_batch_end", batch, batch_idx, outputs)
 
                 if "val_loss" in metrics:
                     pbar.set_postfix({"val_loss": f"{metrics['val_loss']:.4f}"})

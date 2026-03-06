@@ -37,3 +37,10 @@ output:
   export_nifti: false           # Save input/prediction/target as .nii.gz files
   enable_tensorboard: false     # Log sample slices to TensorBoard
   tensorboard_dir: null         # TensorBoard log dir (defaults to output_dir/tensorboard)
+
+# Visualization settings
+visualization:
+  enable_axial_slices: true    # Enable slice visualization during validation/test
+  num_samples: 4               # Number of samples to visualize per batch
+  slice_range: 3               # Range around center for slice selection
+  output_subdir: slices        # Subdirectory for slice images

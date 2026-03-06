@@ -9,13 +9,26 @@ from __future__ import annotations
 
 import logging
 import math
+import random
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import torch
 from lightning.pytorch.callbacks import Callback as _LightningCallback
-from lightning.pytorch.callbacks import EarlyStopping as _LightningEarlyStopping
-from lightning.pytorch.callbacks import ModelCheckpoint as _LightningModelCheckpoint
+from lightning.pytorch.callbacks import \
+    EarlyStopping as _LightningEarlyStopping
+from lightning.pytorch.callbacks import \
+    ModelCheckpoint as _LightningModelCheckpoint
+from PIL import Image
+
+try:
+    from torch.utils.tensorboard import SummaryWriter
+
+    TENSORBOARD_AVAILABLE = True
+except ImportError:
+    SummaryWriter = None  # type: ignore[assignment,misc]
+    TENSORBOARD_AVAILABLE = False
 
 if TYPE_CHECKING:
     from lightning import Fabric
@@ -595,6 +608,192 @@ class MetricsLogger(Callback):
     def get_history(self) -> dict[str, list[Any]]:
         """Get a copy of metric history."""
         return self._history.copy()
+
+
+class AxialSliceVisualizationCallback(Callback):
+    """
+    Visualize random axial slices from 3D volumes during validation/testing.
+
+    Extracts random axial slices from 3D medical volumes and saves them
+    to disk and/or logs to TensorBoard for visualization.
+
+    Args:
+        num_samples: Number of samples to visualize per batch (default: 4)
+        slice_range: Range around center for random slice selection (default: 3)
+        output_dir: Directory to save visualizations (default: "./slices")
+        enable_tensorboard: Whether to log to TensorBoard (default: True)
+    """
+
+    def __init__(
+        self,
+        num_samples: int = 4,
+        slice_range: int = 3,
+        output_dir: str = "./slices",
+        enable_tensorboard: bool = True,
+    ):
+        super().__init__()
+        self.num_samples = num_samples
+        self.slice_range = slice_range
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.enable_tensorboard = enable_tensorboard
+        self._tensorboard_writer: SummaryWriter | None = None
+
+    def set_writer(self, writer: Any) -> None:
+        """Set TensorBoard writer."""
+        self._tensorboard_writer = writer
+
+    def on_validation_start(self, trainer: Trainer, pl_module: torch.nn.Module) -> None:
+        """Initialize TensorBoard writer at start of validation."""
+        super().on_validation_start(trainer, pl_module)
+        if self.enable_tensorboard:
+            self._tensorboard_writer = SummaryWriter(log_dir=str(self.output_dir))
+
+    def on_test_start(self, trainer: Trainer, pl_module: torch.nn.Module) -> None:
+        """Initialize TensorBoard writer at start of testing."""
+        super().on_test_start(trainer, pl_module)
+        if self.enable_tensorboard:
+            self._tensorboard_writer = SummaryWriter(log_dir=str(self.output_dir))
+
+    def _extract_random_slice(self, volume: torch.Tensor) -> np.ndarray:
+        """
+        Extract a random axial slice from a 3D volume.
+
+        Args:
+            volume: 3D tensor of shape [B, C, D, H, W]
+
+        Returns:
+            2D numpy array of shape [H, W] with values normalized to [0, 1]
+        """
+        # volume shape: [B, C, D, H, W]
+        depth = volume.shape[2]
+        height = volume.shape[3]
+        width = volume.shape[4]
+
+        # Select random depth index near center
+        center = depth // 2
+        min_depth = max(0, center - self.slice_range)
+        max_depth = min(depth - 1, center + self.slice_range)
+        slice_idx = random.randint(min_depth, max_depth)
+
+        # Extract slice at the selected depth
+        slice_2d = volume[0, 0, slice_idx, :, :].cpu().numpy()
+
+        # Normalize from [-1, 1] to [0, 1] range
+        slice_2d = (slice_2d + 1.0) / 2.0
+        slice_2d = np.clip(slice_2d, 0.0, 1.0)
+
+        return slice_2d
+
+    def _save_to_disk(self, image: torch.Tensor | np.ndarray, filepath: str) -> None:
+        """
+        Save an image to disk as PNG.
+
+        Args:
+            image: 2D array with values in [0, 1] range
+            filepath: Path to save the image
+        """
+        if isinstance(image, torch.Tensor):
+            image = image.cpu().numpy()
+
+        # Convert to uint8 for PIL
+        image_uint8 = (image * 255).astype(np.uint8)
+
+        # Save as PNG
+        img_pil = Image.fromarray(image_uint8, mode="L")
+        img_pil.save(filepath)
+
+    def _log_to_tensorboard(self, image: torch.Tensor | np.ndarray, tag: str, step: int) -> None:
+        """
+        Log an image to TensorBoard.
+
+        Args:
+            image: 2D array with values in [0, 1] range
+            tag: Tag for the image
+            step: Global step for logging
+        """
+        if self._tensorboard_writer is None:
+            return
+
+        if isinstance(image, np.ndarray):
+            image = torch.from_numpy(image)
+
+        # Add channel dimension for add_image (expects [C, H, W])
+        image = image.unsqueeze(0)
+
+        self._tensorboard_writer.add_image(tag, image, global_step=step)
+
+    def _process_batch(self, batch: dict[str, Any], batch_idx: int, prefix: str) -> None:
+        """
+        Process a batch to visualize random axial slices.
+
+        Args:
+            batch: Dictionary containing 'volumes' key with 3D tensor
+            batch_idx: Index of the batch
+            prefix: Prefix for logging tags (e.g., 'val' or 'test')
+        """
+        volumes = batch.get("volumes")
+        if volumes is None:
+            return
+
+        # Get global step from trainer if available
+        global_step = 0
+        if self._trainer is not None:
+            global_step = self._trainer.global_step
+
+        # Process up to num_samples
+        num_to_process = min(self.num_samples, volumes.shape[0])
+
+        for i in range(num_to_process):
+            volume = volumes[i : i + 1]  # Keep batch dimension
+
+            # Extract random slice
+            slice_img = self._extract_random_slice(volume)
+
+            # Save to disk
+            filepath = self.output_dir / f"{prefix}_batch{batch_idx}_sample{i}.png"
+            self._save_to_disk(slice_img, str(filepath))
+
+            # Log to tensorboard
+            if self.enable_tensorboard and self._tensorboard_writer is not None:
+                tag = f"{prefix}/batch{batch_idx}/sample{i}"
+                self._log_to_tensorboard(slice_img, tag, global_step)
+
+    def on_validation_batch_end(
+        self,
+        trainer: Trainer,
+        pl_module: torch.nn.Module,
+        outputs: Any,
+        batch: Any,
+        batch_idx: int,
+    ) -> None:
+        """Visualize random axial slices after each validation batch."""
+        self._process_batch(batch, batch_idx, "val")
+
+    def on_test_batch_end(
+        self,
+        trainer: Trainer,
+        pl_module: torch.nn.Module,
+        outputs: Any,
+        batch: Any,
+        batch_idx: int,
+    ) -> None:
+        """Visualize random axial slices after each test batch."""
+        self._process_batch(batch, batch_idx, "test")
+
+    def on_validation_end(self, trainer: Trainer, pl_module: torch.nn.Module) -> None:
+        """Close TensorBoard writer at end of validation."""
+        if self._tensorboard_writer is not None:
+            self._tensorboard_writer.close()
+            self._tensorboard_writer = None
+        super().on_validation_end(trainer, pl_module)
+
+    def on_test_end(self, trainer: Trainer, pl_module: torch.nn.Module) -> None:
+        """Close TensorBoard writer at end of testing."""
+        if self._tensorboard_writer is not None:
+            self._tensorboard_writer.close()
+            self._tensorboard_writer = None
+        super().on_test_end(trainer, pl_module)
 
 
 # Backward compatibility aliases

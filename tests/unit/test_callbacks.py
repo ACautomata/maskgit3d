@@ -1,16 +1,13 @@
 """Tests for training callbacks."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
 
 from maskgit3d.infrastructure.training.callbacks import (
-    EarlyStopping,
-    MetricsLogger,
-    ModelCheckpoint,
-    NaNMonitor,
-)
+    AxialSliceVisualizationCallback, EarlyStopping, MetricsLogger,
+    ModelCheckpoint, NaNMonitor)
 
 
 class TestModelCheckpoint:
@@ -241,3 +238,142 @@ class TestMetricsLogger:
         # Second epoch (should log)
         callback.on_train_epoch_end(mock_trainer, mock_model)
         assert len(callback.history) > 0
+
+
+class TestAxialSliceVisualizationCallback:
+    """Tests for AxialSliceVisualizationCallback."""
+
+    def test_callback_creation(self, tmp_path):
+        """Test AxialSliceVisualizationCallback initialization."""
+        callback = AxialSliceVisualizationCallback(
+            num_samples=4,
+            slice_range=3,
+            output_dir=str(tmp_path),
+            enable_tensorboard=True,
+        )
+        assert callback.num_samples == 4
+        assert callback.slice_range == 3
+        assert callback.output_dir.exists()
+        assert callback.enable_tensorboard is True
+
+    def test_extract_random_slice_normalizes_to_01(self):
+        """Test that slice extraction normalizes values to [0,1]."""
+        callback = AxialSliceVisualizationCallback(
+            num_samples=4,
+            slice_range=3,
+            output_dir="/tmp/test",
+            enable_tensorboard=False,
+        )
+        # Create a 3D volume with values in [-1, 1] range
+        volume = torch.randn(1, 1, 28, 28, 28)  # [B, C, D, H, W]
+        volume = torch.clamp(volume, -1, 1)  # Ensure range is [-1, 1]
+
+        slice_img = callback._extract_random_slice(volume)
+
+        # Check that values are normalized to [0, 1]
+        assert slice_img.min() >= 0.0
+        assert slice_img.max() <= 1.0
+
+    def test_extract_random_slice_shape(self):
+        """Test that extracted slice has correct shape."""
+        callback = AxialSliceVisualizationCallback(
+            num_samples=4,
+            slice_range=3,
+            output_dir="/tmp/test",
+            enable_tensorboard=False,
+        )
+        # Create a 3D volume [B, C, D, H, W]
+        volume = torch.randn(2, 3, 28, 32, 32)
+
+        slice_img = callback._extract_random_slice(volume)
+
+        # Should return H x W image
+        assert slice_img.shape == (32, 32)
+
+    def test_save_to_disk_creates_file(self, tmp_path):
+        """Test that saving to disk creates a PNG file."""
+        callback = AxialSliceVisualizationCallback(
+            num_samples=4,
+            slice_range=3,
+            output_dir=str(tmp_path),
+            enable_tensorboard=False,
+        )
+        # Create a test image [0, 1] range
+        image = torch.rand(28, 28)
+        filepath = tmp_path / "test_slice.png"
+
+        callback._save_to_disk(image, str(filepath))
+
+        assert filepath.exists()
+        assert filepath.suffix == ".png"
+
+    @patch("maskgit3d.infrastructure.training.callbacks.SummaryWriter")
+    def test_log_to_tensorboard_calls_writer(self, mock_summary_writer):
+        """Test that logging to tensorboard calls SummaryWriter."""
+        callback = AxialSliceVisualizationCallback(
+            num_samples=4,
+            slice_range=3,
+            output_dir="/tmp/test",
+            enable_tensorboard=True,
+        )
+        callback._tensorboard_writer = MagicMock()
+        mock_writer = callback._tensorboard_writer
+
+        # Create a test image
+        image = torch.rand(28, 28)
+
+        callback._log_to_tensorboard(image, "test/tag", step=1)
+
+        mock_writer.add_image.assert_called_once()
+
+    def test_process_batch_handles_volume_input(self, tmp_path):
+        """Test that _process_batch handles 3D volume input."""
+        callback = AxialSliceVisualizationCallback(
+            num_samples=2,
+            slice_range=3,
+            output_dir=str(tmp_path),
+            enable_tensorboard=False,
+        )
+
+        # Create mock batch: dict with 'volumes' key containing 3D tensor [B, C, D, H, W]
+        batch = {"volumes": torch.randn(4, 1, 28, 28, 28)}
+        batch_idx = 0
+
+        # Should not raise any errors
+        callback._process_batch(batch, batch_idx, "val")
+
+    def test_on_validation_batch_end_calls_process(self, tmp_path):
+        """Test that on_validation_batch_end triggers visualization."""
+        callback = AxialSliceVisualizationCallback(
+            num_samples=2,
+            slice_range=3,
+            output_dir=str(tmp_path),
+            enable_tensorboard=False,
+        )
+
+        mock_trainer = MagicMock()
+        mock_model = MagicMock()
+        batch = {"volumes": torch.randn(4, 1, 28, 28, 28)}
+        batch_idx = 0
+        outputs = None
+
+        # Should not raise
+        callback.on_validation_batch_end(mock_trainer, mock_model, outputs, batch, batch_idx)
+
+    def test_on_test_batch_end_calls_process(self, tmp_path):
+        """Test that on_test_batch_end triggers visualization."""
+        callback = AxialSliceVisualizationCallback(
+            num_samples=2,
+            slice_range=3,
+            output_dir=str(tmp_path),
+            enable_tensorboard=False,
+        )
+
+        mock_trainer = MagicMock()
+        mock_model = MagicMock()
+        batch = {"volumes": torch.randn(4, 1, 28, 28, 28)}
+        batch_idx = 0
+        outputs = None
+
+        # Should not raise
+        callback.on_test_batch_end(mock_trainer, mock_model, outputs, batch, batch_idx)
