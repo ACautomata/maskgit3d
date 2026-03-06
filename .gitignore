@@ -241,3 +241,6 @@ automation/
 # Coverage reports
 coverage.xml
 htmlcov/
+
+# Plan documents (local development)
+docs/plans/
