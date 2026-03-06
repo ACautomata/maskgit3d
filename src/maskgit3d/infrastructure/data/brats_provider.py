@@ -18,8 +18,10 @@ from torch.utils.data import DataLoader, Dataset
 
 from maskgit3d.domain.interfaces import DataProvider
 from maskgit3d.infrastructure.data.transforms import (
-    create_brats2023_preprocessing,
-    create_brats_preprocessing,
+    create_brats2023_inference_preprocessing,
+    create_brats2023_training_preprocessing,
+    create_brats_inference_preprocessing,
+    create_brats_training_preprocessing,
 )
 
 logger = logging.getLogger(__name__)
@@ -335,6 +337,8 @@ class BraTSDataProvider(DataProvider):
         data_dir: str | Path | None = None,
         modalities: list[str] | None = None,
         spatial_size: tuple[int, int, int] = (64, 64, 64),
+        crop_size: tuple[int, int, int] | None = None,
+        roi_size: tuple[int, int, int] | None = None,
         batch_size: int = 1,
         num_workers: int = 4,
         train_ratio: float = 0.7,
@@ -350,6 +354,8 @@ class BraTSDataProvider(DataProvider):
         self.data_dir = Path(data_dir) if data_dir is not None else None
         self.modalities = modalities or DEFAULT_MODALITIES
         self.spatial_size = spatial_size
+        self.crop_size = crop_size if crop_size is not None else spatial_size
+        self.roi_size = roi_size if roi_size is not None else spatial_size
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.train_ratio = train_ratio
@@ -370,10 +376,18 @@ class BraTSDataProvider(DataProvider):
 
         if self.version == "2021":
             self.task = "reconstruction"
-            self.transform = create_brats_preprocessing(
-                spatial_size=spatial_size,
+            # Training transform with random crop
+            self.train_transform = create_brats_training_preprocessing(
+                crop_size=self.crop_size,
                 normalize_mode=normalize_mode,
             )
+            # Inference transform without crop
+            self.inference_transform = create_brats_inference_preprocessing(
+                normalize_mode=normalize_mode,
+            )
+            # Legacy compatibility
+            self.transform = self.train_transform
+
             self._all_samples: list[str | dict[str, Any]] = cast(
                 list[str | dict[str, Any]], self._discover_patients_2021()
             )
@@ -381,11 +395,20 @@ class BraTSDataProvider(DataProvider):
                 [sample for sample in self._all_samples if isinstance(sample, str)]
             )
         else:
-            self.transform = create_brats2023_preprocessing(
-                spatial_size=spatial_size,
+            # Training transform with random crop
+            self.train_transform = create_brats2023_training_preprocessing(
+                crop_size=self.crop_size,
                 normalize_mode=normalize_mode,
                 task=self.task,
             )
+            # Inference transform without crop
+            self.inference_transform = create_brats2023_inference_preprocessing(
+                normalize_mode=normalize_mode,
+                task=self.task,
+            )
+            # Legacy compatibility
+            self.transform = self.train_transform
+
             self._all_samples = cast(list[str | dict[str, Any]], self._discover_patients_2023())
             self._train_samples, self._val_samples, self._test_samples = (
                 self._split_patients_stratified(
@@ -654,13 +677,13 @@ class BraTSDataProvider(DataProvider):
                     data_dir=cast(Path, self.data_dir),
                     patient_ids=cast(list[str], self._train_samples),
                     modalities=self.modalities,
-                    transform=self.transform,
+                    transform=self.train_transform,
                     spatial_size=self.spatial_size,
                 )
             else:
                 self._train_dataset = BraTS2023Dataset(
                     data_dicts=cast(list[dict[str, Any]], self._train_samples),
-                    transform=self.transform,
+                    transform=self.train_transform,
                     task=self.task,
                 )
         return self._train_dataset
@@ -675,13 +698,13 @@ class BraTSDataProvider(DataProvider):
                     data_dir=cast(Path, self.data_dir),
                     patient_ids=cast(list[str], self._val_samples),
                     modalities=self.modalities,
-                    transform=self.transform,
+                    transform=self.inference_transform,
                     spatial_size=self.spatial_size,
                 )
             else:
                 self._val_dataset = BraTS2023Dataset(
                     data_dicts=cast(list[dict[str, Any]], self._val_samples),
-                    transform=self.transform,
+                    transform=self.inference_transform,
                     task=self.task,
                 )
         return self._val_dataset
@@ -696,13 +719,13 @@ class BraTSDataProvider(DataProvider):
                     data_dir=cast(Path, self.data_dir),
                     patient_ids=cast(list[str], self._test_samples),
                     modalities=self.modalities,
-                    transform=self.transform,
+                    transform=self.inference_transform,
                     spatial_size=self.spatial_size,
                 )
             else:
                 self._test_dataset = BraTS2023Dataset(
                     data_dicts=cast(list[dict[str, Any]], self._test_samples),
-                    transform=self.transform,
+                    transform=self.inference_transform,
                     task=self.task,
                 )
         return self._test_dataset
