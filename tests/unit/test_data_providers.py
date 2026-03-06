@@ -65,6 +65,14 @@ class TestTransforms:
         )
         assert transform is not None
 
+    def test_create_medmnist_preprocessing_64(self):
+        """Test MedMNIST preprocessing with native 64x64x64 resolution."""
+        transform = create_medmnist_preprocessing(
+            spatial_size=(64, 64, 64),
+            input_size=64,
+        )
+        assert transform is not None
+
     def test_create_brats2023_preprocessing_reconstruction(self):
         """Test creating BraTS 2023 preprocessing pipeline for reconstruction."""
         transform = create_brats2023_preprocessing(
@@ -104,6 +112,21 @@ class TestMedMnist3DDataProvider:
             )
 
             MedMnist3DDataProvider(dataset_type="organ", input_size=32)
+
+    def test_valid_input_size_64(self):
+        """Test that input_size=64 is accepted (64x64x64 resolution)."""
+        from maskgit3d.infrastructure.data.medmnist_provider import (
+            MedMnist3DDataProvider,
+        )
+
+        provider = MedMnist3DDataProvider(
+            dataset_type="organ",
+            input_size=64,
+            spatial_size=(64, 64, 64),
+            batch_size=1,
+        )
+        assert provider.input_size == 64
+        assert provider.spatial_size == (64, 64, 64)
 
     @patch("maskgit3d.infrastructure.data.medmnist_provider._get_dataset_class")
     def test_supported_dataset_types(self, mock_get_class):
@@ -331,7 +354,9 @@ def _create_brats2023_patient(
 
     if include_seg:
         seg_data = np.random.randint(0, 4, size=(4, 4, 4)).astype(np.float32)
-        nibabel.save(nibabel.Nifti1Image(seg_data, affine), str(patient_dir / f"{patient_id}-seg.nii.gz"))  # type: ignore[attr-defined]
+        nibabel.save(
+            nibabel.Nifti1Image(seg_data, affine), str(patient_dir / f"{patient_id}-seg.nii.gz")
+        )  # type: ignore[attr-defined]
 
     return patient_dir
 
@@ -712,7 +737,9 @@ class TestBraTS2023BackwardCompat:
 
             data = np.random.rand(6, 6, 6).astype(np.float32)
             affine = np.eye(4)
-            nibabel.save(nibabel.Nifti1Image(data, affine), str(patient_dir / f"{patient_id}_t1.nii.gz"))  # type: ignore[attr-defined]
+            nibabel.save(
+                nibabel.Nifti1Image(data, affine), str(patient_dir / f"{patient_id}_t1.nii.gz")
+            )  # type: ignore[attr-defined]
 
             provider = BraTSDataProvider(
                 data_dir=tmpdir,
@@ -740,7 +767,9 @@ class TestBraTS2023BackwardCompat:
 
             data = np.random.rand(6, 6, 6).astype(np.float32)
             affine = np.eye(4)
-            nibabel.save(nibabel.Nifti1Image(data, affine), str(patient_dir / f"{patient_id}_t1.nii.gz"))  # type: ignore[attr-defined]
+            nibabel.save(
+                nibabel.Nifti1Image(data, affine), str(patient_dir / f"{patient_id}_t1.nii.gz")
+            )  # type: ignore[attr-defined]
 
             dataset = BraTS2021Dataset(
                 data_dir=Path(tmpdir),
