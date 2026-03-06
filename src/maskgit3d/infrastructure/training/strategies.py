@@ -286,6 +286,10 @@ class VQGANTrainingStrategy(TrainingStrategy):
         amp_dtype: str = "float16",
         grad_clip: float | None = None,
         enable_val_metrics: bool = False,
+        enable_fid_2p5d: bool = False,
+        fid_2p5d_model: str = "radimagenet_resnet50",
+        fid_2p5d_center_ratio: float | None = None,
+        fid_2p5d_xy_only: bool = False,
     ):
         """
         Initialize VQGAN training strategy.
@@ -301,6 +305,10 @@ class VQGANTrainingStrategy(TrainingStrategy):
             amp_dtype: Mixed precision dtype ("float16" or "bfloat16")
             grad_clip: Maximum gradient norm for clipping
             enable_val_metrics: Enable PSNR/SSIM/LPIPS metrics computation during validation
+            enable_fid_2p5d: Enable FID 2.5D metric computation during validation
+            fid_2p5d_model: Feature extraction model for FID 2.5D
+            fid_2p5d_center_ratio: Ratio of center slices to use for FID
+            fid_2p5d_xy_only: If True, only compute FID for XY plane
         """
         self.codebook_weight = codebook_weight
         self.pixel_loss_weight = pixel_loss_weight
@@ -310,6 +318,10 @@ class VQGANTrainingStrategy(TrainingStrategy):
         self.discriminator = discriminator
         self.global_step = 0
         self.enable_val_metrics = enable_val_metrics
+        self.enable_fid_2p5d = enable_fid_2p5d
+        self.fid_2p5d_model = fid_2p5d_model
+        self.fid_2p5d_center_ratio = fid_2p5d_center_ratio
+        self.fid_2p5d_xy_only = fid_2p5d_xy_only
 
         self.lpips_fn = None
         if perceptual_weight > 0:
@@ -352,6 +364,21 @@ class VQGANTrainingStrategy(TrainingStrategy):
                 logger.info("Enabled PSNR/SSIM/LPIPS metrics for validation")
             except Exception as e:
                 logger.warning(f"Failed to initialize validation metrics: {e}")
+
+        # FID 2.5D metric
+        self._fid_2p5d_metric: "FID2p5DMetric | None" = None
+        if enable_fid_2p5d:
+            try:
+                from maskgit3d.infrastructure.metrics.fid_2p5d import FID2p5DMetric
+
+                self._fid_2p5d_metric = FID2p5DMetric(
+                    model_name=fid_2p5d_model,
+                    center_slices_ratio=fid_2p5d_center_ratio,
+                    xy_only=fid_2p5d_xy_only,
+                )
+                logger.info(f"Enabled FID 2.5D metric with model: {fid_2p5d_model}")
+            except Exception as e:
+                logger.warning(f"Failed to initialize FID 2.5D metric: {e}")
 
     def _compute_perceptual_loss(self, x: torch.Tensor, xrec: torch.Tensor) -> torch.Tensor:
         if self.lpips_fn is None or self.perceptual_weight == 0:
@@ -587,7 +614,6 @@ class VQGANTrainingStrategy(TrainingStrategy):
                 processed = {"images": xrec.cpu().numpy()}
                 self._val_metrics.update(processed, x.cpu().numpy())
                 computed_metrics = self._val_metrics.compute()
-                # Add to metrics with val_ prefix
                 for key, value in computed_metrics.items():
                     if not key.startswith("val_"):
                         metrics[f"val_{key}"] = value
@@ -595,6 +621,16 @@ class VQGANTrainingStrategy(TrainingStrategy):
                         metrics[key] = value
             except Exception as e:
                 logger.warning(f"Failed to compute validation metrics: {e}")
+
+        # Compute FID 2.5D metric if enabled
+        if self._fid_2p5d_metric is not None:
+            try:
+                self._fid_2p5d_metric.update({"images": xrec.cpu().numpy()}, x.cpu().numpy())
+                fid_metrics = self._fid_2p5d_metric.compute()
+                for key, value in fid_metrics.items():
+                    metrics[f"val_{key}"] = value
+            except Exception as e:
+                logger.warning(f"Failed to compute FID 2.5D metric: {e}")
 
         return metrics
 
@@ -1067,17 +1103,25 @@ class MaskGITTrainingStrategy(TrainingStrategy):
         mixed_precision: bool = False,
         amp_dtype: str = "float16",
         grad_clip: float | None = None,
+        enable_fid_2p5d: bool = False,
+        fid_2p5d_model: str = "radimagenet_resnet50",
+        fid_2p5d_center_ratio: float | None = None,
+        fid_2p5d_xy_only: bool = False,
     ):
         """
         Initialize MaskGIT training strategy.
 
         Args:
-            mask_ratio: (DEPRECATED - for backward compatibility) Will be ignored if mask_schedule_type is set
-            mask_schedule_type: Type of gamma function for mask ratio scheduling ("cosine", "linear", "square", "cubic")
+            mask_ratio: (DEPRECATED) Will be ignored if mask_schedule_type is set
+            mask_schedule_type: Type of gamma function for mask ratio scheduling
             reconstruction_weight: Weight for reconstruction loss
             mixed_precision: Enable automatic mixed precision training
             amp_dtype: Mixed precision dtype ("float16" or "bfloat16")
             grad_clip: Maximum gradient norm for clipping
+            enable_fid_2p5d: Enable FID 2.5D metric computation during validation
+            fid_2p5d_model: Feature extraction model for FID 2.5D
+            fid_2p5d_center_ratio: Ratio of center slices to use for FID
+            fid_2p5d_xy_only: If True, only compute FID for XY plane
         """
         from maskgit3d.infrastructure.maskgit.scheduling import TrainingMaskScheduler
 
@@ -1090,6 +1134,21 @@ class MaskGITTrainingStrategy(TrainingStrategy):
             dtype=amp_dtype,
             grad_clip=grad_clip,
         )
+
+        self.enable_fid_2p5d = enable_fid_2p5d
+        self._fid_2p5d_metric: "FID2p5DMetric | None" = None
+        if enable_fid_2p5d:
+            try:
+                from maskgit3d.infrastructure.metrics.fid_2p5d import FID2p5DMetric
+
+                self._fid_2p5d_metric = FID2p5DMetric(
+                    model_name=fid_2p5d_model,
+                    center_slices_ratio=fid_2p5d_center_ratio,
+                    xy_only=fid_2p5d_xy_only,
+                )
+                logger.info(f"Enabled FID 2.5D metric with model: {fid_2p5d_model}")
+            except Exception as e:
+                logger.warning(f"Failed to initialize FID 2.5D metric: {e}")
 
     def train_step(  # type: ignore[override]
         self,
@@ -1200,10 +1259,22 @@ class MaskGITTrainingStrategy(TrainingStrategy):
                 tokens_pred = tokens.argmax(dim=1)
             token_acc = (tokens_pred == tokens).float().mean()
 
-        return {
+        metrics = {
             "val_loss": rec_loss.item(),
             "val_token_acc": token_acc.item(),
         }
+
+        # Compute FID 2.5D metric if enabled
+        if self._fid_2p5d_metric is not None:
+            try:
+                self._fid_2p5d_metric.update({"images": x_rec.cpu().numpy()}, x.cpu().numpy())
+                fid_metrics = self._fid_2p5d_metric.compute()
+                for key, value in fid_metrics.items():
+                    metrics[f"val_{key}"] = value
+            except Exception as e:
+                logger.warning(f"Failed to compute FID 2.5D metric: {e}")
+
+        return metrics
 
 
 class MaskGITInference(InferenceStrategy):

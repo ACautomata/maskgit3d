@@ -21,6 +21,7 @@ from maskgit3d.domain.interfaces import (
     TrainingStrategy,
     VQModelInterface,
 )
+from maskgit3d.infrastructure.metrics.fid_2p5d import FID2p5DMetric
 from maskgit3d.infrastructure.training.strategies import (
     AdamOptimizerFactory,
     AdamWOptimizerFactory,
@@ -290,6 +291,7 @@ class InferenceModule(Module):
 
         metrics = {
             "vqgan": VQGANMetrics,
+            "fid_2p5d": FID2p5DMetric,
         }
 
         if metrics_type not in metrics:
