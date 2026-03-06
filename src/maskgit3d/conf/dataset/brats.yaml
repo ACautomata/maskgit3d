@@ -18,6 +18,10 @@ dataset:
   image_size: 128
   in_channels: 4
   
+  # Training and inference size settings
+  crop_size: [128, 128, 128]  # Random crop size for training (D, H, W)
+  roi_size: [128, 128, 128]   # ROI size for inference sliding window (D, H, W)
+  
   # Data augmentation
   augmentation:
     enabled: true

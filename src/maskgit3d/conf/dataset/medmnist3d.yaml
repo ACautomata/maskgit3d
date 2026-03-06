@@ -15,8 +15,18 @@ dataset:
   split: train
   download: true
   
-  # Image parameters
-  image_size: 64
+  # Resolution settings
+  # input_size: Original MedMNIST resolution (28 or 64)
+  # image_size: Target spatial size after preprocessing
+  # Use input_size=64 for native 64x64x64 data (better quality)
+  # Use input_size=28 for legacy 28x28x28 data
+  input_size: 28  # 28 or 64 - MedMNIST native resolution
+  image_size: 64  # Target spatial size (D, H, W)
+  
+  # Training and inference size settings
+  crop_size: [64, 64, 64]  # Random crop size for training (D, H, W)
+  roi_size: [64, 64, 64]   # ROI size for inference sliding window (D, H, W)
+  
   in_channels: 1
   
   # Data augmentation
