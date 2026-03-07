@@ -3,7 +3,7 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="eval")
+@hydra.main(version_base=None, config_path="conf", config_name="eval")
 def main(cfg: DictConfig) -> None:
     datamodule = instantiate(cfg.data)
     task = instantiate(cfg.task)

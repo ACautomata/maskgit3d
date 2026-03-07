@@ -49,9 +49,8 @@ dev = [
 ]
 
 [project.scripts]
-maskgit3d-train = "maskgit3d.cli.train:main"
-maskgit3d-test = "maskgit3d.cli.test:main"
-maskgit3d = "maskgit3d.cli.main:main"
+maskgit3d-train = "maskgit3d.train:main"
+maskgit3d-test = "maskgit3d.eval:main"
 
 [project.urls]
 Homepage = "https://github.com/yourusername/maskgit-3d"
