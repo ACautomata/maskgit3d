@@ -9,3 +9,12 @@ gamma_type: cosine
 lr: 0.0002
 weight_decay: 0.05
 warmup_steps: 1000
+
+# Sliding window inference configuration for VQVAE encoding
+sliding_window:
+  enabled: false
+  roi_size: [64, 64, 64]
+  overlap: 0.25
+  mode: gaussian
+  sigma_scale: 0.125
+  sw_batch_size: 1
