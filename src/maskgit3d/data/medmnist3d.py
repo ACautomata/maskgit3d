@@ -7,8 +7,8 @@ from monai.transforms.compose import Compose
 from monai.transforms.utility.array import EnsureChannelFirst
 from torch.utils.data import DataLoader
 
-from maskgit3d.infrastructure.data import medmnist_provider
-from maskgit3d.infrastructure.data.transforms import (
+from . import medmnist_provider
+from .transforms import (
     create_medmnist_inference_preprocessing,
     create_medmnist_training_preprocessing,
 )

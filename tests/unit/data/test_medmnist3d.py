@@ -30,7 +30,7 @@ class _FakeMedMNIST3D:
 def test_medmnist3d_datamodule_fit_setup_and_dataloaders(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import maskgit3d.infrastructure.data.medmnist_provider as med_provider
+    import maskgit3d.data.medmnist_provider as med_provider
     from maskgit3d.data.medmnist3d import MedMNIST3DDataModule
 
     monkeypatch.setattr(med_provider, "_get_dataset_class", lambda _: _FakeMedMNIST3D)
@@ -62,7 +62,7 @@ def test_medmnist3d_datamodule_fit_setup_and_dataloaders(
 def test_medmnist3d_datamodule_test_setup_and_dataloader(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import maskgit3d.infrastructure.data.medmnist_provider as med_provider
+    import maskgit3d.data.medmnist_provider as med_provider
     from maskgit3d.data.medmnist3d import MedMNIST3DDataModule
 
     monkeypatch.setattr(med_provider, "_get_dataset_class", lambda _: _FakeMedMNIST3D)
