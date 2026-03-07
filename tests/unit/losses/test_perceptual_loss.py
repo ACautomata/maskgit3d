@@ -1,4 +1,5 @@
 """Unit tests for PerceptualLoss."""
+
 import torch
 
 from src.maskgit3d.losses.perceptual_loss import PerceptualLoss
@@ -50,3 +51,10 @@ def test_perceptual_loss_different_networks() -> None:
     for network in ["alex", "vgg"]:
         loss = PerceptualLoss(network=network, spatial_dims=3)
         assert loss is not None
+
+
+def test_perceptual_loss_parameters_frozen() -> None:
+    """Test that all LPIPS parameters are frozen (requires_grad=False)."""
+    loss = PerceptualLoss(network="alex", spatial_dims=2)
+    trainable = [n for n, p in loss.named_parameters() if p.requires_grad]
+    assert len(trainable) == 0, f"Found trainable params: {trainable}"

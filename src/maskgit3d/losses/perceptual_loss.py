@@ -43,6 +43,9 @@ class PerceptualLoss(nn.Module):
                 fake_3d_ratio=fake_3d_ratio,
                 pretrained=pretrained,
             )
+            # Freeze LPIPS weights - they should not be trained
+            for param in self.loss.parameters():
+                param.requires_grad = False
         else:
             self.loss = None
 
