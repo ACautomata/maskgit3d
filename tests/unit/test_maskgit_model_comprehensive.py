@@ -151,6 +151,7 @@ class TestMaskGITModelComprehensive:
         assert len(tokens.shape) == 4
 
     def test_encode_tokens_shifts_vq_indices_with_wraparound(self, model):
+        """Test that encode_tokens correctly shifts VQ indices with wraparound for Transformer."""
         x = torch.randn(1, 1, 16, 16, 16)
         fixed = torch.zeros(1, 4, 4, 4, dtype=torch.long)
         fixed[0, 0, 0, 0] = 0
@@ -160,9 +161,12 @@ class TestMaskGITModelComprehensive:
 
         tokens = model.encode_tokens(x)
 
+        # VQGAN tokens [0, codebook_size-1] -> Transformer tokens [1, codebook_size-1, 0] (with wraparound)
         expected = (fixed + 1) % model.codebook_size
         assert torch.equal(tokens, expected)
         assert tokens[0, 0, 0, 0].item() == 1
+        assert tokens[0, 0, 0, 1].item() == 2
+        assert tokens[0, 0, 0, 2].item() == 0  # 511 + 1 wraps to 0
 
     def test_decode_tokens_unshifts_transformer_indices_with_wraparound(self, model):
         tokens = torch.zeros(1, 4, 4, 4, dtype=torch.long)

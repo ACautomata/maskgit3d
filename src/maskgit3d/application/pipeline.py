@@ -8,14 +8,21 @@ the training, validation, and testing workflows using Lightning Fabric.
 import inspect
 import logging
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import torch
+import torch.nn as nn
 from tqdm import tqdm
 
-from maskgit3d.domain.interfaces import (DataProvider, InferenceStrategy,
-                                         Metrics, ModelInterface,
-                                         OptimizerFactory, TrainingStrategy)
+from maskgit3d.domain.interfaces import (
+    DataProvider,
+    GANOptimizerFactory,
+    InferenceStrategy,
+    Metrics,
+    ModelInterface,
+    OptimizerFactory,
+    TrainingStrategy,
+)
 from maskgit3d.infrastructure.checkpoints import load_checkpoint as load_ckpt
 
 logger = logging.getLogger(__name__)
@@ -339,7 +346,9 @@ class FabricTestPipeline:
 
             if isinstance(checkpoint, dict):
                 if "model" in checkpoint:
-                    pass
+                    self.model.load_state_dict(checkpoint["model"])
+                    print(f"Loaded checkpoint (Fabric format) from {checkpoint_path}")
+                    return
                 elif "model_state_dict" in checkpoint:
                     self.model.load_state_dict(checkpoint["model_state_dict"])
                     print(f"Loaded checkpoint (legacy format) from {checkpoint_path}")
@@ -593,8 +602,11 @@ class FabricTrainingPipeline:
 
         self._fabric: Any = None
         self._optimizer: torch.optim.Optimizer | None = None
+        self._discriminator_optimizer: torch.optim.Optimizer | None = None
+        self._discriminator: nn.Module | None = None
         self._current_epoch = 0
         self._global_step = 0
+        self._is_gan_training = False
 
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
@@ -629,10 +641,48 @@ class FabricTrainingPipeline:
         logger.info("Fabric launched successfully")
 
         logger.info("Creating optimizer...")
-        self._optimizer = self.optimizer_factory.create(self.model.parameters())
+
+        # Check if using GAN-style training (VQGAN)
+        if isinstance(self.optimizer_factory, GANOptimizerFactory):
+            self._is_gan_training = True
+            logger.info("Detected GAN training mode (VQGAN)")
+
+            # Get discriminator from training strategy if available
+            discriminator = getattr(self.training_strategy, "discriminator", None)
+
+            if discriminator is not None:
+                gen_params = self.model.parameters()
+                disc_params = discriminator.parameters()
+                opt_g, opt_d = cast(GANOptimizerFactory, self.optimizer_factory).create(
+                    gen_params, disc_params
+                )
+                self._optimizer = opt_g
+                self._discriminator_optimizer = opt_d
+                self._discriminator = discriminator
+                logger.info("Created separate optimizers for Generator and Discriminator")
+            else:
+                opt_g, _ = cast(GANOptimizerFactory, self.optimizer_factory).create(
+                    self.model.parameters(), None
+                )
+                self._optimizer = opt_g
+                logger.warning("GAN optimizer factory detected but no discriminator found")
+        else:
+            self._optimizer = self.optimizer_factory.create(self.model.parameters())
 
         logger.info("Setting up model and optimizer with Fabric...")
-        self.model, self._optimizer = self._fabric.setup(self.model, self._optimizer)
+
+        if self._discriminator_optimizer is not None and self._discriminator is not None:
+            self.model, self._discriminator, self._optimizer, self._discriminator_optimizer = (
+                self._fabric.setup(
+                    self.model, self._discriminator, self._optimizer, self._discriminator_optimizer
+                )
+            )
+            disc_attr = getattr(self.training_strategy, "discriminator", None)
+            if disc_attr is not None:
+                object.__setattr__(self.training_strategy, "discriminator", self._discriminator)
+        else:
+            self.model, self._optimizer = self._fabric.setup(self.model, self._optimizer)
+
         logger.info("Model and optimizer setup complete")
 
         logger.info("Setting up dataloaders...")
@@ -701,11 +751,22 @@ class FabricTrainingPipeline:
             optimizer = self._optimizer
             assert optimizer is not None
 
+            disc_metrics: dict[str, float] | None = None
+            if self._is_gan_training and self._discriminator_optimizer is not None:
+                if hasattr(self.training_strategy, "train_discriminator_step"):
+                    disc_step_method = getattr(self.training_strategy, "train_discriminator_step")
+                    disc_metrics = disc_step_method(
+                        self.model, batch, self._discriminator_optimizer
+                    )
+
             train_step_params = inspect.signature(self.training_strategy.train_step).parameters
             if len(train_step_params) >= 3:
                 step_output = self.training_strategy.train_step(self.model, batch, optimizer)
             else:
                 step_output = self.training_strategy.train_step(self.model, batch)  # type: ignore[call-arg]
+
+            if disc_metrics is not None and isinstance(step_output, dict):
+                step_output.update(disc_metrics)
 
             if isinstance(step_output, dict):
                 step_metrics = step_output
@@ -821,6 +882,9 @@ class FabricTrainingPipeline:
             "global_step": self._global_step,
         }
 
+        if self._discriminator_optimizer is not None:
+            checkpoint_data["discriminator_optimizer"] = self._discriminator_optimizer
+
         if "train_loss" in train_metrics and train_metrics["train_loss"]:
             checkpoint_data["train_loss"] = sum(train_metrics["train_loss"]) / len(
                 train_metrics["train_loss"]
@@ -840,6 +904,15 @@ class FabricTrainingPipeline:
 
         start_epoch = checkpoint.get("epoch", 0)
         self._global_step = checkpoint.get("global_step", 0)
+
+        if "optimizer" in checkpoint and self._optimizer is not None:
+            self._optimizer.load_state_dict(checkpoint["optimizer"].state_dict())
+
+        if "discriminator_optimizer" in checkpoint and self._discriminator_optimizer is not None:
+            self._discriminator_optimizer.load_state_dict(
+                checkpoint["discriminator_optimizer"].state_dict()
+            )
+
         print(f"Resumed from epoch {start_epoch}, checkpoint: {checkpoint_path}")
 
         return start_epoch
