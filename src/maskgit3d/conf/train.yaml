@@ -1,0 +1,16 @@
+defaults:
+  - _self_
+  - model: vqvae
+  - task: vqvae
+  - data: medmnist3d
+  - optimizer: adam
+  - optional scheduler: cosine
+  - trainer: default
+  - optional callbacks: default
+  - optional logger: tensorboard
+
+seed: 42
+ckpt_path: null
+scheduler: null
+callbacks: null
+logger: null
