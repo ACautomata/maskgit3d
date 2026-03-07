@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ..losses.gan_loss import GANLoss
+from ..losses.perceptual_loss import PerceptualLoss
 from ..losses.vq_loss import VQLoss
 from ..models.discriminator.patch_discriminator import PatchDiscriminator3D
 from ..models.vqvae import VQVAE
@@ -26,6 +27,9 @@ class VQVAETask(BaseTask):
         lambda_l1: float = 1.0,
         lambda_vq: float = 1.0,
         lambda_gan: float = 0.1,
+        use_perceptual: bool = True,
+        lambda_perceptual: float = 0.1,
+        perceptual_network: str = "alex",
     ):
         super().__init__()
         self.automatic_optimization = False
@@ -54,6 +58,11 @@ class VQVAETask(BaseTask):
         self.lambda_vq = lambda_vq
         self.lambda_gan = lambda_gan
 
+        self.use_perceptual = use_perceptual
+        self.lambda_perceptual = lambda_perceptual
+        if use_perceptual:
+            self.perceptual_loss = PerceptualLoss(network=perceptual_network)
+
     def forward(self, x: torch.Tensor):
         return self.vqvae(x)
 
@@ -79,6 +88,12 @@ class VQVAETask(BaseTask):
 
         loss_g = self.lambda_l1 * loss_l1 + self.lambda_vq * vq_loss + self.lambda_gan * loss_gan_g
 
+        if self.use_perceptual:
+            loss_perceptual = self.perceptual_loss(x_recon, x_real)
+            loss_g = loss_g + self.lambda_perceptual * loss_perceptual
+        else:
+            loss_perceptual = None
+
         opt_g.zero_grad()
         self.manual_backward(loss_g)
         opt_g.step()
@@ -97,6 +112,8 @@ class VQVAETask(BaseTask):
         self.log("train/loss_gan_g", loss_gan_g, prog_bar=True)
         self.log("train/loss_d", loss_d, prog_bar=True)
         self.log("train/loss_g", loss_g, prog_bar=True)
+        if loss_perceptual is not None:
+            self.log("train/loss_perceptual", loss_perceptual, prog_bar=True)
 
         return loss_g
 
