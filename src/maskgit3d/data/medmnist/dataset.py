@@ -1,8 +1,9 @@
 """MedMNIST-3D Dataset implementation."""
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Optional
 
 import numpy as np
 import torch
@@ -37,6 +38,7 @@ class MedMNIST3DDataset(Dataset):
         config: MedMNISTConfig,
         split: str,
         downloader: Optional[MedMNISTDownloader] = None,
+        transform: Optional[Callable] = None,
     ):
         """Initialize MedMNIST-3D dataset.
 
@@ -44,6 +46,7 @@ class MedMNIST3DDataset(Dataset):
             config: MedMNIST configuration
             split: Data split (train/val/test)
             downloader: Optional downloader instance
+            transform: Optional transform to apply to images
         """
         if split not in self.SPLIT_KEYS:
             raise ValueError(
@@ -54,11 +57,12 @@ class MedMNIST3DDataset(Dataset):
         self.split = split
         self.task_type = config.task_type
         self.downloader = downloader or MedMNISTDownloader(config)
+        self.transform = transform
 
         self.data_path = self.downloader.ensure_data_available(split)
         self.images, self.labels = self._load_data()
 
-    def _load_data(self) -> Tuple[np.ndarray, np.ndarray]:
+    def _load_data(self) -> tuple[np.ndarray, np.ndarray]:
         """Load images and labels from npz file."""
         data = np.load(self.data_path)
 
@@ -79,7 +83,7 @@ class MedMNIST3DDataset(Dataset):
         """Return number of samples in dataset."""
         return len(self.images)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Get a sample from the dataset.
 
         Args:
@@ -87,8 +91,8 @@ class MedMNIST3DDataset(Dataset):
 
         Returns:
             Tuple of (image, target) where:
-                - image: Tensor of shape (D, H, W) or (1, D, H, W)
-                - target: None for reconstruction, tensor of label for classification
+                - image: Tensor of shape (1, D, H, W), values in [-1, 1] if transform applied
+                - target: image.clone() for reconstruction, label tensor for classification
         """
         image = self.images[idx]
         label = self.labels[idx]
@@ -97,15 +101,17 @@ class MedMNIST3DDataset(Dataset):
         if isinstance(image, np.ndarray):
             image = torch.from_numpy(image).float()
 
-        # Normalize to [0, 1]
-        image = image / 255.0
-
         # Add channel dimension at front: (D, H, W) -> (1, D, H, W)
-        image = image.unsqueeze(0)
+        if image.dim() == 3:
+            image = image.unsqueeze(0)
+
+        # Apply transform if provided (handles normalization, crop, etc.)
+        if self.transform:
+            image = self.transform(image)
 
         # Return target based on task type
         if self.task_type == TaskType.RECONSTRUCTION:
-            target = None
+            target = image.clone()
         else:
             target = torch.tensor(label.item(), dtype=torch.long)
 

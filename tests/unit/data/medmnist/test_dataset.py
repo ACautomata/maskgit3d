@@ -1,10 +1,9 @@
 """Tests for MedMNIST Dataset."""
 
+import numpy as np
 import pytest
 import torch
-import numpy as np
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock
 
 from src.maskgit3d.data.medmnist.config import MedMNISTConfig, MedMNISTDatasetName, TaskType
 from src.maskgit3d.data.medmnist.dataset import MedMNIST3DDataset
@@ -23,7 +22,6 @@ class TestMedMNIST3DDataset:
     def fake_medmnist_data(self, tmp_path):
         """Create fake MedMNIST data file."""
         data_file = tmp_path / "organmnist3d_train.npz"
-        # Create 3D data: (samples, depth, height, width)
         images = np.random.randint(0, 255, size=(10, 28, 28, 28), dtype=np.uint8)
         labels = np.random.randint(0, 11, size=(10, 1))
         np.savez(data_file, train_images=images, train_labels=labels)
@@ -92,7 +90,8 @@ class TestMedMNIST3DDataset:
         assert len(dataset) == 10
 
     def test_getitem_reconstruction_returns_image_and_target(self, config, tmp_path):
-        """Test __getitem__ returns image and target for reconstruction."""
+        """Test __getitem__ returns image and image.clone() for reconstruction."""
+        config.task_type = TaskType.RECONSTRUCTION
         mock_downloader = Mock()
         data_file = tmp_path / "organmnist3d_train.npz"
         images = np.random.randint(0, 255, size=(10, 28, 28, 28), dtype=np.uint8)
@@ -109,7 +108,9 @@ class TestMedMNIST3DDataset:
         image, target = dataset[0]
         assert isinstance(image, torch.Tensor)
         assert image.shape == (1, 28, 28, 28)
-        assert target is None
+        assert isinstance(target, torch.Tensor)
+        assert target.shape == image.shape
+        assert torch.equal(image, target)
 
     def test_getitem_classification_returns_image_and_label(self, config, tmp_path):
         """Test __getitem__ returns image and label for classification."""

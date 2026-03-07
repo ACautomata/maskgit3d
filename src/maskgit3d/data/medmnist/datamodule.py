@@ -1,13 +1,15 @@
 """MedMNIST-3D DataModule for PyTorch Lightning."""
 
 import logging
-from typing import Optional, Tuple, Union
+from collections.abc import Callable
+from typing import Optional
 
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 
 from .config import MedMNISTConfig, MedMNISTDatasetName, TaskType
 from .dataset import MedMNIST3DDataset
+from .transforms import create_inference_transforms, create_training_transforms
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +23,12 @@ class MedMNIST3DDataModule(pl.LightningDataModule):
 
     def __init__(
         self,
-        dataset_name: Union[str, MedMNISTDatasetName] = MedMNISTDatasetName.ORGAN,
-        task_type: Union[str, TaskType] = TaskType.RECONSTRUCTION,
+        dataset_name: str | MedMNISTDatasetName = MedMNISTDatasetName.ORGAN,
+        task_type: str | TaskType = TaskType.RECONSTRUCTION,
         data_dir: str = "./data",
         download: bool = True,
-        crop_size: Tuple[int, int, int] = (32, 32, 32),
-        roi_size: Optional[Tuple[int, int, int]] = None,
+        crop_size: tuple[int, int, int] = (32, 32, 32),
+        roi_size: tuple[int, int, int] | None = None,
         batch_size: int = 32,
         num_workers: int = 8,
         pin_memory: bool = True,
@@ -71,11 +73,11 @@ class MedMNIST3DDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.pin_memory = pin_memory
 
-        self.train_dataset: Optional[MedMNIST3DDataset] = None
-        self.val_dataset: Optional[MedMNIST3DDataset] = None
-        self.test_dataset: Optional[MedMNIST3DDataset] = None
+        self.train_dataset: MedMNIST3DDataset | None = None
+        self.val_dataset: MedMNIST3DDataset | None = None
+        self.test_dataset: MedMNIST3DDataset | None = None
 
-    def setup(self, stage: Optional[str] = None) -> None:
+    def setup(self, stage: str | None = None) -> None:
         """Setup datasets for each stage.
 
         Args:
@@ -85,10 +87,12 @@ class MedMNIST3DDataModule(pl.LightningDataModule):
             self.train_dataset = MedMNIST3DDataset(
                 config=self.config,
                 split="train",
+                transform=create_training_transforms(self.config),
             )
             self.val_dataset = MedMNIST3DDataset(
                 config=self.config,
                 split="val",
+                transform=create_inference_transforms(self.config),
             )
             logger.info(
                 f"Setup datasets: train={len(self.train_dataset)}, val={len(self.val_dataset)}"
@@ -98,6 +102,7 @@ class MedMNIST3DDataModule(pl.LightningDataModule):
             self.test_dataset = MedMNIST3DDataset(
                 config=self.config,
                 split="test",
+                transform=create_inference_transforms(self.config),
             )
             logger.info(f"Setup dataset: test={len(self.test_dataset)}")
 
@@ -106,6 +111,7 @@ class MedMNIST3DDataModule(pl.LightningDataModule):
                 self.val_dataset = MedMNIST3DDataset(
                     config=self.config,
                     split="val",
+                    transform=create_inference_transforms(self.config),
                 )
 
     def train_dataloader(self) -> DataLoader:

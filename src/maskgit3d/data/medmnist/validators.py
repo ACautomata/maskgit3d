@@ -3,7 +3,6 @@
 import warnings
 from typing import Tuple
 
-
 VQVAE_DOWNSAMPLING_FACTOR = 16
 
 
