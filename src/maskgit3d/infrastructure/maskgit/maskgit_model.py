@@ -71,7 +71,16 @@ class MaskGITModel(MaskGITModelInterface):
         return self._latent_shape
 
     def _to_transformer_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
-        return (tokens.long() + 1) % self.codebook_size
+        """Convert VQGAN tokens to Transformer tokens."""
+        tokens = tokens.long()
+        # Validate input range: VQGAN tokens should be in [0, codebook_size - 1]
+        if torch.any(tokens < 0) or torch.any(tokens >= self.codebook_size):
+            raise ValueError(
+                f"VQGAN token indices out of range: expected [0, {self.codebook_size - 1}], "
+                f"got [{tokens.min().item()}, {tokens.max().item()}]"
+            )
+        # Shift by 1 and wrap: VQGAN [0, codebook_size-1] -> Transformer [1, codebook_size-1, 0]
+        return (tokens + 1) % self.codebook_size
 
     def _to_vq_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
         tokens = tokens.long()
@@ -126,7 +135,6 @@ class MaskGITModel(MaskGITModelInterface):
 
     def generate(
         self,
-        num_tokens: int | None = None,
         shape: tuple[int, ...] | None = None,
         temperature: float = 1.0,
         num_iterations: int = 12,
@@ -136,7 +144,6 @@ class MaskGITModel(MaskGITModelInterface):
         Generate images from random tokens using iterative decoding.
 
         Args:
-            num_tokens: Total number of tokens (D * H * W)
             shape: Shape of token grid (B, D, H, W)
             temperature: Sampling temperature
             num_iterations: Number of decoding iterations

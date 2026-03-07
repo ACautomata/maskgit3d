@@ -13,12 +13,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from maskgit3d.domain.interfaces import (DiscriminatorInterface,
-                                         GANOptimizerFactory,
-                                         InferenceStrategy,
-                                         MaskGITModelInterface, Metrics,
-                                         ModelInterface, OptimizerFactory,
-                                         TrainingStrategy, VQModelInterface)
+from maskgit3d.domain.interfaces import (
+    DiscriminatorInterface,
+    GANOptimizerFactory,
+    InferenceStrategy,
+    MaskGITModelInterface,
+    Metrics,
+    ModelInterface,
+    OptimizerFactory,
+    TrainingStrategy,
+    VQModelInterface,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +45,7 @@ class MixedPrecisionTrainer:
         enabled: bool = True,
         dtype: str = "float16",
         grad_clip: float | None = None,
+        use_fabric_amp: bool = False,
     ):
         """
         Initialize mixed precision trainer.
@@ -48,8 +54,11 @@ class MixedPrecisionTrainer:
             enabled: Whether to enable mixed precision
             dtype: Precision type ("float16" or "bfloat16")
             grad_clip: Maximum gradient norm for clipping
+            use_fabric_amp: If True, disable custom AMP and let Fabric handle it
         """
-        self.enabled = enabled and torch.cuda.is_available()
+        self.use_fabric_amp = use_fabric_amp
+        # Disable custom AMP if using Fabric's AMP
+        self.enabled = enabled and torch.cuda.is_available() and not use_fabric_amp
         self.dtype = dtype
         self.grad_clip = grad_clip
 
@@ -58,6 +67,8 @@ class MixedPrecisionTrainer:
                 self.scaler = torch.cuda.amp.GradScaler()
             else:
                 self.scaler = None  # BF16 doesn't need scaler
+        else:
+            self.scaler = None
 
     def autocast_context(self):
         """Get autocast context for forward pass."""
@@ -280,6 +291,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
         mixed_precision: bool = False,
         amp_dtype: str = "float16",
         grad_clip: float | None = None,
+        use_fabric_amp: bool = False,
         enable_val_metrics: bool = False,
         enable_fid_2p5d: bool = False,
         fid_2p5d_model: str = "radimagenet_resnet50",
@@ -299,6 +311,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
             mixed_precision: Enable automatic mixed precision training
             amp_dtype: Mixed precision dtype ("float16" or "bfloat16")
             grad_clip: Maximum gradient norm for clipping
+            use_fabric_amp: If True, disable custom AMP and let Fabric handle it
             enable_val_metrics: Enable PSNR/SSIM/LPIPS metrics computation during validation
             enable_fid_2p5d: Enable FID 2.5D metric computation during validation
             fid_2p5d_model: Feature extraction model for FID 2.5D
@@ -345,6 +358,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
             enabled=mixed_precision,
             dtype=amp_dtype,
             grad_clip=grad_clip,
+            use_fabric_amp=use_fabric_amp,
         )
 
         # Validation metrics
@@ -364,8 +378,7 @@ class VQGANTrainingStrategy(TrainingStrategy):
         self._fid_2p5d_metric: "FID2p5DMetric | None" = None
         if enable_fid_2p5d:
             try:
-                from maskgit3d.infrastructure.metrics.fid_2p5d import \
-                    FID2p5DMetric
+                from maskgit3d.infrastructure.metrics.fid_2p5d import FID2p5DMetric
 
                 self._fid_2p5d_metric = FID2p5DMetric(
                     model_name=fid_2p5d_model,
@@ -912,8 +925,7 @@ class VQGANMetrics(Metrics):
         target: torch.Tensor,
     ) -> torch.Tensor:
         try:
-            from torchmetrics.functional import \
-                structural_similarity_index_measure
+            from torchmetrics.functional import structural_similarity_index_measure
 
             ssim = structural_similarity_index_measure(
                 pred,
@@ -1102,6 +1114,7 @@ class MaskGITTrainingStrategy(TrainingStrategy):
         mixed_precision: bool = False,
         amp_dtype: str = "float16",
         grad_clip: float | None = None,
+        use_fabric_amp: bool = False,
         enable_fid_2p5d: bool = False,
         fid_2p5d_model: str = "radimagenet_resnet50",
         fid_2p5d_center_ratio: float | None = None,
@@ -1117,13 +1130,13 @@ class MaskGITTrainingStrategy(TrainingStrategy):
             mixed_precision: Enable automatic mixed precision training
             amp_dtype: Mixed precision dtype ("float16" or "bfloat16")
             grad_clip: Maximum gradient norm for clipping
+            use_fabric_amp: If True, disable custom AMP and let Fabric handle it
             enable_fid_2p5d: Enable FID 2.5D metric computation during validation
             fid_2p5d_model: Feature extraction model for FID 2.5D
             fid_2p5d_center_ratio: Ratio of center slices to use for FID
             fid_2p5d_xy_only: If True, only compute FID for XY plane
         """
-        from maskgit3d.infrastructure.maskgit.scheduling import \
-            TrainingMaskScheduler
+        from maskgit3d.infrastructure.maskgit.scheduling import TrainingMaskScheduler
 
         self.mask_schedule_type = mask_schedule_type
         self.mask_scheduler = TrainingMaskScheduler(gamma_type=mask_schedule_type)
@@ -1133,14 +1146,14 @@ class MaskGITTrainingStrategy(TrainingStrategy):
             enabled=mixed_precision,
             dtype=amp_dtype,
             grad_clip=grad_clip,
+            use_fabric_amp=use_fabric_amp,
         )
 
         self.enable_fid_2p5d = enable_fid_2p5d
         self._fid_2p5d_metric: "FID2p5DMetric | None" = None
         if enable_fid_2p5d:
             try:
-                from maskgit3d.infrastructure.metrics.fid_2p5d import \
-                    FID2p5DMetric
+                from maskgit3d.infrastructure.metrics.fid_2p5d import FID2p5DMetric
 
                 self._fid_2p5d_metric = FID2p5DMetric(
                     model_name=fid_2p5d_model,
@@ -1244,7 +1257,7 @@ class MaskGITTrainingStrategy(TrainingStrategy):
             # Compute reconstruction loss
             rec_loss = torch.abs(x - x_rec).mean()
 
-            # Encode and compute token accuracy
+            # Encode and compute token-level reconstruction accuracy
             tokens = maskgit_model.encode_tokens(x)
             # Flatten tokens to [B, N] if needed
             if tokens.dim() > 2:
@@ -1253,12 +1266,27 @@ class MaskGITTrainingStrategy(TrainingStrategy):
                 # Single batch or flattened - infer batch size
                 B = x.shape[0]
                 tokens = tokens.view(B, -1)
+
+            # Compute token accuracy using masked prediction (mirrors training)
             transformer = getattr(maskgit_model, "transformer", None)
             if transformer is not None:
-                tokens_pred = transformer.encode(tokens, return_logits=True).argmax(dim=-1)
+                mask_token_id = getattr(transformer, "mask_token_id", None)
+                if mask_token_id is None or not isinstance(mask_token_id, int):
+                    mask_token_id = tokens.shape[1] - 1
+                # Create a random mask (e.g., mask 25% of tokens)
+                mask_ratio = 0.25
+                mask = torch.rand(tokens.shape, device=tokens.device) < mask_ratio
+                masked_tokens = tokens.clone()
+                masked_tokens[mask] = mask_token_id
+
+                # Predict tokens
+                logits = transformer.encode(masked_tokens, return_logits=True)
+                tokens_pred = logits.argmax(dim=-1)
+
+                # Compute accuracy only on masked positions
+                token_acc = (tokens_pred[mask] == tokens[mask]).float().mean()
             else:
-                tokens_pred = tokens.argmax(dim=1)
-            token_acc = (tokens_pred == tokens).float().mean()
+                token_acc = torch.tensor(1.0, device=x.device)
 
         metrics = {
             "val_loss": rec_loss.item(),
@@ -1467,8 +1495,7 @@ class SlidingWindowVQGANInference(InferenceStrategy):
             )
 
             if self.original_size is not None:
-                from maskgit3d.infrastructure.data.padding import \
-                    compute_output_crop
+                from maskgit3d.infrastructure.data.padding import compute_output_crop
 
                 padded_size = (batch.shape[2], batch.shape[3], batch.shape[4])
                 crop_slices = compute_output_crop(self.original_size, padded_size)
@@ -1540,6 +1567,39 @@ class SlidingWindowVQGANLatentExtractor(InferenceStrategy):
         self.mode = mode
         self.sigma_scale = sigma_scale
         self.progress = progress
+
+    def _encode_patch(
+        self,
+        model: ModelInterface,
+        patch: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Encode a single patch to latent representation and indices.
+
+        Args:
+            model: VQModel instance with encoder, quant_conv, and quantize modules
+            patch: Input patch tensor [B, C, D, H, W]
+
+        Returns:
+            Tuple of (quantized_latent, indices)
+            - quantized_latent: [B, C', D', H', W']
+            - indices: [B * D' * H' * W'] flattened indices
+        """
+        vq_model = cast(VQModelInterface, model)
+
+        encoder = cast(nn.Module, getattr(vq_model, "encoder", None))
+        quant_conv = cast(nn.Module, getattr(vq_model, "quant_conv", None))
+        quantize = cast(nn.Module, getattr(vq_model, "quantize", None))
+
+        assert encoder is not None and quant_conv is not None and quantize is not None
+
+        with torch.no_grad():
+            h = encoder(patch)
+            h = quant_conv(h)
+            quantized_latent, _, info = quantize(h)
+            indices = info[2]
+
+        return quantized_latent, indices
 
     def predict(
         self,

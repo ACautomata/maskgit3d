@@ -489,7 +489,6 @@ class MaskGITModelInterface(ModelInterface):
     @abstractmethod
     def generate(
         self,
-        num_tokens: int | None = None,
         shape: tuple[int, ...] | None = None,
         temperature: float = 1.0,
         num_iterations: int = 12,
@@ -499,8 +498,7 @@ class MaskGITModelInterface(ModelInterface):
         Generate images from random tokens using iterative decoding.
 
         Args:
-            num_tokens: Total number of tokens (D * H * W)
-            shape: Shape of token grid (D, H, W)
+            shape: Shape of token grid (B, D, H, W)
             temperature: Sampling temperature
             num_iterations: Number of decoding iterations
 
