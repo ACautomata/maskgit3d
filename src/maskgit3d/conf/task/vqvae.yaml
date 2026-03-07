@@ -13,3 +13,12 @@ lambda_adv: 0.1
 use_perceptual: true
 lambda_perceptual: 0.1
 perceptual_network: alex
+
+# Sliding window inference configuration for test/predict
+sliding_window:
+  enabled: true
+  roi_size: [64, 64, 64]    # Window size (D, H, W), must be divisible by 16
+  overlap: 0.25             # Overlap ratio between windows (0.0 - 0.5)
+  mode: gaussian            # Blending mode: "constant", "gaussian", "nearest"
+  sigma_scale: 0.125        # Sigma scale for gaussian blending (relative to roi_size)
+  sw_batch_size: 1          # Batch size for sliding window inference
