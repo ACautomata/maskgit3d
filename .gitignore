@@ -173,7 +173,6 @@ Desktop.ini
 *.npz
 
 # Dataset directories
-data/
 datasets/
 raw_data/
 processed_data/

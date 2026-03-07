@@ -1,0 +1,6 @@
+_target_: src.maskgit3d.data.medmnist3d.MedMNIST3DDataModule
+data_dir: ${oc.env:DATA_DIR,./data}
+batch_size: 32
+num_workers: 8
+image_size: 28
+pin_memory: true
