@@ -76,10 +76,7 @@ class ImageMetrics:
 
         psnr = self._to_scalar(self.psnr_metric.aggregate())
 
-        if self._num_ssim_updates == 0:
-            ssim = 0.0
-        else:
-            ssim = self._to_scalar(self.ssim_metric.aggregate())
+        ssim = 0.0 if self._num_ssim_updates == 0 else self._to_scalar(self.ssim_metric.aggregate())
 
         return {"psnr": psnr, "ssim": ssim}
 

@@ -1,7 +1,5 @@
 """Vector Quantizer for VQ-VAE."""
 
-from typing import Tuple
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -30,7 +28,7 @@ class VectorQuantizer(nn.Module):
         self.embedding = nn.Embedding(num_embeddings, embedding_dim)
         self.embedding.weight.data.uniform_(-1.0 / num_embeddings, 1.0 / num_embeddings)
 
-    def forward(self, z: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, z: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Quantize continuous latent vectors.
 
         Args:
@@ -80,6 +78,6 @@ class VectorQuantizer(nn.Module):
         Returns:
             z_q: Quantized latents (B, C, D, H, W)
         """
-        z_q = self.embedding(indices)
+        z_q: torch.Tensor = self.embedding(indices)
         z_q = z_q.permute(0, 4, 1, 2, 3).contiguous()
         return z_q

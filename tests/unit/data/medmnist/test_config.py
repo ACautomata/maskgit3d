@@ -1,6 +1,5 @@
 """Tests for MedMNIST configuration."""
 
-import pytest
 from src.maskgit3d.data.medmnist.config import (
     MedMNISTConfig,
     MedMNISTDatasetName,

@@ -66,19 +66,19 @@ class TrainingTimeCallback(Callback):
         current_epoch = trainer.current_epoch
         if self.log_every_n_epochs <= 1 or current_epoch % self.log_every_n_epochs == 0:
             metrics: dict[str, Any] = {
-                "time/epoch_train_seconds": epoch_time,
-                "time/epoch_train_minutes": epoch_time / 60.0,
-                "time/total_train_seconds": self._total_train_time,
-                "time/total_train_minutes": self._total_train_time / 60.0,
+                "epoch_train_seconds:time": epoch_time,
+                "epoch_train_minutes:time": epoch_time / 60.0,
+                "total_train_seconds:time": self._total_train_time,
+                "total_train_minutes:time": self._total_train_time / 60.0,
             }
 
             # Estimate time to completion
             if self.estimate_time_to_completion:
                 etc_seconds = self._estimate_etc(trainer)
                 if etc_seconds is not None:
-                    metrics["time/etc_seconds"] = etc_seconds
-                    metrics["time/etc_minutes"] = etc_seconds / 60.0
-                    metrics["time/etc_hours"] = etc_seconds / 3600.0
+                    metrics["etc_seconds:time"] = etc_seconds
+                    metrics["etc_minutes:time"] = etc_seconds / 60.0
+                    metrics["etc_hours:time"] = etc_seconds / 3600.0
 
             trainer.logger.log_metrics(metrics, step=trainer.global_step)
 
@@ -103,10 +103,10 @@ class TrainingTimeCallback(Callback):
 
         trainer.logger.log_metrics(
             {
-                "time/validation_seconds": validation_time,
-                "time/validation_minutes": validation_time / 60.0,
-                "time/total_validation_seconds": self._total_validation_time,
-                "time/total_validation_minutes": self._total_validation_time / 60.0,
+                "validation_seconds:time": validation_time,
+                "validation_minutes:time": validation_time / 60.0,
+                "total_validation_seconds:time": self._total_validation_time,
+                "total_validation_minutes:time": self._total_validation_time / 60.0,
             },
             step=trainer.global_step,
         )
@@ -121,9 +121,9 @@ class TrainingTimeCallback(Callback):
         if trainer.logger is not None:
             trainer.logger.log_metrics(
                 {
-                    "time/total_elapsed_seconds": total_time,
-                    "time/total_elapsed_minutes": total_time / 60.0,
-                    "time/total_elapsed_hours": total_time / 3600.0,
+                    "total_elapsed_seconds:time": total_time,
+                    "total_elapsed_minutes:time": total_time / 60.0,
+                    "total_elapsed_hours:time": total_time / 3600.0,
                 },
                 step=trainer.global_step,
             )

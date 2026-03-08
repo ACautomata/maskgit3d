@@ -2,7 +2,7 @@
 
 import pytest
 import torch
-from lightning.pytorch import LightningModule, Trainer
+from lightning.pytorch import LightningModule
 
 from maskgit3d.callbacks.nan_detection import NaNDetectionCallback
 

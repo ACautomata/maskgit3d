@@ -41,4 +41,5 @@ class Encoder(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.encoder(x)
+        out: torch.Tensor = self.encoder(x)
+        return out

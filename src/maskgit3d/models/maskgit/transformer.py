@@ -219,8 +219,10 @@ class MaskGITTransformer(nn.Module):
         x = self.norm(x)
 
         if return_logits:
-            return self.head(x)
-        return x
+            logits_out: torch.Tensor = self.head(x)
+            return logits_out
+        output: torch.Tensor = x
+        return output
 
     def forward(
         self,
@@ -263,7 +265,7 @@ class MaskGITTransformer(nn.Module):
             x = block(x)
 
         x = self.norm(x)
-        logits = self.head(x)
+        logits: torch.Tensor = self.head(x)
 
         return logits
 

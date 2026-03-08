@@ -3,7 +3,7 @@
 import pytest
 import torch
 from monai.transforms.compose import Compose
-from monai.transforms.intensity.array import NormalizeIntensity, ScaleIntensityRange
+from monai.transforms.intensity.array import NormalizeIntensity
 from monai.transforms.spatial.array import Resize
 from monai.transforms.utility.array import EnsureChannelFirst, EnsureType
 

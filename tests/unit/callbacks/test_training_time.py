@@ -1,6 +1,5 @@
 """Tests for training time callback."""
 
-import time
 
 import pytest
 

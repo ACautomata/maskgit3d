@@ -149,14 +149,15 @@ class MaskGITTask(LightningModule):
 
         # Extract the center region
         B = x.shape[0]
-        indices = indices_padded[:B, 0, :latent_d, :latent_h, :latent_w]  # type: ignore[index]
+        indices = indices_padded[:B, 0, :latent_d, :latent_h, :latent_w]  # type: ignore[index,misc,call-overload]
 
         # Convert to long and shift for transformer
         indices = indices.long()
         return (indices + 1) % self.maskgit.codebook_size
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.maskgit(x)
+        out: torch.Tensor = self.maskgit(x)
+        return out
 
     def _extract_input_tensor(
         self,
@@ -166,7 +167,7 @@ class MaskGITTask(LightningModule):
             return batch[0]
         return batch
 
-    def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: torch.Tensor, batch_idx: int) -> dict[str, Any]:
         x = self._extract_input_tensor(batch)
 
         # Encode images to tokens using sliding window if enabled
@@ -175,13 +176,13 @@ class MaskGITTask(LightningModule):
         # Compute loss using tokens
         loss, metrics = self._compute_loss_from_tokens(tokens)
 
-        self.log("train/loss", loss, prog_bar=True)
-        self.log("train/mask_acc", metrics["mask_acc"], prog_bar=True)
-        self.log("train/mask_ratio", metrics["mask_ratio"], prog_bar=False)
-
         self.training_step_count += 1
 
-        return loss
+        # Return loss and metrics for callback processing
+        return {
+            "loss": loss,
+            "log_data": metrics,
+        }
 
     def _compute_loss_from_tokens(
         self,
@@ -237,7 +238,7 @@ class MaskGITTask(LightningModule):
         }
         return loss, metrics
 
-    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
+    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> dict[str, Any]:
         x = self._extract_input_tensor(batch)
 
         # Encode images to tokens using sliding window if enabled
@@ -246,16 +247,13 @@ class MaskGITTask(LightningModule):
         # Compute loss
         loss, metrics = self._compute_loss_from_tokens(tokens)
 
-        self.log("val_loss", loss, prog_bar=True)
-        self.log("val/mask_acc", metrics["mask_acc"], prog_bar=True)
+        # Return loss and metrics for callback processing
+        return {
+            "loss": loss,
+            "log_data": metrics,
+        }
 
-        # Generate a sample every N batches
-        if batch_idx == 0:
-            with torch.no_grad():
-                sample = self.maskgit.generate(shape=(1, 4, 4, 4), num_iterations=12)
-                self.log("val/sample_shape", sample.shape[0])
-
-    def test_step(self, batch: torch.Tensor, batch_idx: int) -> None:
+    def test_step(self, batch: torch.Tensor, batch_idx: int) -> dict[str, Any]:
         x = self._extract_input_tensor(batch)
 
         # Encode images to tokens using sliding window if enabled
@@ -264,12 +262,11 @@ class MaskGITTask(LightningModule):
         # Compute loss
         loss, metrics = self._compute_loss_from_tokens(tokens)
 
-        self.log("test/loss", loss, prog_bar=True)
-        self.log("test/mask_acc", metrics["mask_acc"], prog_bar=True)
-
-        # Log encoding info
-        if self.sliding_window_cfg.get("enabled", False):
-            self.log("test/sliding_window_enabled", 1.0)
+        # Return loss and metrics for callback processing
+        return {
+            "loss": loss,
+            "log_data": metrics,
+        }
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(

@@ -1,10 +1,11 @@
 """Tests for MedMNIST Downloader."""
 
+from unittest.mock import Mock, patch
+
 import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+
 from src.maskgit3d.data.medmnist.config import MedMNISTConfig, MedMNISTDatasetName
-from src.maskgit3d.data.medmnist.downloader import MedMNISTDownloader, DatasetInfo
+from src.maskgit3d.data.medmnist.downloader import MedMNISTDownloader
 
 
 class TestMedMNISTDownloader:

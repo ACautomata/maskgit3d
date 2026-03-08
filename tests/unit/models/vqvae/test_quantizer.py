@@ -1,7 +1,7 @@
 """Tests for VectorQuantizer."""
 
-import pytest
 import torch
+
 from src.maskgit3d.models.vqvae.quantizer import VectorQuantizer
 
 
@@ -24,7 +24,7 @@ def test_vector_quantizer_forward():
 
     # Check shapes
     assert z_q.shape == z.shape, f"z_q shape mismatch: {z_q.shape} vs {z.shape}"
-    assert indices.shape == (batch_size, *spatial_dims), f"indices shape mismatch"
+    assert indices.shape == (batch_size, *spatial_dims), "indices shape mismatch"
     assert vq_loss.dim() == 0, "vq_loss should be scalar"
 
 

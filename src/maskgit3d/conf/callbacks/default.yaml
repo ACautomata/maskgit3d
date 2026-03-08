@@ -6,6 +6,8 @@ defaults:
   - early_stopping
   - lr_monitor
   - nan_detection
+  - training_time
+  - gradient_norm
   - _self_
 
 # Rich progress bar for better visualization (optional)

@@ -6,7 +6,7 @@ https://github.com/CompVis/taming-transformers/blob/master/taming/modules/losses
 
 from __future__ import annotations
 
-from typing import Tuple
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -14,6 +14,9 @@ import torch.nn.functional as F
 
 from ..models.discriminator.patch_discriminator import PatchDiscriminator3D
 from .perceptual_loss import PerceptualLoss
+
+if TYPE_CHECKING:
+    from .perceptual_loss import PerceptualLoss
 
 
 def adopt_weight(weight: float, global_step: int, threshold: int = 0, value: float = 0.0) -> float:
@@ -80,6 +83,10 @@ def lsgan_g_loss(logits_fake: torch.Tensor) -> torch.Tensor:
 
 class VQPerceptualLoss(nn.Module):
     """Unified VQVAE loss module with adaptive GAN weighting.
+
+    Attributes:
+        perceptual_loss: Perceptual loss module or None if disabled.
+
 
     This module combines:
     - L1 reconstruction loss
@@ -177,12 +184,11 @@ class VQPerceptualLoss(nn.Module):
             self._gen_loss = lsgan_g_loss
 
         self.use_perceptual = use_perceptual
+        self.perceptual_loss: PerceptualLoss | None = None
         if use_perceptual:
             self.perceptual_loss = PerceptualLoss(network=perceptual_network)
             for param in self.perceptual_loss.parameters():
                 param.requires_grad = False
-        else:
-            self.perceptual_loss = None
 
     def calculate_adaptive_weight(
         self,
@@ -226,7 +232,7 @@ class VQPerceptualLoss(nn.Module):
         global_step: int,
         last_layer: nn.Parameter | None = None,
         split: str = "train",
-    ) -> Tuple[torch.Tensor, dict]:
+    ) -> tuple[torch.Tensor, dict]:
         """Compute loss for generator or discriminator update.
 
         Args:

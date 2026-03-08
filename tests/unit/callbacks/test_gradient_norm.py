@@ -1,8 +1,7 @@
 """Tests for gradient norm callback."""
 
-import pytest
 import torch
-from lightning.pytorch import LightningModule, Trainer
+from lightning.pytorch import LightningModule
 
 from maskgit3d.callbacks.gradient_norm import GradientNormCallback
 

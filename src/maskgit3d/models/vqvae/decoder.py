@@ -40,4 +40,5 @@ class Decoder(nn.Module):
         )
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
-        return self.decoder(z)
+        out: torch.Tensor = self.decoder(z)
+        return out

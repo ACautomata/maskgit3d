@@ -223,21 +223,19 @@ def test_vqvae_task_validation_step():
     )
     task.eval()
 
-    logger = MockLogger()
-    task.log = logger  # type: ignore[assignment]
-
     x = torch.randn(1, 1, 32, 32, 32)
 
     with torch.no_grad():
-        task.validation_step(x, 0)
+        outputs = task.validation_step(x, 0)
 
-    assert "val/loss_l1" in logger.logs, "val/loss_l1 should be logged"
-    assert "val/loss_vq" in logger.logs, "val/loss_vq should be logged"
-
-    assert isinstance(logger.logs["val/loss_l1"], torch.Tensor)
-    assert isinstance(logger.logs["val/loss_vq"], torch.Tensor)
-    assert logger.logs["val/loss_l1"].item() >= 0.0
-    assert logger.logs["val/loss_vq"].item() >= 0.0
+    assert isinstance(outputs, dict)
+    assert "loss" in outputs
+    assert "x_real" in outputs
+    assert "x_recon" in outputs
+    assert "vq_loss" in outputs
+    assert isinstance(outputs["x_real"], torch.Tensor)
+    assert isinstance(outputs["x_recon"], torch.Tensor)
+    assert isinstance(outputs["vq_loss"], torch.Tensor)
 
 
 def test_vqvae_task_validation_step_with_perceptual():
@@ -251,19 +249,16 @@ def test_vqvae_task_validation_step_with_perceptual():
     )
     task.eval()
 
-    logger = MockLogger()
-    task.log = logger  # type: ignore[assignment]
-
     x = torch.randn(1, 1, 32, 32, 32)
 
     with torch.no_grad():
-        task.validation_step(x, 0)
+        outputs = task.validation_step(x, 0)
 
-    assert "val/loss_l1" in logger.logs
-    assert "val/loss_vq" in logger.logs
-    assert "val/loss_perceptual" in logger.logs, (
-        "val/loss_perceptual should be logged when use_perceptual=True"
-    )
+    assert isinstance(outputs, dict)
+    assert "loss" in outputs
+    assert "x_real" in outputs
+    assert "x_recon" in outputs
+    assert "vq_loss" in outputs
 
 
 def test_vqvae_task_test_step_without_sliding_window():
@@ -278,21 +273,17 @@ def test_vqvae_task_test_step_without_sliding_window():
     )
     task.eval()
 
-    logger = MockLogger()
-    task.log = logger  # type: ignore[assignment]
-
     x = torch.randn(1, 1, 32, 32, 32)
 
     with torch.no_grad():
-        task.test_step(x, 0)
+        outputs = task.test_step(x, 0)
 
-    assert "test/loss_l1" in logger.logs, "test/loss_l1 should be logged"
-    assert "test/loss_vq" in logger.logs, "test/loss_vq should be logged"
-    assert "test/inference_time" in logger.logs, "test/inference_time should be logged"
-
-    assert logger.logs["test/loss_l1"].item() >= 0.0
-    assert logger.logs["test/loss_vq"].item() >= 0.0
-    assert logger.logs["test/inference_time"].item() >= 0.0
+    assert isinstance(outputs, dict)
+    assert "loss" in outputs
+    assert "x_real" in outputs
+    assert "x_recon" in outputs
+    assert "inference_time" in outputs
+    assert "use_sliding_window" in outputs
 
 
 @pytest.mark.integration
@@ -407,7 +398,7 @@ def test_vqvae_task_predict_step_returns_correct_values():
     assert output.isfinite().all(), "Output should contain finite values"
 
 
-def test_vqvae_task_test_step_cuda_memory_logged(monkeypatch):
+def test_vqvae_task_test_step_returns_no_cuda_memory_without_cuda(monkeypatch):
     monkeypatch.setattr("torch.cuda.is_available", lambda: False)
 
     task = VQVAETask(
@@ -421,15 +412,15 @@ def test_vqvae_task_test_step_cuda_memory_logged(monkeypatch):
     )
     task.eval()
 
-    logger = MockLogger()
-    task.log = logger  # type: ignore[assignment]
-
     x = torch.randn(1, 1, 32, 32, 32)
 
     with torch.no_grad():
-        task.test_step(x, 0)
+        outputs = task.test_step(x, 0)
 
-    assert "test/peak_memory_mb" not in logger.logs
+    assert isinstance(outputs, dict)
+    assert "x_real" in outputs
+    assert "x_recon" in outputs
+    assert "inference_time" in outputs
 
 
 def test_vqvae_task_get_decoder_last_layer():
@@ -557,20 +548,22 @@ def test_vqvae_task_training_step_with_optimizers_parameter():
     opt_g = torch.optim.Adam(list(task.vqvae.parameters()), lr=1e-4)
     opt_d = torch.optim.Adam(task.loss_fn.discriminator.parameters(), lr=1e-4)
 
-    def mock_log(name, val, **kw):
-        pass
-
-    task.log = mock_log  # type: ignore[assignment]
     task.manual_backward = lambda loss: loss.backward()  # type: ignore[assignment]
 
     batch = torch.randn(1, 1, 32, 32, 32)
-    loss = task.training_step(batch, 0, optimizers=[opt_g, opt_d])
+    outputs = task.training_step(batch, 0, optimizers=[opt_g, opt_d])
 
-    assert isinstance(loss, torch.Tensor)
-    assert loss.item() >= 0
+    assert isinstance(outputs, dict)
+    assert "loss" in outputs
+    assert "x_real" in outputs
+    assert "x_recon" in outputs
+    assert "vq_loss" in outputs
+    assert "last_layer" in outputs
+    assert isinstance(outputs["loss"], torch.Tensor)
+    assert outputs["loss"].item() >= 0
 
 
-def test_vqvae_task_test_step_cuda_memory_logged_with_cuda(monkeypatch):
+def test_vqvae_task_test_step_returns_cuda_memory_with_cuda(monkeypatch):
     monkeypatch.setattr("torch.cuda.is_available", lambda: True)
     monkeypatch.setattr("torch.cuda.reset_peak_memory_stats", lambda: None)
     monkeypatch.setattr("torch.cuda.max_memory_allocated", lambda: 1024 * 1024)
@@ -586,16 +579,15 @@ def test_vqvae_task_test_step_cuda_memory_logged_with_cuda(monkeypatch):
     )
     task.eval()
 
-    logger = MockLogger()
-    task.log = logger  # type: ignore[assignment]
-
     x = torch.randn(1, 1, 32, 32, 32)
 
     with torch.no_grad():
-        task.test_step(x, 0)
+        outputs = task.test_step(x, 0)
 
-    assert "test/peak_memory_mb" in logger.logs
-    assert logger.logs["test/peak_memory_mb"].item() == 1.0
+    assert isinstance(outputs, dict)
+    assert "x_real" in outputs
+    assert "x_recon" in outputs
+    assert "inference_time" in outputs
 
 
 def test_vqvae_task_sliding_window_inferer_reuse():

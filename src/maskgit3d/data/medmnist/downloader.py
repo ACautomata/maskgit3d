@@ -4,7 +4,6 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from .config import MedMNISTConfig, MedMNISTDatasetName
 
@@ -18,7 +17,7 @@ class DatasetInfo:
     name: MedMNISTDatasetName
     split: str  # train/val/test
     file_path: Path
-    md5: Optional[str] = None
+    md5: str | None = None
     num_samples: int = 0
 
 

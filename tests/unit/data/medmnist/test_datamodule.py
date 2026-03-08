@@ -1,12 +1,11 @@
 """Tests for MedMNIST DataModule."""
 
-import pytest
-import torch
-import numpy as np
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
-from src.maskgit3d.data.medmnist.config import MedMNISTConfig, MedMNISTDatasetName, TaskType
+import numpy as np
+import pytest
+
+from src.maskgit3d.data.medmnist.config import TaskType
 from src.maskgit3d.data.medmnist.datamodule import MedMNIST3DDataModule
 
 

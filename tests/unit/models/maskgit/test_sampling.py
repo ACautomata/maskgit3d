@@ -4,8 +4,8 @@ import pytest
 import torch
 
 from src.maskgit3d.models.maskgit import (
-    MaskGITTransformer,
     MaskGITSampler,
+    MaskGITTransformer,
     create_mask_schedule,
 )
 

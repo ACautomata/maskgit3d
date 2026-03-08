@@ -1,8 +1,6 @@
 """MedMNIST-3D DataModule for PyTorch Lightning."""
 
 import logging
-from collections.abc import Callable
-from typing import Optional
 
 from lightning import LightningDataModule
 from torch.utils.data import DataLoader
@@ -103,13 +101,12 @@ class MedMNIST3DDataModule(LightningDataModule):
             )
             logger.info(f"Setup dataset: test={len(self.test_dataset)}")
 
-        if stage == "validate" or stage is None:
-            if self.val_dataset is None:
-                self.val_dataset = MedMNIST3DDataset(
-                    config=self.config,
-                    split="val",
-                    transform=create_inference_transforms(self.config),
-                )
+        if (stage == "validate" or stage is None) and self.val_dataset is None:
+            self.val_dataset = MedMNIST3DDataset(
+                config=self.config,
+                split="val",
+                transform=create_inference_transforms(self.config),
+            )
 
     def train_dataloader(self) -> DataLoader:
         """Create training DataLoader.

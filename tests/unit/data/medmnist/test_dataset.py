@@ -1,9 +1,10 @@
 """Tests for MedMNIST Dataset."""
 
+from unittest.mock import Mock
+
 import numpy as np
 import pytest
 import torch
-from unittest.mock import Mock
 
 from src.maskgit3d.data.medmnist.config import MedMNISTConfig, MedMNISTDatasetName, TaskType
 from src.maskgit3d.data.medmnist.dataset import MedMNIST3DDataset

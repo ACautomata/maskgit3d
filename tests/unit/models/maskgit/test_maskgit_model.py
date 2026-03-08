@@ -3,8 +3,8 @@
 import pytest
 import torch
 
-from maskgit3d.models.vqvae import VQVAE
 from maskgit3d.models.maskgit import MaskGIT
+from maskgit3d.models.vqvae import VQVAE
 
 
 @pytest.fixture

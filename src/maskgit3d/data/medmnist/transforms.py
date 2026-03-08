@@ -1,9 +1,9 @@
 """MONAI transforms for MedMNIST-3D."""
 
-from typing import Callable
+from collections.abc import Callable
 
-from monai.transforms.croppad.array import RandSpatialCrop, SpatialPad
 from monai.transforms.compose import Compose
+from monai.transforms.croppad.array import RandSpatialCrop, SpatialPad
 from monai.transforms.intensity.array import ScaleIntensity, ScaleIntensityRange
 from monai.transforms.spatial.array import Resize
 from monai.transforms.utility.array import EnsureType

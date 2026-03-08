@@ -1,17 +1,16 @@
 """Tests for MedMNIST transforms."""
 
-import pytest
-import torch
 import warnings
-from unittest.mock import patch
+
+import torch
 
 from src.maskgit3d.data.medmnist.config import MedMNISTConfig, MedMNISTDatasetName
 from src.maskgit3d.data.medmnist.transforms import (
-    create_training_transforms,
     create_inference_transforms,
+    create_medmnist_inference_preprocessing,
     create_medmnist_preprocessing,
     create_medmnist_training_preprocessing,
-    create_medmnist_inference_preprocessing,
+    create_training_transforms,
 )
 
 

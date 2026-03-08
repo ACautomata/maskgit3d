@@ -1,7 +1,7 @@
 """Gradient norm monitoring callback."""
 
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 from lightning.pytorch import Callback, LightningModule, Trainer
@@ -47,8 +47,8 @@ class GradientNormCallback(Callback):
         self,
         trainer: Trainer,
         pl_module: LightningModule,
-        outputs: torch.Tensor | dict[str, torch.Tensor],
-        batch: torch.Tensor | tuple[torch.Tensor, ...] | list[torch.Tensor],
+        outputs: Any,
+        batch: Any,
         batch_idx: int,
     ) -> None:
         """Log gradient norms at specified intervals."""
@@ -79,9 +79,9 @@ class GradientNormCallback(Callback):
         """Compute and log total gradient norm."""
         total_norm = self._compute_total_norm(pl_module)
 
-        if torch.isfinite(total_norm):
+        if torch.isfinite(total_norm) and trainer.logger is not None:
             trainer.logger.log_metrics(
-                {"gradients/total_norm": total_norm.item()},
+                {"total_norm:gradients": total_norm.item()},
                 step=trainer.global_step,
             )
 
@@ -97,7 +97,7 @@ class GradientNormCallback(Callback):
         if not grads:
             return torch.tensor(0.0)
 
-        total_norm = torch.stack(grads).norm(self.norm_type)
+        total_norm: torch.Tensor = torch.stack(grads).norm(self.norm_type)
         return total_norm
 
     def _log_per_layer_norms(self, trainer: Trainer, pl_module: LightningModule) -> None:
@@ -113,9 +113,9 @@ class GradientNormCallback(Callback):
 
                 if torch.isfinite(grad_norm):
                     clean_name = name.replace(".", "_")
-                    norms[f"gradients/{clean_name}"] = grad_norm.item()
+                    norms[f"{clean_name}:gradients"] = grad_norm.item()
 
-        if norms:
+        if norms and trainer.logger is not None:
             trainer.logger.log_metrics(norms, step=trainer.global_step)
 
     def _get_parameters(self, pl_module: LightningModule):

@@ -1,7 +1,6 @@
 """VQVAE training task with GAN-based manual optimization and adaptive weighting."""
 
-import time
-from typing import Any, List
+from typing import Any
 
 import torch
 import torch.nn.functional as F
@@ -29,7 +28,8 @@ def compute_downsampling_factor(
         Downsampling factor (e.g., 16 for 4 downsampling layers)
     """
     num_down_layers = len(channel_multipliers) - 1
-    return 2**num_down_layers
+    result: int = 2**num_down_layers
+    return result
 
 
 def validate_crop_size(
@@ -252,8 +252,8 @@ class VQVAETask(BaseTask):
         self,
         batch: torch.Tensor,
         batch_idx: int,
-        optimizers: List[torch.optim.Optimizer] | None = None,
-    ):
+        optimizers: list[torch.optim.Optimizer] | None = None,
+    ) -> dict[str, Any]:
         if optimizers is None:
             optimizers = self.optimizers()  # type: ignore[assignment]
 
@@ -262,41 +262,53 @@ class VQVAETask(BaseTask):
         x_real = batch
         last_layer = self._get_decoder_last_layer()
 
-        loss_g, log_g = self._shared_step_generator(x_real, batch_idx, "train", last_layer)
+        x_recon, vq_loss = self.vqvae(x_real)
+
+        loss_g, _ = self.loss_fn(
+            inputs=x_real,
+            reconstructions=x_recon,
+            vq_loss=vq_loss,
+            optimizer_idx=0,
+            global_step=self.global_step,
+            last_layer=last_layer,
+            split="train",
+        )
         opt_g.zero_grad()
         self.manual_backward(loss_g)
         opt_g.step()
 
-        x_recon, vq_loss = self.vqvae(x_real)
-        loss_d, log_d = self._shared_step_discriminator(x_real, x_recon, vq_loss, "train")
+        loss_d, _ = self.loss_fn(
+            inputs=x_real,
+            reconstructions=x_recon,
+            vq_loss=vq_loss,
+            optimizer_idx=1,
+            global_step=self.global_step,
+            split="train",
+        )
         opt_d.zero_grad()
         self.manual_backward(loss_d)
         opt_d.step()
 
-        for k, v in {**log_g, **log_d}.items():
-            if isinstance(v, torch.Tensor):
-                self.log(k, v, prog_bar=True)
+        return {
+            "loss": loss_g,
+            "x_real": x_real,
+            "x_recon": x_recon,
+            "vq_loss": vq_loss,
+            "last_layer": last_layer,
+        }
 
-        return loss_g
-
-    def validation_step(self, batch: torch.Tensor, batch_idx: int):
+    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> dict[str, Any]:
         x_real = batch
         x_recon, vq_loss = self.vqvae(x_real)
 
-        loss_l1 = F.l1_loss(x_recon, x_real)
-        # Total validation loss for checkpointing/early stopping
-        val_loss = loss_l1 + vq_loss
+        return {
+            "loss": vq_loss,
+            "x_real": x_real,
+            "x_recon": x_recon,
+            "vq_loss": vq_loss,
+        }
 
-        self.log("val_loss", val_loss, prog_bar=True)
-        self.log("val/loss_l1", loss_l1, prog_bar=True)
-        self.log("val/loss_vq", vq_loss, prog_bar=True)
-
-        if self.loss_fn.use_perceptual and self.loss_fn.perceptual_loss is not None:
-            with torch.no_grad():
-                loss_perceptual = self.loss_fn.perceptual_loss(x_recon, x_real)
-            self.log("val/loss_perceptual", loss_perceptual, prog_bar=True)
-
-    def configure_optimizers(self) -> List[torch.optim.Optimizer]:
+    def configure_optimizers(self) -> list[torch.optim.Optimizer]:
         opt_g = torch.optim.Adam(
             list(self.vqvae.encoder.parameters())
             + list(self.vqvae.quant_conv.parameters())
@@ -311,7 +323,7 @@ class VQVAETask(BaseTask):
         )
         return [opt_g, opt_d]
 
-    def test_step(self, batch: torch.Tensor, batch_idx: int):
+    def test_step(self, batch: torch.Tensor, batch_idx: int) -> dict[str, Any]:
         x_real = batch
         original_shape = x_real.shape[2:]
         inferer = self._get_sliding_window_inferer()
@@ -320,76 +332,41 @@ class VQVAETask(BaseTask):
             x_real_padded = self._get_divisible_pad()(x_real)
             padded_shape = x_real_padded.shape[2:]
 
-            start_time = time.time()
             if torch.cuda.is_available():
                 torch.cuda.reset_peak_memory_stats()
 
             def model_forward(x: torch.Tensor) -> torch.Tensor:
-                recon, _ = self.vqvae(x)
+                recon: torch.Tensor
+                recon, _ = self.vqvae(x)  # type: ignore[misc]
                 return recon
 
             x_recon_padded = inferer(x_real_padded, model_forward)
-            inference_time = time.time() - start_time
 
             pad_d = padded_shape[0] - original_shape[0]
             pad_h = padded_shape[1] - original_shape[1]
             pad_w = padded_shape[2] - original_shape[2]
-            x_recon = x_recon_padded[  # type: ignore[index]
+            x_recon = x_recon_padded[  # type: ignore[call-overload]
                 :,
                 :,
                 pad_d // 2 : pad_d // 2 + original_shape[0],
                 pad_h // 2 : pad_h // 2 + original_shape[1],
                 pad_w // 2 : pad_w // 2 + original_shape[2],
             ]
-            x_real_for_loss = x_real
         else:
-            start_time = time.time()
-            if torch.cuda.is_available():
-                torch.cuda.reset_peak_memory_stats()
+            x_recon, _ = self.vqvae(x_real)  # type: ignore[misc]
 
-            x_recon, vq_loss = self.vqvae(x_real)
-            x_real_for_loss = x_real
-            inference_time = time.time() - start_time
+        loss = F.l1_loss(x_recon, x_real)
 
-        loss_l1 = F.l1_loss(x_recon, x_real_for_loss)
-        with torch.no_grad():
-            _, vq_loss, _ = self.vqvae.encode(x_real_for_loss)
-            vq_loss = vq_loss if isinstance(vq_loss, torch.Tensor) else torch.tensor(0.0)
-
-        self.log("test/loss_l1", loss_l1, prog_bar=True)
-        self.log("test/loss_vq", vq_loss, prog_bar=True)
-        self.log("test/inference_time", inference_time, prog_bar=True)
-
-        if torch.cuda.is_available():
-            peak_memory = torch.cuda.max_memory_allocated() / 1024**2
-            self.log("test/peak_memory_mb", peak_memory, prog_bar=True)
+        return {
+            "loss": loss,
+            "x_real": x_real,
+            "x_recon": x_recon,
+            "inference_time": 0.0,
+            "use_sliding_window": inferer is not None,
+        }
 
     def predict_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
         x_real = batch
-        original_shape = x_real.shape[2:]
-        inferer = self._get_sliding_window_inferer()
-
-        if inferer is not None:
-            x_real_padded = self._get_divisible_pad()(x_real)
-            padded_shape = x_real_padded.shape[2:]
-
-            def model_forward(x: torch.Tensor) -> torch.Tensor:
-                recon, _ = self.vqvae(x)
-                return recon
-
-            x_recon_padded = inferer(x_real_padded, model_forward)
-
-            pad_d = padded_shape[0] - original_shape[0]
-            pad_h = padded_shape[1] - original_shape[1]
-            pad_w = padded_shape[2] - original_shape[2]
-            x_recon = x_recon_padded[  # type: ignore[index]
-                :,
-                :,
-                pad_d // 2 : pad_d // 2 + original_shape[0],
-                pad_h // 2 : pad_h // 2 + original_shape[1],
-                pad_w // 2 : pad_w // 2 + original_shape[2],
-            ]
-        else:
-            x_recon, _ = self.vqvae(x_real)
-
+        x_recon: torch.Tensor
+        x_recon, _ = self.vqvae(x_real)  # type: ignore[misc]
         return x_recon

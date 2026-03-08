@@ -4,7 +4,6 @@ import warnings
 
 from src.maskgit3d.data.medmnist.validators import (
     validate_crop_size_for_vqvae,
-    VQVAE_DOWNSAMPLING_FACTOR,
 )
 
 

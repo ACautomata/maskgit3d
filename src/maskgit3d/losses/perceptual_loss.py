@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import torch
+from monai.losses.perceptual import PerceptualLoss as MONAIPerceptualLoss
 from torch import nn
-
-from monai.losses import PerceptualLoss as MONAIPerceptualLoss
 
 
 class PerceptualLoss(nn.Module):
@@ -62,4 +61,5 @@ class PerceptualLoss(nn.Module):
         if not self.enabled or self.loss is None:
             return torch.tensor(0.0, device=pred.device, requires_grad=False)
 
-        return self.loss(pred, target)
+        loss: torch.Tensor = self.loss(pred, target)
+        return loss

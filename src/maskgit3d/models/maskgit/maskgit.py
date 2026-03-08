@@ -9,8 +9,8 @@ import torch
 import torch.nn as nn
 
 from ..vqvae import VQVAE
-from .scheduling import TrainingMaskScheduler
 from .sampling import MaskGITSampler
+from .scheduling import TrainingMaskScheduler
 from .transformer import MaskGITTransformer
 
 
@@ -142,7 +142,7 @@ class MaskGIT(nn.Module):
         self,
         x: torch.Tensor,
         mask_ratio: float | None = None,
-    ) -> tuple[torch.Tensor, dict[str, float]]:
+    ) -> tuple[torch.Tensor, dict[str, float | int]]:
         """Compute MaskGIT cross-entropy loss and detached scalar metrics.
 
         Args:
@@ -200,10 +200,11 @@ class MaskGIT(nn.Module):
             preds = masked_logits.argmax(dim=-1)
             acc = (preds == masked_targets).float().mean()
 
-        metrics = {
+        actual_mask_ratio: float = float(mask.float().mean().item())
+        metrics: dict[str, float] = {
             "loss": loss.item(),
             "mask_acc": acc.item(),
-            "mask_ratio": mask if isinstance(mask_ratio, float) else mask_ratio,
+            "mask_ratio": actual_mask_ratio,
         }
         return loss, metrics
 

@@ -1,13 +1,12 @@
 """Validators for MedMNIST data configuration."""
 
 import warnings
-from typing import Tuple
 
 VQVAE_DOWNSAMPLING_FACTOR = 16
 
 
 def validate_crop_size_for_vqvae(
-    crop_size: Tuple[int, int, int],
+    crop_size: tuple[int, int, int],
     raise_error: bool = False,
 ) -> bool:
     """Validate that crop_size is compatible with VQVAE downsampling.
@@ -37,6 +36,6 @@ def validate_crop_size_for_vqvae(
             )
             if raise_error:
                 raise ValueError(msg)
-            warnings.warn(msg, UserWarning)
+            warnings.warn(msg, UserWarning, stacklevel=2)
             return False
     return True

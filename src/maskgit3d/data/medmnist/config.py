@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Tuple
 
 
 class MedMNISTDatasetName(str, Enum):
@@ -46,7 +45,7 @@ class MedMNISTConfig:
     task_type: TaskType = TaskType.RECONSTRUCTION
     data_dir: str = "./data"
     download: bool = True
-    crop_size: Tuple[int, int, int] = (32, 32, 32)
+    crop_size: tuple[int, int, int] = (32, 32, 32)
     batch_size: int = 32
     num_workers: int = 8
     pin_memory: bool = True

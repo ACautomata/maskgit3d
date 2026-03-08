@@ -1,13 +1,8 @@
 """Integration tests for callback configuration and trainer integration."""
 
-import os
-from unittest.mock import Mock, patch
-
-import pytest
 from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
-from lightning.pytorch import Trainer
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 
 from maskgit3d import train as train_module
 
@@ -41,7 +36,7 @@ class TestCallbackIntegration:
             callbacks_dict = instantiate(cfg.callbacks)
             callbacks_list = list(callbacks_dict.values())
 
-            assert len(callbacks_list) == 5
+            assert len(callbacks_list) == 7
             assert all(hasattr(cb, "on_train_batch_end") for cb in callbacks_list)
 
     def test_trainer_creation_with_callbacks(self):
@@ -58,26 +53,26 @@ class TestCallbackIntegration:
             # Should not raise
             trainer = instantiate(cfg.trainer, callbacks=callbacks, logger=False)
             assert trainer is not None
-            assert len(trainer.callbacks) >= 5
+            assert len(trainer.callbacks) >= 7
 
-    def test_vqvae_logs_val_loss(self):
-        """Test that VQVAE task logs 'val_loss' for callbacks to monitor."""
+    def test_vqvae_returns_val_loss(self):
+        """Test that VQVAE task returns val_loss for callbacks to monitor."""
+        # Check validation_step method returns dict with loss
+        import inspect
+
         from maskgit3d.tasks.vqvae_task import VQVAETask
 
-        # Check validation_step method exists and logs val_loss
+        source = inspect.getsource(VQVAETask.validation_step)
+        assert '"loss":' in source and "vq_loss" in source
+
+    def test_maskgit_returns_val_loss(self):
+        """Test that MaskGIT task returns val_loss for callbacks to monitor."""
         import inspect
 
-        source = inspect.getsource(VQVAETask.validation_step)
-        assert 'self.log("val_loss"' in source
-
-    def test_maskgit_logs_val_loss(self):
-        """Test that MaskGIT task logs 'val_loss' for callbacks to monitor."""
         from maskgit3d.tasks.maskgit_task import MaskGITTask
 
-        import inspect
-
         source = inspect.getsource(MaskGITTask.validation_step)
-        assert 'self.log("val_loss"' in source
+        assert '"loss": loss' in source
 
     def test_checkpoint_monitor_metric_exists(self):
         """Test that checkpoint config monitors a metric that tasks log."""
@@ -134,10 +129,7 @@ class TestCallbackIntegration:
 
         def fake_instantiate(config, **kwargs):
             # Handle DictConfig from Hydra
-            if hasattr(config, "get"):
-                target = config.get("_target_")
-            else:
-                target = None
+            target = config.get("_target_") if hasattr(config, "get") else None
 
             if target == "tests.DummyDataModule":
                 return DummyDataModule()

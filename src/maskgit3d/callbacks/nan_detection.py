@@ -1,7 +1,7 @@
 """NaN/Inf detection callback for monitoring training stability."""
 
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 from lightning.pytorch import Callback, LightningModule, Trainer
@@ -57,7 +57,7 @@ class NaNDetectionCallback(Callback):
         self,
         trainer: Trainer,
         pl_module: LightningModule,
-        batch: torch.Tensor | tuple[torch.Tensor, ...] | list[torch.Tensor],
+        batch: Any,
         batch_idx: int,
     ) -> None:
         """Track batch index."""
@@ -67,8 +67,8 @@ class NaNDetectionCallback(Callback):
         self,
         trainer: Trainer,
         pl_module: LightningModule,
-        outputs: torch.Tensor | dict[str, torch.Tensor],
-        batch: torch.Tensor | tuple[torch.Tensor, ...] | list[torch.Tensor],
+        outputs: Any,
+        batch: Any,
         batch_idx: int,
     ) -> None:
         """Check for NaN/Inf in loss after each batch."""
@@ -150,7 +150,7 @@ class NaNDetectionCallback(Callback):
             and self._trainer.logger is not None
         ):
             self._trainer.logger.log_metrics(
-                {"train/nan_detected": 1.0, "train/nan_count": self._nan_count},
+                {"nan_detected:train": 1.0, "nan_count:train": self._nan_count},
                 step=self._trainer.global_step,
             )
 

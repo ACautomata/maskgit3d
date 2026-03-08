@@ -2,8 +2,6 @@
 
 import logging
 from collections.abc import Callable
-from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import torch
@@ -37,8 +35,8 @@ class MedMNIST3DDataset(Dataset):
         self,
         config: MedMNISTConfig,
         split: str,
-        downloader: Optional[MedMNISTDownloader] = None,
-        transform: Optional[Callable] = None,
+        downloader: MedMNISTDownloader | None = None,
+        transform: Callable | None = None,
     ):
         """Initialize MedMNIST-3D dataset.
 

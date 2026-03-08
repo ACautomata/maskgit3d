@@ -2,7 +2,7 @@
 
 import pytest
 from monai.transforms.compose import Compose
-from monai.transforms.croppad.array import RandSpatialCrop, SpatialPad
+from monai.transforms.croppad.array import RandSpatialCrop
 from monai.transforms.intensity.array import NormalizeIntensity, ScaleIntensity
 from monai.transforms.spatial.array import Resize
 from monai.transforms.utility.array import EnsureChannelFirst, EnsureType

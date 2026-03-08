@@ -1,5 +1,7 @@
+
 import hydra
 from hydra.utils import get_class, instantiate, to_absolute_path
+from lightning.pytorch import LightningModule
 from omegaconf import DictConfig
 
 
@@ -16,8 +18,8 @@ def main(cfg: DictConfig) -> None:
     if task_target is None:
         raise ValueError("cfg.task._target_ must be set for evaluation.")
 
-    task_class = get_class(task_target)
-    task = task_class.load_from_checkpoint(ckpt_path)
+    task_class: type[LightningModule] = get_class(task_target)
+    task: LightningModule = task_class.load_from_checkpoint(ckpt_path)
 
     datamodule = instantiate(cfg.data)
     trainer = instantiate(cfg.trainer)

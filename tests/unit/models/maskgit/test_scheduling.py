@@ -1,8 +1,6 @@
 """Tests for MaskGIT training mask scheduler."""
 
-import math
 
-import numpy as np
 import pytest
 import torch
 

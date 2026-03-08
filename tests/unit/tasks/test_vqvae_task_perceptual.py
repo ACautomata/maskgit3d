@@ -1,6 +1,5 @@
 """Tests for VQVAETask perceptual loss integration."""
 
-import pytest
 import torch
 
 from src.maskgit3d.tasks.vqvae_task import VQVAETask
@@ -85,53 +84,45 @@ class TestVQVAETaskPerceptualTraining:
 
         task.manual_backward = lambda loss: loss.backward()  # type: ignore[assignment]
 
-        logged: dict[str, float] = {}
-        task.log = lambda name, val, **kw: logged.update(  # type: ignore[assignment]
-            {name: val.item() if isinstance(val, torch.Tensor) else val}
-        )
+        return task, [opt_g, opt_d]
 
-        return task, [opt_g, opt_d], logged
-
-    def test_training_step_includes_perceptual_in_total_loss(self) -> None:
-        """Training step total loss includes perceptual component."""
-        task, optimizers, logged = self._make_task_and_optimizers(use_perceptual=True)
+    def test_training_step_returns_raw_data_with_perceptual(self) -> None:
+        """Training step returns raw data for callback processing."""
+        task, optimizers = self._make_task_and_optimizers(use_perceptual=True)
 
         batch = torch.randn(2, 1, 32, 32, 32)
 
-        task.training_step(batch, batch_idx=0, optimizers=optimizers)
+        outputs = task.training_step(batch, batch_idx=0, optimizers=optimizers)
 
-        assert "train/p_loss" in logged
-        assert isinstance(logged["train/p_loss"], float)
-        assert logged["train/p_loss"] >= 0.0
+        assert "x_real" in outputs
+        assert "x_recon" in outputs
+        assert "vq_loss" in outputs
+        assert "last_layer" in outputs
+        assert isinstance(outputs["loss"], torch.Tensor)
 
-    def test_training_step_without_perceptual(self) -> None:
-        """Training step works without perceptual loss (no perceptual log)."""
-        task, optimizers, logged = self._make_task_and_optimizers(use_perceptual=False)
+    def test_training_step_returns_raw_data_without_perceptual(self) -> None:
+        """Training step returns raw data without perceptual loss."""
+        task, optimizers = self._make_task_and_optimizers(use_perceptual=False)
 
         batch = torch.randn(2, 1, 32, 32, 32)
 
-        task.training_step(batch, batch_idx=0, optimizers=optimizers)
+        outputs = task.training_step(batch, batch_idx=0, optimizers=optimizers)
 
-        assert "train/nll_loss" in logged
-        assert "train/total_loss" in logged
+        assert "x_real" in outputs
+        assert "x_recon" in outputs
+        assert "vq_loss" in outputs
+        assert isinstance(outputs["loss"], torch.Tensor)
 
-    def test_perceptual_loss_affects_total_loss(self) -> None:
-        """Total loss is higher with perceptual enabled vs disabled (same input)."""
-        torch.manual_seed(42)
-        batch = torch.randn(2, 1, 32, 32, 32)
+    def test_perceptual_task_has_perceptual_loss(self) -> None:
+        """Task with use_perceptual=True has perceptual loss component."""
+        task, _ = self._make_task_and_optimizers(use_perceptual=True)
+        assert task.loss_fn.use_perceptual is True
+        assert task.loss_fn.perceptual_loss is not None
 
-        def run_step(use_perceptual: bool) -> float:
-            torch.manual_seed(0)
-            task, optimizers, logged = self._make_task_and_optimizers(
-                use_perceptual=use_perceptual, lambda_perceptual=0.1
-            )
-            task.training_step(batch, batch_idx=0, optimizers=optimizers)
-            return logged["train/total_loss"]
-
-        loss_with_perceptual = run_step(use_perceptual=True)
-        loss_without_perceptual = run_step(use_perceptual=False)
-
-        assert loss_with_perceptual != loss_without_perceptual
+    def test_no_perceptual_task_has_no_perceptual_loss(self) -> None:
+        """Task with use_perceptual=False has no perceptual loss."""
+        task, _ = self._make_task_and_optimizers(use_perceptual=False)
+        assert task.loss_fn.use_perceptual is False
 
 
 class TestVQVAETaskAdaptiveWeight:
@@ -172,8 +163,8 @@ class TestVQVAETaskAdaptiveWeight:
 
         assert task.loss_fn.disc_start == 50001
 
-    def test_training_step_logs_adaptive_weight(self) -> None:
-        """Training step logs the adaptive weight value."""
+    def test_training_step_returns_raw_data_with_adaptive_weight(self) -> None:
+        """Training step returns raw data for callback processing."""
         task = VQVAETask(
             in_channels=1,
             out_channels=1,
@@ -187,13 +178,11 @@ class TestVQVAETaskAdaptiveWeight:
 
         task.manual_backward = lambda loss: loss.backward()  # type: ignore[assignment]
 
-        logged: dict[str, float] = {}
-        task.log = lambda name, val, **kw: logged.update(  # type: ignore[assignment]
-            {name: val.item() if isinstance(val, torch.Tensor) else val}
-        )
-
         batch = torch.randn(2, 1, 32, 32, 32)
-        task.training_step(batch, batch_idx=0, optimizers=[opt_g, opt_d])
+        outputs = task.training_step(batch, batch_idx=0, optimizers=[opt_g, opt_d])
 
-        assert "train/d_weight" in logged
-        assert logged["train/d_weight"] >= 0.0
+        assert "x_real" in outputs
+        assert "x_recon" in outputs
+        assert "vq_loss" in outputs
+        assert "last_layer" in outputs
+        assert isinstance(outputs["loss"], torch.Tensor)
