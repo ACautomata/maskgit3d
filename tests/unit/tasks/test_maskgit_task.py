@@ -231,3 +231,147 @@ def test_maskgit_task_test_step_with_logging(vqvae_checkpoint: str):
     x = torch.randn(1, 1, 16, 16, 16)
     with torch.no_grad():
         task.test_step(x, 0)
+
+
+def test_maskgit_task_test_step_with_sliding_window_logging(vqvae_checkpoint: str):
+    task = MaskGITTask(
+        vqvae_ckpt_path=vqvae_checkpoint,
+        hidden_size=128,
+        num_layers=2,
+        num_heads=4,
+        lr=1e-4,
+        sliding_window={"enabled": True, "roi_size": [16, 16, 16], "overlap": 0.25},
+    )
+    task.eval()
+
+    logs: dict[str, float] = {}
+    task.log = lambda name, value, **kwargs: logs.update({name: value})  # type: ignore[assignment]
+
+    x = torch.randn(1, 1, 16, 16, 16)
+    with torch.no_grad():
+        task.test_step(x, 0)
+
+    assert "test/sliding_window_enabled" in logs
+
+
+def test_maskgit_task_training_step_with_tuple_batch(vqvae_checkpoint: str):
+    task = MaskGITTask(
+        vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
+    )
+
+    x = torch.randn(1, 1, 16, 16, 16)
+    batch = (x, torch.tensor([0]))
+
+    loss = task.training_step(batch, 0)  # type: ignore[arg-type]
+    assert isinstance(loss, torch.Tensor)
+    assert loss.item() >= 0
+
+
+def test_maskgit_task_validation_step_with_tuple_batch(vqvae_checkpoint: str):
+    task = MaskGITTask(
+        vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
+    )
+    task.eval()
+
+    x = torch.randn(1, 1, 16, 16, 16)
+    batch = (x, torch.tensor([0]))
+
+    with torch.no_grad():
+        task.validation_step(batch, 0)  # type: ignore[arg-type]
+
+
+def test_maskgit_task_test_step_with_tuple_batch(vqvae_checkpoint: str):
+    task = MaskGITTask(
+        vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
+    )
+    task.eval()
+
+    x = torch.randn(1, 1, 16, 16, 16)
+    batch = (x, torch.tensor([0]))
+
+    with torch.no_grad():
+        task.test_step(batch, 0)  # type: ignore[arg-type]
+
+
+def test_maskgit_task_compute_loss_from_tokens_random_mask_ratio(vqvae_checkpoint: str):
+    task = MaskGITTask(
+        vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
+    )
+    task.eval()
+
+    tokens = torch.randint(0, 100, (2, 4, 4, 4))
+
+    with torch.no_grad():
+        loss, metrics = task._compute_loss_from_tokens(tokens, mask_ratio=None)
+
+    assert isinstance(loss, torch.Tensor)
+    assert loss.item() >= 0
+    assert "mask_acc" in metrics
+    assert "mask_ratio" in metrics
+    assert 0 <= metrics["mask_ratio"] <= 1
+
+
+def test_maskgit_task_encode_images_to_tokens_with_sliding_window(vqvae_checkpoint: str):
+    task = MaskGITTask(
+        vqvae_ckpt_path=vqvae_checkpoint,
+        hidden_size=128,
+        num_layers=2,
+        num_heads=4,
+        lr=1e-4,
+        sliding_window={"enabled": True, "roi_size": [16, 16, 16], "overlap": 0.25},
+    )
+    task.eval()
+
+    x = torch.randn(1, 1, 32, 32, 32)
+
+    with torch.no_grad():
+        tokens = task.encode_images_to_tokens(x)
+
+    assert tokens.dim() == 4
+    assert tokens.dtype == torch.long
+    assert tokens.shape[0] == 1
+
+
+def test_maskgit_task_validation_step_batch_idx_zero_generates_sample(vqvae_checkpoint: str):
+    task = MaskGITTask(
+        vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
+    )
+    task.eval()
+
+    logs: dict[str, float] = {}
+    task.log = lambda name, value, **kwargs: logs.update({name: value})  # type: ignore[assignment]
+
+    x = torch.randn(1, 1, 16, 16, 16)
+    with torch.no_grad():
+        task.validation_step(x, 0)
+
+    assert "val/sample_shape" in logs
+
+
+def test_maskgit_task_validation_step_batch_idx_nonzero(vqvae_checkpoint: str):
+    task = MaskGITTask(
+        vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
+    )
+    task.eval()
+
+    logs: dict[str, float] = {}
+    task.log = lambda name, value, **kwargs: logs.update({name: value})  # type: ignore[assignment]
+
+    x = torch.randn(1, 1, 16, 16, 16)
+    with torch.no_grad():
+        task.validation_step(x, 1)
+
+    assert "val/sample_shape" not in logs
+
+
+def test_maskgit_task_no_vqvae_checkpoint(vqvae_checkpoint: str):
+    task = MaskGITTask(
+        vqvae_ckpt_path=None,
+        hidden_size=128,
+        num_layers=2,
+        num_heads=4,
+        lr=1e-4,
+    )
+    assert task.maskgit is not None
+    assert task.vqvae is not None
+    assert not any(p.requires_grad for p in task.vqvae.parameters())

@@ -542,3 +542,95 @@ def test_vqvae_task_shared_step_generator_with_last_layer():
 
     assert isinstance(loss_g, torch.Tensor)
     assert isinstance(log_g, dict)
+
+
+def test_vqvae_task_training_step_with_optimizers_parameter():
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        use_perceptual=False,
+    )
+
+    opt_g = torch.optim.Adam(list(task.vqvae.parameters()), lr=1e-4)
+    opt_d = torch.optim.Adam(task.loss_fn.discriminator.parameters(), lr=1e-4)
+
+    def mock_log(name, val, **kw):
+        pass
+
+    task.log = mock_log  # type: ignore[assignment]
+    task.manual_backward = lambda loss: loss.backward()  # type: ignore[assignment]
+
+    batch = torch.randn(1, 1, 32, 32, 32)
+    loss = task.training_step(batch, 0, optimizers=[opt_g, opt_d])
+
+    assert isinstance(loss, torch.Tensor)
+    assert loss.item() >= 0
+
+
+def test_vqvae_task_test_step_cuda_memory_logged_with_cuda(monkeypatch):
+    monkeypatch.setattr("torch.cuda.is_available", lambda: True)
+    monkeypatch.setattr("torch.cuda.reset_peak_memory_stats", lambda: None)
+    monkeypatch.setattr("torch.cuda.max_memory_allocated", lambda: 1024 * 1024)
+
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        use_perceptual=False,
+        sliding_window={"enabled": False},
+    )
+    task.eval()
+
+    logger = MockLogger()
+    task.log = logger  # type: ignore[assignment]
+
+    x = torch.randn(1, 1, 32, 32, 32)
+
+    with torch.no_grad():
+        task.test_step(x, 0)
+
+    assert "test/peak_memory_mb" in logger.logs
+    assert logger.logs["test/peak_memory_mb"].item() == 1.0
+
+
+def test_vqvae_task_sliding_window_inferer_reuse():
+    sliding_window_cfg = {
+        "enabled": True,
+        "roi_size": [64, 64, 64],
+        "overlap": 0.25,
+        "mode": "gaussian",
+        "sw_batch_size": 2,
+    }
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        sliding_window=sliding_window_cfg,
+    )
+
+    inferer1 = task._get_sliding_window_inferer()
+    inferer2 = task._get_sliding_window_inferer()
+
+    assert inferer1 is inferer2
+
+
+def test_vqvae_task_divisible_pad_reuse():
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+    )
+
+    pad1 = task._get_divisible_pad()
+    pad2 = task._get_divisible_pad()
+
+    assert pad1 is pad2
