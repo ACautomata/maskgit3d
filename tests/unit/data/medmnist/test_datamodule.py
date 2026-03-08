@@ -5,7 +5,6 @@ import torch
 import numpy as np
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
-import pytorch_lightning as pl
 
 from src.maskgit3d.data.medmnist.config import MedMNISTConfig, MedMNISTDatasetName, TaskType
 from src.maskgit3d.data.medmnist.datamodule import MedMNIST3DDataModule
@@ -139,3 +138,90 @@ class TestMedMNIST3DDataModule:
         loader = datamodule.test_dataloader()
 
         assert loader is not None
+
+    def test_train_dataloader_without_setup(self, tmp_path):
+        """Test train_dataloader raises error without setup."""
+        datamodule = MedMNIST3DDataModule(
+            dataset_name="organmnist3d",
+            data_dir=str(tmp_path),
+            batch_size=4,
+            num_workers=0,
+            download=False,
+        )
+
+        with pytest.raises(RuntimeError, match="train_dataset is None"):
+            datamodule.train_dataloader()
+
+    def test_val_dataloader_without_setup(self, tmp_path):
+        """Test val_dataloader raises error without setup."""
+        datamodule = MedMNIST3DDataModule(
+            dataset_name="organmnist3d",
+            data_dir=str(tmp_path),
+            batch_size=4,
+            num_workers=0,
+            download=False,
+        )
+
+        with pytest.raises(RuntimeError, match="val_dataset is None"):
+            datamodule.val_dataloader()
+
+    def test_test_dataloader_without_setup(self, tmp_path):
+        """Test test_dataloader raises error without setup."""
+        datamodule = MedMNIST3DDataModule(
+            dataset_name="organmnist3d",
+            data_dir=str(tmp_path),
+            batch_size=4,
+            num_workers=0,
+            download=False,
+        )
+
+        with pytest.raises(RuntimeError, match="test_dataset is None"):
+            datamodule.test_dataloader()
+
+    def test_predict_dataloader_without_setup(self, tmp_path):
+        """Test predict_dataloader raises error without setup."""
+        datamodule = MedMNIST3DDataModule(
+            dataset_name="organmnist3d",
+            data_dir=str(tmp_path),
+            batch_size=4,
+            num_workers=0,
+            download=False,
+        )
+
+        with pytest.raises(RuntimeError, match="test_dataset is None"):
+            datamodule.predict_dataloader()
+
+    @patch("src.maskgit3d.data.medmnist.datamodule.MedMNIST3DDataset")
+    def test_predict_dataloader(self, mock_dataset_cls, tmp_path, fake_data):
+        """Test predict_dataloader creation."""
+        mock_ds = Mock(__len__=Mock(return_value=10))
+        mock_dataset_cls.return_value = mock_ds
+
+        datamodule = MedMNIST3DDataModule(
+            dataset_name="organmnist3d",
+            data_dir=str(tmp_path),
+            batch_size=4,
+            num_workers=0,
+            download=False,
+        )
+        datamodule.setup(stage="test")
+
+        loader = datamodule.predict_dataloader()
+
+        assert loader is not None
+
+    @patch("src.maskgit3d.data.medmnist.datamodule.MedMNIST3DDataset")
+    def test_setup_validate_stage(self, mock_dataset_cls, tmp_path, fake_data):
+        """Test setup with validate stage."""
+        mock_dataset_cls.return_value = Mock(__len__=Mock(return_value=10))
+
+        datamodule = MedMNIST3DDataModule(
+            dataset_name="organmnist3d",
+            data_dir=str(tmp_path),
+            batch_size=4,
+            num_workers=0,
+            download=False,
+        )
+        datamodule.setup(stage="validate")
+
+        assert datamodule.val_dataset is not None

@@ -4,7 +4,7 @@ import logging
 from collections.abc import Callable
 from typing import Optional
 
-import pytorch_lightning as pl
+from lightning import LightningDataModule
 from torch.utils.data import DataLoader
 
 from .config import MedMNISTConfig, MedMNISTDatasetName, TaskType
@@ -14,7 +14,7 @@ from .transforms import create_inference_transforms, create_training_transforms
 logger = logging.getLogger(__name__)
 
 
-class MedMNIST3DDataModule(pl.LightningDataModule):
+class MedMNIST3DDataModule(LightningDataModule):
     """PyTorch Lightning DataModule for MedMNIST-3D datasets.
 
     Handles data loading, preprocessing, and DataLoader creation
