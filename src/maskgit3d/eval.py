@@ -1,14 +1,25 @@
 import hydra
-from hydra.utils import instantiate
+from hydra.utils import get_class, instantiate, to_absolute_path
 from omegaconf import DictConfig
+
+
+def _resolve_required_ckpt_path(path: str | None) -> str:
+    if path is None:
+        raise ValueError("cfg.ckpt_path must be set for evaluation.")
+    return to_absolute_path(path)
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="eval")
 def main(cfg: DictConfig) -> None:
-    datamodule = instantiate(cfg.data)
-    task = instantiate(cfg.task)
-    task = task.load_from_checkpoint(cfg.ckpt_path)
+    ckpt_path = _resolve_required_ckpt_path(cfg.get("ckpt_path"))
+    task_target = cfg.task.get("_target_")
+    if task_target is None:
+        raise ValueError("cfg.task._target_ must be set for evaluation.")
 
+    task_class = get_class(task_target)
+    task = task_class.load_from_checkpoint(ckpt_path)
+
+    datamodule = instantiate(cfg.data)
     trainer = instantiate(cfg.trainer)
     if cfg.get("mode", "validate") == "test":
         trainer.test(task, datamodule=datamodule)

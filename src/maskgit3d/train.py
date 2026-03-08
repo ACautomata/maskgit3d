@@ -1,8 +1,14 @@
 from typing import Any
 
 import hydra
-from hydra.utils import instantiate
+from hydra.utils import instantiate, to_absolute_path
 from omegaconf import DictConfig
+
+
+def _resolve_optional_path(path: str | None) -> str | None:
+    if path is None:
+        return None
+    return to_absolute_path(path)
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="train")
@@ -20,7 +26,7 @@ def main(cfg: DictConfig) -> None:
         trainer_kwargs["logger"] = logger
 
     trainer = instantiate(cfg.trainer, **trainer_kwargs)
-    trainer.fit(task, datamodule=datamodule)
+    trainer.fit(task, datamodule=datamodule, ckpt_path=_resolve_optional_path(cfg.get("ckpt_path")))
 
 
 if __name__ == "__main__":
