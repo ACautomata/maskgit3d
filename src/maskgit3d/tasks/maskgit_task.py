@@ -4,7 +4,7 @@ from typing import Any
 
 import torch
 import torch.nn as nn
-from lightning.pytorch import LightningModule
+from lightning import LightningModule
 from monai.inferers.inferer import SlidingWindowInferer
 from monai.transforms.croppad.array import DivisiblePad
 
@@ -35,7 +35,7 @@ class MaskGITTask(LightningModule):
 
     def __init__(
         self,
-        vqvae_ckpt_path: str,
+        vqvae_ckpt_path: str | None = None,
         hidden_size: int = 768,
         num_layers: int = 12,
         num_heads: int = 12,
@@ -48,19 +48,18 @@ class MaskGITTask(LightningModule):
         sliding_window: dict[str, Any] | None = None,
     ):
         super().__init__()
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["vqvae_ckpt_path"])
 
         self.lr = lr
         self.weight_decay = weight_decay
         self.warmup_steps = warmup_steps
 
-        # Load pretrained VQVAE
-        vqvae_state = torch.load(vqvae_ckpt_path, map_location="cpu", weights_only=True)
-        if "state_dict" in vqvae_state:
-            vqvae_state = vqvae_state["state_dict"]
-
         self.vqvae = VQVAE()
-        self.vqvae.load_state_dict(vqvae_state)
+        if vqvae_ckpt_path is not None:
+            vqvae_state = torch.load(vqvae_ckpt_path, map_location="cpu", weights_only=True)
+            if "state_dict" in vqvae_state:
+                vqvae_state = vqvae_state["state_dict"]
+            self.vqvae.load_state_dict(vqvae_state)
         self.vqvae.eval()
         self.vqvae.requires_grad_(False)
 
