@@ -180,8 +180,74 @@ class VQVAETask(BaseTask):
         except (AttributeError, IndexError):
             return None
 
+    def _shared_step_generator(
+        self,
+        x_real: torch.Tensor,
+        batch_idx: int,
+        split: str,
+        last_layer: torch.nn.Parameter | None = None,
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        """Compute generator loss for a batch.
+
+        Args:
+            x_real: Input tensor.
+            batch_idx: Batch index.
+            split: Split name (train/val/test).
+            last_layer: Last layer parameter for adaptive weight calculation.
+                If None, will be obtained from decoder.
+
+        Returns:
+            Tuple of (loss_g, log_g) where loss_g is the generator loss
+            and log_g is a dict of logging values.
+        """
+        if last_layer is None:
+            last_layer = self._get_decoder_last_layer()
+
+        x_recon, vq_loss = self.vqvae(x_real)
+
+        loss_g, log_g = self.loss_fn(
+            inputs=x_real,
+            reconstructions=x_recon,
+            vq_loss=vq_loss,
+            optimizer_idx=0,
+            global_step=self.global_step,
+            last_layer=last_layer,
+            split=split,
+        )
+        return loss_g, log_g
+
+    def _shared_step_discriminator(
+        self,
+        x_real: torch.Tensor,
+        x_recon: torch.Tensor,
+        vq_loss: torch.Tensor,
+        split: str,
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        """Compute discriminator loss for a batch.
+
+        Args:
+            x_real: Input tensor.
+            x_recon: Reconstructed tensor from VQVAE.
+            vq_loss: VQ loss from the quantization step.
+            split: Split name (train/val/test).
+
+        Returns:
+            Tuple of (loss_d, log_d) where loss_d is the discriminator loss
+            and log_d is a dict of logging values.
+        """
+        loss_d, log_d = self.loss_fn(
+            inputs=x_real,
+            reconstructions=x_recon,
+            vq_loss=vq_loss,
+            optimizer_idx=1,
+            global_step=self.global_step,
+            split=split,
+        )
+        return loss_d, log_d
+
     def forward(self, x: torch.Tensor):
         return self.vqvae(x)
+
 
     def training_step(
         self,
@@ -195,31 +261,15 @@ class VQVAETask(BaseTask):
         opt_g, opt_d = optimizers  # type: ignore[misc]
 
         x_real = batch
-        x_recon, vq_loss = self.vqvae(x_real)
-
         last_layer = self._get_decoder_last_layer()
 
-        loss_g, log_g = self.loss_fn(
-            inputs=x_real,
-            reconstructions=x_recon,
-            vq_loss=vq_loss,
-            optimizer_idx=0,
-            global_step=self.global_step,
-            last_layer=last_layer,
-            split="train",
-        )
+        loss_g, log_g = self._shared_step_generator(x_real, batch_idx, "train", last_layer)
         opt_g.zero_grad()
         self.manual_backward(loss_g)
         opt_g.step()
 
-        loss_d, log_d = self.loss_fn(
-            inputs=x_real,
-            reconstructions=x_recon,
-            vq_loss=vq_loss,
-            optimizer_idx=1,
-            global_step=self.global_step,
-            split="train",
-        )
+        x_recon, vq_loss = self.vqvae(x_real)
+        loss_d, log_d = self._shared_step_discriminator(x_real, x_recon, vq_loss, "train")
         opt_d.zero_grad()
         self.manual_backward(loss_d)
         opt_d.step()

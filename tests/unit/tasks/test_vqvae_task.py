@@ -199,3 +199,346 @@ def test_vqvae_task_predict_step_direct():
     with torch.no_grad():
         output = task.predict_step(x, 0)
     assert output.shape == x.shape
+
+
+class MockLogger:
+    def __init__(self):
+        self.logs: dict[str, torch.Tensor] = {}
+
+    def __call__(self, name: str, value: torch.Tensor | float, **kwargs):
+        if isinstance(value, torch.Tensor):
+            self.logs[name] = value
+        else:
+            self.logs[name] = torch.tensor(value)
+
+
+def test_vqvae_task_validation_step():
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        use_perceptual=False,
+    )
+    task.eval()
+
+    logger = MockLogger()
+    task.log = logger  # type: ignore[assignment]
+
+    x = torch.randn(1, 1, 32, 32, 32)
+
+    with torch.no_grad():
+        task.validation_step(x, 0)
+
+    assert "val/loss_l1" in logger.logs, "val/loss_l1 should be logged"
+    assert "val/loss_vq" in logger.logs, "val/loss_vq should be logged"
+
+    assert isinstance(logger.logs["val/loss_l1"], torch.Tensor)
+    assert isinstance(logger.logs["val/loss_vq"], torch.Tensor)
+    assert logger.logs["val/loss_l1"].item() >= 0.0
+    assert logger.logs["val/loss_vq"].item() >= 0.0
+
+
+def test_vqvae_task_validation_step_with_perceptual():
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        use_perceptual=True,
+    )
+    task.eval()
+
+    logger = MockLogger()
+    task.log = logger  # type: ignore[assignment]
+
+    x = torch.randn(1, 1, 32, 32, 32)
+
+    with torch.no_grad():
+        task.validation_step(x, 0)
+
+    assert "val/loss_l1" in logger.logs
+    assert "val/loss_vq" in logger.logs
+    assert "val/loss_perceptual" in logger.logs, (
+        "val/loss_perceptual should be logged when use_perceptual=True"
+    )
+
+
+def test_vqvae_task_test_step_without_sliding_window():
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        use_perceptual=False,
+        sliding_window={"enabled": False},
+    )
+    task.eval()
+
+    logger = MockLogger()
+    task.log = logger  # type: ignore[assignment]
+
+    x = torch.randn(1, 1, 32, 32, 32)
+
+    with torch.no_grad():
+        task.test_step(x, 0)
+
+    assert "test/loss_l1" in logger.logs, "test/loss_l1 should be logged"
+    assert "test/loss_vq" in logger.logs, "test/loss_vq should be logged"
+    assert "test/inference_time" in logger.logs, "test/inference_time should be logged"
+
+    assert logger.logs["test/loss_l1"].item() >= 0.0
+    assert logger.logs["test/loss_vq"].item() >= 0.0
+    assert logger.logs["test/inference_time"].item() >= 0.0
+
+
+@pytest.mark.integration
+@pytest.mark.xfail(reason="Sliding window inference has MONAI channel issue")
+def test_vqvae_task_test_step_with_sliding_window():
+    sliding_window_cfg = {
+        "enabled": True,
+        "roi_size": [16, 16, 16],
+        "overlap": 0.25,
+        "mode": "gaussian",
+        "sw_batch_size": 1,
+    }
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        use_perceptual=False,
+        sliding_window=sliding_window_cfg,
+    )
+    task.eval()
+
+    logger = MockLogger()
+    task.log = logger  # type: ignore[assignment]
+
+    x = torch.randn(1, 1, 32, 32, 32)
+
+    with torch.no_grad():
+        task.test_step(x, 0)
+
+    assert "test/loss_l1" in logger.logs, "test/loss_l1 should be logged"
+    assert "test/loss_vq" in logger.logs, "test/loss_vq should be logged"
+    assert "test/inference_time" in logger.logs, "test/inference_time should be logged"
+
+    assert logger.logs["test/loss_l1"].item() >= 0.0
+    assert logger.logs["test/loss_vq"].item() >= 0.0
+    assert logger.logs["test/inference_time"].item() >= 0.0
+
+
+def test_vqvae_task_predict_step_without_sliding_window():
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        use_perceptual=False,
+        sliding_window={"enabled": False},
+    )
+    task.eval()
+
+    x = torch.randn(1, 1, 32, 32, 32)
+
+    with torch.no_grad():
+        output = task.predict_step(x, 0)
+
+    assert output.shape == x.shape
+    assert output.shape[0] == 1
+    assert output.shape[1] == 1
+
+
+@pytest.mark.integration
+@pytest.mark.xfail(reason="Sliding window inference has MONAI channel issue")
+def test_vqvae_task_predict_step_with_sliding_window():
+    sliding_window_cfg = {
+        "enabled": True,
+        "roi_size": [16, 16, 16],
+        "overlap": 0.25,
+        "mode": "gaussian",
+        "sw_batch_size": 1,
+    }
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        use_perceptual=False,
+        sliding_window=sliding_window_cfg,
+    )
+    task.eval()
+
+    x = torch.randn(1, 1, 32, 32, 32)
+
+    with torch.no_grad():
+        output = task.predict_step(x, 0)
+
+    assert output.shape == x.shape
+    assert output.shape[0] == 1
+    assert output.shape[1] == 1
+
+
+def test_vqvae_task_predict_step_returns_correct_values():
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        use_perceptual=False,
+        sliding_window={"enabled": False},
+    )
+    task.eval()
+
+    x = torch.randn(1, 1, 32, 32, 32)
+
+    with torch.no_grad():
+        output = task.predict_step(x, 0)
+
+    assert output.shape == x.shape
+    assert output.isfinite().all(), "Output should contain finite values"
+
+
+def test_vqvae_task_test_step_cuda_memory_logged(monkeypatch):
+    monkeypatch.setattr("torch.cuda.is_available", lambda: False)
+
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        use_perceptual=False,
+        sliding_window={"enabled": False},
+    )
+    task.eval()
+
+    logger = MockLogger()
+    task.log = logger  # type: ignore[assignment]
+
+    x = torch.randn(1, 1, 32, 32, 32)
+
+    with torch.no_grad():
+        task.test_step(x, 0)
+
+    assert "test/peak_memory_mb" not in logger.logs
+
+
+def test_vqvae_task_get_decoder_last_layer():
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+    )
+
+    last_layer = task._get_decoder_last_layer()
+    assert last_layer is not None
+    assert isinstance(last_layer, torch.nn.Parameter)
+
+
+def test_vqvae_task_shared_step_generator():
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        use_perceptual=False,
+    )
+    task.eval()
+
+    x = torch.randn(1, 1, 32, 32, 32)
+
+    with torch.no_grad():
+        loss_g, log_g = task._shared_step_generator(x, 0, "val")
+
+    assert isinstance(loss_g, torch.Tensor)
+    assert isinstance(log_g, dict)
+    assert len(log_g) > 0
+
+
+def test_vqvae_task_shared_step_discriminator():
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        use_perceptual=False,
+    )
+    task.eval()
+
+    x = torch.randn(1, 1, 32, 32, 32)
+    with torch.no_grad():
+        x_recon, vq_loss = task.vqvae(x)
+
+    with torch.no_grad():
+        loss_d, log_d = task._shared_step_discriminator(x, x_recon, vq_loss, "val")
+
+    assert isinstance(loss_d, torch.Tensor)
+    assert isinstance(log_d, dict)
+
+
+def test_vqvae_task_forward():
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+    )
+    task.eval()
+
+    x = torch.randn(1, 1, 32, 32, 32)
+
+    with torch.no_grad():
+        recon, vq_loss = task(x)
+
+    assert recon.shape == x.shape
+    assert isinstance(vq_loss, torch.Tensor)
+
+
+def test_vqvae_task_get_decoder_last_layer_error():
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+    )
+
+    delattr(task.vqvae.decoder, "decoder")
+
+    result = task._get_decoder_last_layer()
+    assert result is None
+
+
+def test_vqvae_task_shared_step_generator_with_last_layer():
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        use_perceptual=False,
+    )
+    task.eval()
+
+    x = torch.randn(1, 1, 32, 32, 32)
+    last_layer = task._get_decoder_last_layer()
+
+    with torch.no_grad():
+        loss_g, log_g = task._shared_step_generator(x, 0, "val", last_layer=last_layer)
+
+    assert isinstance(loss_g, torch.Tensor)
+    assert isinstance(log_g, dict)
