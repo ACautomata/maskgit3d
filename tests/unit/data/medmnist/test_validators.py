@@ -1,11 +1,9 @@
 """Tests for MedMNIST validators."""
 
-import pytest
 import warnings
 
 from src.maskgit3d.data.medmnist.validators import (
     validate_crop_size_for_vqvae,
-    validate_roi_size_for_vqvae,
     VQVAE_DOWNSAMPLING_FACTOR,
 )
 
@@ -30,6 +28,8 @@ class TestValidateCropSizeForVQVAE:
 
     def test_invalid_sizes_raises_when_requested(self):
         """Test that invalid sizes raise error when raise_error=True."""
+        import pytest
+
         with pytest.raises(ValueError) as exc_info:
             validate_crop_size_for_vqvae((28, 28, 28), raise_error=True)
         assert "16" in str(exc_info.value)
@@ -43,14 +43,3 @@ class TestValidateCropSizeForVQVAE:
             assert result is False
             assert len(w) == 1
             assert "crop_size[1]=28" in str(w[0].message)
-
-
-class TestValidateROISizeForVQVAE:
-    def test_delegates_to_crop_validator(self):
-        """Test that ROI validator uses same logic."""
-        assert validate_roi_size_for_vqvae((32, 32, 32)) is True
-
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            result = validate_roi_size_for_vqvae((28, 28, 28))
-            assert result is False

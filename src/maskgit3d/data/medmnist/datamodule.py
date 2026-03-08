@@ -28,7 +28,6 @@ class MedMNIST3DDataModule(pl.LightningDataModule):
         data_dir: str = "./data",
         download: bool = True,
         crop_size: tuple[int, int, int] = (32, 32, 32),
-        roi_size: tuple[int, int, int] | None = None,
         batch_size: int = 32,
         num_workers: int = 8,
         pin_memory: bool = True,
@@ -42,7 +41,6 @@ class MedMNIST3DDataModule(pl.LightningDataModule):
             data_dir: Root directory for data storage
             download: Whether to download if data not present
             crop_size: Spatial crop size for training (D, H, W)
-            roi_size: ROI size for inference, None means no crop
             batch_size: Batch size for data loaders
             num_workers: Number of worker processes
             pin_memory: Whether to pin memory in DataLoader
@@ -62,7 +60,6 @@ class MedMNIST3DDataModule(pl.LightningDataModule):
             data_dir=data_dir,
             download=download,
             crop_size=crop_size,
-            roi_size=roi_size,
             batch_size=batch_size,
             num_workers=num_workers,
             pin_memory=pin_memory,

@@ -40,14 +40,3 @@ def validate_crop_size_for_vqvae(
             warnings.warn(msg, UserWarning)
             return False
     return True
-
-
-def validate_roi_size_for_vqvae(
-    roi_size: Tuple[int, int, int],
-    raise_error: bool = False,
-) -> bool:
-    """Validate that roi_size is compatible with VQVAE downsampling.
-
-    See validate_crop_size_for_vqvae for details.
-    """
-    return validate_crop_size_for_vqvae(roi_size, raise_error)

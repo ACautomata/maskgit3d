@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Tuple, Optional
+from typing import Tuple
 
 
 class MedMNISTDatasetName(str, Enum):
@@ -33,7 +33,6 @@ class MedMNISTConfig:
         data_dir: Root directory for data storage
         download: Whether to download if data not present
         crop_size: Spatial crop size for training (D, H, W)
-        roi_size: ROI size for inference, None means no crop
         batch_size: Batch size for data loaders
         num_workers: Number of worker processes
         pin_memory: Whether to pin memory in DataLoader
@@ -48,7 +47,6 @@ class MedMNISTConfig:
     data_dir: str = "./data"
     download: bool = True
     crop_size: Tuple[int, int, int] = (32, 32, 32)
-    roi_size: Optional[Tuple[int, int, int]] = None
     batch_size: int = 32
     num_workers: int = 8
     pin_memory: bool = True
