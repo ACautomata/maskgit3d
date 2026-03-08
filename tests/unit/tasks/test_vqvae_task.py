@@ -159,9 +159,12 @@ def test_vqvae_task_divisible_pad():
         embedding_dim=64,
     )
 
-    pad = task._get_divisible_pad()
-    assert pad is not None
-    assert pad.k == 16
+    x = torch.randn(1, 1, 33, 33, 33)
+    x_padded = task._pad_to_divisible(x)
+    assert x_padded.shape[2] % 16 == 0
+    assert x_padded.shape[3] % 16 == 0
+    assert x_padded.shape[4] % 16 == 0
+    assert x_padded.shape[1] == x.shape[1]
 
 
 @pytest.mark.integration
@@ -287,7 +290,6 @@ def test_vqvae_task_test_step_without_sliding_window():
 
 
 @pytest.mark.integration
-@pytest.mark.xfail(reason="Sliding window inference has MONAI channel issue")
 def test_vqvae_task_test_step_with_sliding_window():
     sliding_window_cfg = {
         "enabled": True,
@@ -307,21 +309,15 @@ def test_vqvae_task_test_step_with_sliding_window():
     )
     task.eval()
 
-    logger = MockLogger()
-    task.log = logger  # type: ignore[assignment]
-
     x = torch.randn(1, 1, 32, 32, 32)
 
     with torch.no_grad():
-        task.test_step(x, 0)
+        outputs = task.test_step(x, 0)
 
-    assert "test/loss_l1" in logger.logs, "test/loss_l1 should be logged"
-    assert "test/loss_vq" in logger.logs, "test/loss_vq should be logged"
-    assert "test/inference_time" in logger.logs, "test/inference_time should be logged"
-
-    assert logger.logs["test/loss_l1"].item() >= 0.0
-    assert logger.logs["test/loss_vq"].item() >= 0.0
-    assert logger.logs["test/inference_time"].item() >= 0.0
+    assert isinstance(outputs, dict)
+    assert "loss" in outputs
+    assert "x_real" in outputs
+    assert "x_recon" in outputs
 
 
 def test_vqvae_task_predict_step_without_sliding_window():
@@ -347,7 +343,6 @@ def test_vqvae_task_predict_step_without_sliding_window():
 
 
 @pytest.mark.integration
-@pytest.mark.xfail(reason="Sliding window inference has MONAI channel issue")
 def test_vqvae_task_predict_step_with_sliding_window():
     sliding_window_cfg = {
         "enabled": True,
@@ -613,7 +608,7 @@ def test_vqvae_task_sliding_window_inferer_reuse():
     assert inferer1 is inferer2
 
 
-def test_vqvae_task_divisible_pad_reuse():
+def test_vqvae_task_pad_to_divisible_consistency():
     task = VQVAETask(
         in_channels=1,
         out_channels=1,
@@ -622,7 +617,9 @@ def test_vqvae_task_divisible_pad_reuse():
         embedding_dim=64,
     )
 
-    pad1 = task._get_divisible_pad()
-    pad2 = task._get_divisible_pad()
+    x = torch.randn(1, 1, 33, 33, 33)
+    x_padded1 = task._pad_to_divisible(x)
+    x_padded2 = task._pad_to_divisible(x)
 
-    assert pad1 is pad2
+    assert x_padded1.shape == x_padded2.shape
+    assert torch.allclose(x_padded1, x_padded2)

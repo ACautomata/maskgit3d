@@ -5,7 +5,6 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 from monai.inferers.inferer import SlidingWindowInferer
-from monai.transforms.croppad.array import DivisiblePad
 
 from ..losses.vq_perceptual_loss import VQPerceptualLoss
 from ..models.vqvae import VQVAE
@@ -138,7 +137,6 @@ class VQVAETask(BaseTask):
 
         self.sliding_window_cfg = sliding_window or {}
         self._sliding_window_inferer: SlidingWindowInferer | None = None
-        self._divisible_pad: DivisiblePad | None = None
         self._downsampling_factor = 16
 
     def _get_sliding_window_inferer(self) -> SlidingWindowInferer | None:
@@ -161,10 +159,28 @@ class VQVAETask(BaseTask):
             )
         return self._sliding_window_inferer
 
-    def _get_divisible_pad(self) -> DivisiblePad:
-        if self._divisible_pad is None:
-            self._divisible_pad = DivisiblePad(k=self._downsampling_factor, mode="constant")
-        return self._divisible_pad
+    def _pad_to_divisible(self, x: torch.Tensor) -> torch.Tensor:
+        B, C, D, H, W = x.shape
+        k = self._downsampling_factor
+
+        d_new = ((D + k - 1) // k) * k
+        h_new = ((H + k - 1) // k) * k
+        w_new = ((W + k - 1) // k) * k
+
+        pad_d = d_new - D
+        pad_h = h_new - H
+        pad_w = w_new - W
+
+        pad = (
+            pad_w // 2,
+            pad_w - pad_w // 2,
+            pad_h // 2,
+            pad_h - pad_h // 2,
+            pad_d // 2,
+            pad_d - pad_d // 2,
+        )
+
+        return F.pad(x, pad, mode="constant", value=-1.0)
 
     def _get_decoder_last_layer(self) -> torch.nn.Parameter | None:
         """Get the last layer weight of the decoder for adaptive weight calculation.
@@ -329,7 +345,7 @@ class VQVAETask(BaseTask):
         inferer = self._get_sliding_window_inferer()
 
         if inferer is not None:
-            x_real_padded = self._get_divisible_pad()(x_real)
+            x_real_padded = self._pad_to_divisible(x_real)
             padded_shape = x_real_padded.shape[2:]
 
             if torch.cuda.is_available():

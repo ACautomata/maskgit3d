@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 from lightning import LightningModule
 from monai.inferers.inferer import SlidingWindowInferer
-from monai.transforms.croppad.array import DivisiblePad
 
 from ..models.maskgit import MaskGIT
 from ..models.vqvae import VQVAE
@@ -77,7 +76,6 @@ class MaskGITTask(LightningModule):
         # Sliding window configuration
         self.sliding_window_cfg = sliding_window or {}
         self._sliding_window_inferer: SlidingWindowInferer | None = None
-        self._divisible_pad: DivisiblePad | None = None
         self._downsampling_factor = 16
 
         # Track training step for warmup
@@ -104,11 +102,24 @@ class MaskGITTask(LightningModule):
             )
         return self._sliding_window_inferer
 
-    def _get_divisible_pad(self) -> DivisiblePad:
-        """Get or create divisible pad transform."""
-        if self._divisible_pad is None:
-            self._divisible_pad = DivisiblePad(k=self._downsampling_factor, mode="constant")
-        return self._divisible_pad
+    def _pad_to_divisible(self, x: torch.Tensor) -> torch.Tensor:
+        B, C, D, H, W = x.shape
+        k = self._downsampling_factor
+        d_new = ((D + k - 1) // k) * k
+        h_new = ((H + k - 1) // k) * k
+        w_new = ((W + k - 1) // k) * k
+        pad_d = d_new - D
+        pad_h = h_new - H
+        pad_w = w_new - W
+        pad = (
+            pad_w // 2,
+            pad_w - pad_w // 2,
+            pad_h // 2,
+            pad_h - pad_h // 2,
+            pad_d // 2,
+            pad_d - pad_d // 2,
+        )
+        return nn.functional.pad(x, pad, mode="constant", value=-1.0)
 
     def encode_images_to_tokens(self, x: torch.Tensor) -> torch.Tensor:
         """Encode images to discrete tokens using VQVAE.
@@ -129,7 +140,7 @@ class MaskGITTask(LightningModule):
 
         # Sliding window encoding for large images
         original_shape = x.shape[2:]
-        x_padded = self._get_divisible_pad()(x)
+        x_padded = self._pad_to_divisible(x)
 
         # Encode patches and get indices
         def encode_fn(patch: torch.Tensor) -> torch.Tensor:

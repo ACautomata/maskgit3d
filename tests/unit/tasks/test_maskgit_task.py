@@ -176,16 +176,18 @@ def test_maskgit_task_checkpoint_reload_does_not_require_original_vqvae_checkpoi
     assert reloaded_task.maskgit is not None
 
 
-def test_maskgit_task_get_divisible_pad(vqvae_checkpoint: str):
+def test_maskgit_task_pad_to_divisible(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
     )
 
-    pad1 = task._get_divisible_pad()
-    pad2 = task._get_divisible_pad()
+    x = torch.randn(1, 1, 33, 33, 33)
+    x_padded = task._pad_to_divisible(x)
 
-    assert pad1 is not None
-    assert pad1 is pad2
+    assert x_padded.shape[2] % 16 == 0
+    assert x_padded.shape[3] % 16 == 0
+    assert x_padded.shape[4] % 16 == 0
+    assert x_padded.shape[1] == x.shape[1]
 
 
 def test_maskgit_task_warmup_scheduler(vqvae_checkpoint: str):
@@ -242,7 +244,6 @@ def test_maskgit_task_test_step_with_logging(vqvae_checkpoint: str):
         task.test_step(x, 0)
 
 
-@pytest.mark.xfail(reason="Sliding window inference has MONAI channel issue")
 def test_maskgit_task_test_step_with_sliding_window_returns_log_data(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint,
