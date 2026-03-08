@@ -85,7 +85,8 @@ def test_vqvae_task_has_vqvae_and_discriminator():
     )
 
     assert hasattr(task, "vqvae")
-    assert hasattr(task, "discriminator")
+    assert hasattr(task, "loss_fn")
+    assert hasattr(task.loss_fn, "discriminator")
 
 
 def test_vqvae_task_sliding_window_config():

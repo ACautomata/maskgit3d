@@ -1,18 +1,14 @@
-"""VQVAE training task with GAN-based manual optimization."""
+"""VQVAE training task with GAN-based manual optimization and adaptive weighting."""
 
 import time
 from typing import Any, List
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from monai.inferers.inferer import SlidingWindowInferer
 from monai.transforms.croppad.array import DivisiblePad
 
-from ..losses.gan_loss import GANLoss
-from ..losses.perceptual_loss import PerceptualLoss
-from ..losses.vq_loss import VQLoss
-from ..models.discriminator.patch_discriminator import PatchDiscriminator3D
+from ..losses.vq_perceptual_loss import VQPerceptualLoss
 from ..models.vqvae import VQVAE
 from .base_task import BaseTask
 
@@ -103,6 +99,10 @@ class VQVAETask(BaseTask):
         use_perceptual: bool = True,
         lambda_perceptual: float = 0.1,
         perceptual_network: str = "alex",
+        disc_start: int = 0,
+        disc_factor: float = 1.0,
+        use_adaptive_weight: bool = True,
+        disc_loss: str = "hinge",
         sliding_window: dict[str, Any] | None = None,
     ):
         super().__init__()
@@ -116,26 +116,25 @@ class VQVAETask(BaseTask):
             embedding_dim=embedding_dim,
         )
 
-        self.discriminator = PatchDiscriminator3D(
-            in_channels=out_channels,
-            ndf=64,
-            n_layers=3,
-            norm_layer="instance",
+        self.loss_fn = VQPerceptualLoss(
+            disc_in_channels=out_channels,
+            disc_num_layers=3,
+            disc_ndf=64,
+            disc_norm="instance",
+            disc_loss=disc_loss,
+            lambda_l1=lambda_l1,
+            lambda_vq=lambda_vq,
+            lambda_perceptual=lambda_perceptual,
+            discriminator_weight=lambda_gan,
+            disc_start=disc_start,
+            disc_factor=disc_factor,
+            use_adaptive_weight=use_adaptive_weight,
+            perceptual_network=perceptual_network,
+            use_perceptual=use_perceptual,
         )
-
-        self.gan_loss = GANLoss(gan_mode="lsgan")
-        self.vq_loss = VQLoss()
 
         self.lr_g = lr_g
         self.lr_d = lr_d
-        self.lambda_l1 = lambda_l1
-        self.lambda_vq = lambda_vq
-        self.lambda_gan = lambda_gan
-
-        self.use_perceptual = use_perceptual
-        self.lambda_perceptual = lambda_perceptual
-        if use_perceptual:
-            self.perceptual_loss = PerceptualLoss(network=perceptual_network)
 
         self.sliding_window_cfg = sliding_window or {}
         self._sliding_window_inferer: SlidingWindowInferer | None = None
@@ -167,6 +166,20 @@ class VQVAETask(BaseTask):
             self._divisible_pad = DivisiblePad(k=self._downsampling_factor, mode="constant")
         return self._divisible_pad
 
+    def _get_decoder_last_layer(self) -> torch.nn.Parameter | None:
+        """Get the last layer weight of the decoder for adaptive weight calculation.
+
+        Returns the weight parameter of the final convolution layer in the decoder.
+        Used for computing gradient norms in adaptive GAN loss weighting.
+
+        Returns:
+            The last layer parameter, or None if not found.
+        """
+        try:
+            return list(self.vqvae.decoder.decoder.parameters())[-1]
+        except (AttributeError, IndexError):
+            return None
+
     def forward(self, x: torch.Tensor):
         return self.vqvae(x)
 
@@ -179,45 +192,41 @@ class VQVAETask(BaseTask):
         if optimizers is None:
             optimizers = self.optimizers()  # type: ignore[assignment]
 
-        opt_g, opt_d = optimizers  # type: ignore[misc]  # type: ignore[misc]
+        opt_g, opt_d = optimizers  # type: ignore[misc]
 
         x_real = batch
         x_recon, vq_loss = self.vqvae(x_real)
 
-        loss_l1 = F.l1_loss(x_recon, x_real)
+        last_layer = self._get_decoder_last_layer()
 
-        logits_fake = self.discriminator(x_recon)
-        logits_fake = logits_fake[0][0]  # Extract tensor from list
-        loss_gan_g = self.gan_loss.generator_loss(logits_fake)
-
-        loss_g = self.lambda_l1 * loss_l1 + self.lambda_vq * vq_loss + self.lambda_gan * loss_gan_g
-
-        if self.use_perceptual:
-            loss_perceptual = self.perceptual_loss(x_recon, x_real)
-            loss_g = loss_g + self.lambda_perceptual * loss_perceptual
-        else:
-            loss_perceptual = None
-
+        loss_g, log_g = self.loss_fn(
+            inputs=x_real,
+            reconstructions=x_recon,
+            vq_loss=vq_loss,
+            optimizer_idx=0,
+            global_step=self.global_step,
+            last_layer=last_layer,
+            split="train",
+        )
         opt_g.zero_grad()
         self.manual_backward(loss_g)
         opt_g.step()
 
-        logits_real = self.discriminator(x_real.detach())[0][0]
-        logits_fake = self.discriminator(x_recon.detach())[0][0]
-
-        loss_d = self.gan_loss.discriminator_loss(logits_real, logits_fake)
-
+        loss_d, log_d = self.loss_fn(
+            inputs=x_real,
+            reconstructions=x_recon,
+            vq_loss=vq_loss,
+            optimizer_idx=1,
+            global_step=self.global_step,
+            split="train",
+        )
         opt_d.zero_grad()
         self.manual_backward(loss_d)
         opt_d.step()
 
-        self.log("train/loss_l1", loss_l1, prog_bar=True)
-        self.log("train/loss_vq", vq_loss, prog_bar=True)
-        self.log("train/loss_gan_g", loss_gan_g, prog_bar=True)
-        self.log("train/loss_d", loss_d, prog_bar=True)
-        self.log("train/loss_g", loss_g, prog_bar=True)
-        if loss_perceptual is not None:
-            self.log("train/loss_perceptual", loss_perceptual, prog_bar=True)
+        for k, v in {**log_g, **log_d}.items():
+            if isinstance(v, torch.Tensor):
+                self.log(k, v, prog_bar=True)
 
         return loss_g
 
@@ -230,6 +239,11 @@ class VQVAETask(BaseTask):
         self.log("val/loss_l1", loss_l1, prog_bar=True)
         self.log("val/loss_vq", vq_loss, prog_bar=True)
 
+        if self.loss_fn.use_perceptual and self.loss_fn.perceptual_loss is not None:
+            with torch.no_grad():
+                loss_perceptual = self.loss_fn.perceptual_loss(x_recon, x_real)
+            self.log("val/loss_perceptual", loss_perceptual, prog_bar=True)
+
     def configure_optimizers(self) -> List[torch.optim.Optimizer]:
         opt_g = torch.optim.Adam(
             list(self.vqvae.encoder.parameters())
@@ -240,7 +254,7 @@ class VQVAETask(BaseTask):
             lr=self.lr_g,
         )
         opt_d = torch.optim.Adam(
-            self.discriminator.parameters(),
+            self.loss_fn.discriminator.parameters(),
             lr=self.lr_d,
         )
         return [opt_g, opt_d]

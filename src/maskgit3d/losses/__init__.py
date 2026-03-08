@@ -1,7 +1,6 @@
 """Loss functions."""
 
-from .gan_loss import GANLoss
 from .perceptual_loss import PerceptualLoss
-from .vq_loss import VQLoss
+from .vq_perceptual_loss import VQPerceptualLoss
 
-__all__ = ["GANLoss", "PerceptualLoss", "VQLoss"]
+__all__ = ["PerceptualLoss", "VQPerceptualLoss"]

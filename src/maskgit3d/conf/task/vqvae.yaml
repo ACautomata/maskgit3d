@@ -1,24 +1,31 @@
 _target_: src.maskgit3d.tasks.vqvae_task.VQVAETask
-model_cfg: ${model}
-discriminator_cfg:
-  _target_: src.maskgit3d.models.discriminator.PatchDiscriminator3D
-  in_channels: 1
-  ndf: 64
-  n_layers: 3
-optimizer_cfg: ${optimizer}
-scheduler_cfg: ${scheduler}
-gan_mode: lsgan
-lambda_recon: 1.0
-lambda_adv: 0.1
+
+in_channels: 1
+out_channels: 1
+latent_channels: 256
+num_embeddings: 8192
+embedding_dim: 256
+
+lr_g: 4.5e-6
+lr_d: 1.0e-4
+
+lambda_l1: 1.0
+lambda_vq: 1.0
+lambda_gan: 0.1
+
 use_perceptual: true
 lambda_perceptual: 0.1
 perceptual_network: alex
 
-# Sliding window inference configuration for test/predict
+disc_start: 50001
+disc_factor: 1.0
+use_adaptive_weight: true
+disc_loss: hinge
+
 sliding_window:
   enabled: true
-  roi_size: [64, 64, 64]    # Window size (D, H, W), must be divisible by 16
-  overlap: 0.25             # Overlap ratio between windows (0.0 - 0.5)
-  mode: gaussian            # Blending mode: "constant", "gaussian", "nearest"
-  sigma_scale: 0.125        # Sigma scale for gaussian blending (relative to roi_size)
-  sw_batch_size: 1          # Batch size for sliding window inference
+  roi_size: [64, 64, 64]
+  overlap: 0.25
+  mode: gaussian
+  sigma_scale: 0.125
+  sw_batch_size: 1
