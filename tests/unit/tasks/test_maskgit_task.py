@@ -246,6 +246,11 @@ def test_maskgit_task_test_step_with_sliding_window_logging(vqvae_checkpoint: st
 
     logs: dict[str, float] = {}
     task.log = lambda name, value, **kwargs: logs.update({name: value})  # type: ignore[assignment]
+    task.encode_images_to_tokens = lambda x: torch.zeros((1, 1, 1, 1), dtype=torch.long)  # type: ignore[assignment]
+    task._compute_loss_from_tokens = lambda tokens, mask_ratio=None: (  # type: ignore[assignment]
+        torch.tensor(0.0),
+        {"mask_acc": 1.0, "mask_ratio": 0.25},
+    )
 
     x = torch.randn(1, 1, 16, 16, 16)
     with torch.no_grad():
@@ -254,40 +259,40 @@ def test_maskgit_task_test_step_with_sliding_window_logging(vqvae_checkpoint: st
     assert "test/sliding_window_enabled" in logs
 
 
-def test_maskgit_task_training_step_with_tuple_batch(vqvae_checkpoint: str):
+def test_maskgit_task_training_step_with_list_batch(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
     )
 
     x = torch.randn(1, 1, 16, 16, 16)
-    batch = (x, torch.tensor([0]))
+    batch = [x]
 
     loss = task.training_step(batch, 0)  # type: ignore[arg-type]
     assert isinstance(loss, torch.Tensor)
     assert loss.item() >= 0
 
 
-def test_maskgit_task_validation_step_with_tuple_batch(vqvae_checkpoint: str):
+def test_maskgit_task_validation_step_with_list_batch(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
     )
     task.eval()
 
     x = torch.randn(1, 1, 16, 16, 16)
-    batch = (x, torch.tensor([0]))
+    batch = [x]
 
     with torch.no_grad():
         task.validation_step(batch, 0)  # type: ignore[arg-type]
 
 
-def test_maskgit_task_test_step_with_tuple_batch(vqvae_checkpoint: str):
+def test_maskgit_task_test_step_with_list_batch(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
     )
     task.eval()
 
     x = torch.randn(1, 1, 16, 16, 16)
-    batch = (x, torch.tensor([0]))
+    batch = [x]
 
     with torch.no_grad():
         task.test_step(batch, 0)  # type: ignore[arg-type]
@@ -321,6 +326,12 @@ def test_maskgit_task_encode_images_to_tokens_with_sliding_window(vqvae_checkpoi
         sliding_window={"enabled": True, "roi_size": [16, 16, 16], "overlap": 0.25},
     )
     task.eval()
+
+    task.vqvae.encode = lambda patch: (  # type: ignore[assignment]
+        torch.zeros((patch.shape[0], 256, 1, 1, 1)),
+        torch.tensor(0.0),
+        torch.zeros((patch.shape[0], 1, 1, 1), dtype=torch.long),
+    )
 
     x = torch.randn(1, 1, 32, 32, 32)
 

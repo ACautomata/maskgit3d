@@ -158,8 +158,16 @@ class MaskGITTask(LightningModule):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.maskgit(x)
 
+    def _extract_input_tensor(
+        self,
+        batch: torch.Tensor | tuple[torch.Tensor, ...] | list[torch.Tensor],
+    ) -> torch.Tensor:
+        if isinstance(batch, (tuple, list)):
+            return batch[0]
+        return batch
+
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
-        x = batch if batch.dim() == 5 else batch[0]
+        x = self._extract_input_tensor(batch)
 
         # Encode images to tokens using sliding window if enabled
         tokens = self.encode_images_to_tokens(x)
@@ -230,7 +238,7 @@ class MaskGITTask(LightningModule):
         return loss, metrics
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
-        x = batch if batch.dim() == 5 else batch[0]
+        x = self._extract_input_tensor(batch)
 
         # Encode images to tokens using sliding window if enabled
         tokens = self.encode_images_to_tokens(x)
@@ -248,7 +256,7 @@ class MaskGITTask(LightningModule):
                 self.log("val/sample_shape", sample.shape[0])
 
     def test_step(self, batch: torch.Tensor, batch_idx: int) -> None:
-        x = batch if batch.dim() == 5 else batch[0]
+        x = self._extract_input_tensor(batch)
 
         # Encode images to tokens using sliding window if enabled
         tokens = self.encode_images_to_tokens(x)
