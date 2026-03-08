@@ -81,6 +81,20 @@ class TestMedMNISTDownloader:
 
         assert "not found" in str(exc_info.value)
 
+    def test_ensure_data_available_returns_cached_path(self, downloader):
+        """Test ensure_data_available returns cached path when available."""
+        data_path = downloader._get_data_path("train")
+        data_path.parent.mkdir(parents=True, exist_ok=True)
+        data_path.write_bytes(b"fake data")
+
+        result = downloader.ensure_data_available("train")
+        assert result == data_path
+
+    def test_get_data_path_format(self, downloader):
+        """Test _get_data_path returns correct path."""
+        path = downloader._get_data_path("train")
+        assert "organmnist3d_train.npz" in str(path)
+
     @pytest.mark.skip(reason="Requires medmnist library installation")
     @patch("importlib.import_module")
     def test_ensure_data_available_downloads(self, mock_import_module, downloader):
@@ -96,11 +110,19 @@ class TestMedMNISTDownloader:
         assert result is not None
         mock_dataset_cls.assert_called_once()
 
+    def test_check_cached_exists(self, downloader):
+        data_path = downloader._get_data_path("train")
+        data_path.parent.mkdir(parents=True, exist_ok=True)
+        data_path.write_bytes(b"fake data")
+
+        assert downloader._check_cached("train") is True
+
+    def test_check_cached_not_exists(self, downloader):
+        assert downloader._check_cached("nonexistent") is False
+
     @pytest.mark.skip(reason="Requires medmnist library installation")
     @patch("importlib.import_module")
     def test_ensure_data_available_returns_cached(self, mock_import_module, downloader, tmp_path):
-        """Test ensure_data_available returns cached path when available."""
-        # Create cached file
         data_path = downloader._get_data_path("train")
         data_path.parent.mkdir(parents=True, exist_ok=True)
         data_path.write_bytes(b"cached data")
