@@ -1,0 +1,9 @@
+# NaN detection callback configuration
+# Monitors training for numerical instability
+
+nan_detection:
+  _target_: maskgit3d.callbacks.nan_detection.NaNDetectionCallback
+  action: abort  # "abort" to stop training immediately when NaN/Inf detected
+  check_loss: true
+  check_gradients: true
+  log_every_n_nan: 1

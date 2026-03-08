@@ -386,3 +386,39 @@ def test_maskgit_task_no_vqvae_checkpoint(vqvae_checkpoint: str):
     assert task.maskgit is not None
     assert task.vqvae is not None
     assert not any(p.requires_grad for p in task.vqvae.parameters())
+
+
+def test_maskgit_task_compute_loss_ensures_at_least_one_masked(vqvae_checkpoint: str):
+    task = MaskGITTask(
+        vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
+    )
+    task.eval()
+
+    tokens = torch.randint(0, 100, (2, 4, 4, 4))
+
+    with torch.no_grad():
+        loss, metrics = task._compute_loss_from_tokens(tokens, mask_ratio=0.0)
+
+    assert isinstance(loss, torch.Tensor)
+    assert loss.item() >= 0
+
+
+def test_maskgit_task_warmup_scheduler_after_warmup(vqvae_checkpoint: str):
+    task = MaskGITTask(
+        vqvae_ckpt_path=vqvae_checkpoint,
+        hidden_size=128,
+        num_layers=2,
+        num_heads=4,
+        lr=1e-4,
+        warmup_steps=5,
+    )
+
+    optimizers, schedulers = task.configure_optimizers()
+    optimizer = optimizers[0]
+    scheduler = schedulers[0]
+
+    for _ in range(10):
+        optimizer.step()
+        scheduler.step()
+
+    assert scheduler.get_last_lr()[0] == 1e-4

@@ -248,7 +248,6 @@ class VQVAETask(BaseTask):
     def forward(self, x: torch.Tensor):
         return self.vqvae(x)
 
-
     def training_step(
         self,
         batch: torch.Tensor,
@@ -285,7 +284,10 @@ class VQVAETask(BaseTask):
         x_recon, vq_loss = self.vqvae(x_real)
 
         loss_l1 = F.l1_loss(x_recon, x_real)
+        # Total validation loss for checkpointing/early stopping
+        val_loss = loss_l1 + vq_loss
 
+        self.log("val_loss", val_loss, prog_bar=True)
         self.log("val/loss_l1", loss_l1, prog_bar=True)
         self.log("val/loss_vq", vq_loss, prog_bar=True)
 

@@ -2,7 +2,7 @@ from typing import Any
 
 import hydra
 from hydra.utils import instantiate, to_absolute_path
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 
 def _resolve_optional_path(path: str | None) -> str | None:
@@ -21,12 +21,18 @@ def main(cfg: DictConfig) -> None:
 
     trainer_kwargs: dict[str, Any] = {}
     if callbacks is not None:
-        trainer_kwargs["callbacks"] = callbacks
+        # Convert dict/DictConfig values to list for Lightning Trainer
+        if isinstance(callbacks, dict) or OmegaConf.is_dict(callbacks):
+            trainer_kwargs["callbacks"] = list(callbacks.values())
+        else:
+            trainer_kwargs["callbacks"] = callbacks
     if logger is not None:
         trainer_kwargs["logger"] = logger
 
     trainer = instantiate(cfg.trainer, **trainer_kwargs)
-    trainer.fit(task, datamodule=datamodule, ckpt_path=_resolve_optional_path(cfg.get("ckpt_path")))
+    trainer.fit(
+        task, datamodule=datamodule, ckpt_path=_resolve_optional_path(cfg.get("checkpoint_path"))
+    )
 
 
 if __name__ == "__main__":

@@ -246,7 +246,7 @@ class MaskGITTask(LightningModule):
         # Compute loss
         loss, metrics = self._compute_loss_from_tokens(tokens)
 
-        self.log("val/loss", loss, prog_bar=True)
+        self.log("val_loss", loss, prog_bar=True)
         self.log("val/mask_acc", metrics["mask_acc"], prog_bar=True)
 
         # Generate a sample every N batches

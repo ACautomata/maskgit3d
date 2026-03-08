@@ -7,7 +7,7 @@ from src.maskgit3d import eval as eval_module
 from src.maskgit3d import train as train_module
 
 
-def test_train_main_passes_resolved_ckpt_path(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_train_main_passes_resolved_checkpoint_path(monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = OmegaConf.create(
         {
             "data": {"_target_": "tests.DataModule"},
@@ -15,7 +15,7 @@ def test_train_main_passes_resolved_ckpt_path(monkeypatch: pytest.MonkeyPatch) -
             "trainer": {"_target_": "tests.Trainer"},
             "callbacks": {"_target_": "tests.Callbacks"},
             "logger": {"_target_": "tests.Logger"},
-            "ckpt_path": "checkpoints/latest.ckpt",
+            "checkpoint_path": "checkpoints/latest.ckpt",
         }
     )
 

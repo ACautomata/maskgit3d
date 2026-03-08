@@ -1,0 +1,19 @@
+# Default callbacks configuration for maskgit-3d training
+# Includes essential callbacks for checkpointing, early stopping, and monitoring
+
+defaults:
+  - model_checkpoint
+  - early_stopping
+  - lr_monitor
+  - nan_detection
+  - _self_
+
+# Rich progress bar for better visualization (optional)
+# Uncomment if rich is installed:
+# - _target_: lightning.pytorch.callbacks.RichProgressBar
+#   theme:
+#     _target_: lightning.pytorch.callbacks.progress.rich_progress.RichProgressBarTheme
+#   description: "Training"
+
+# TQDM progress bar (default, always included by Trainer)
+# No explicit config needed

@@ -1,0 +1,7 @@
+# Training time tracking callback configuration
+# Tracks and logs training time metrics
+
+training_time:
+  _target_: maskgit3d.callbacks.training_time.TrainingTimeCallback
+  log_every_n_epochs: 1
+  estimate_time_to_completion: true

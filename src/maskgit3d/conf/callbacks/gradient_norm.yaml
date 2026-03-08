@@ -1,0 +1,9 @@
+# Gradient norm monitoring callback configuration
+# Tracks gradient norms for debugging training stability
+
+gradient_norm:
+  _target_: maskgit3d.callbacks.gradient_norm.GradientNormCallback
+  mode: total  # "total", "per_layer", or "both"
+  log_every_n_steps: 100
+  norm_type: 2.0
+  only_trainable: true

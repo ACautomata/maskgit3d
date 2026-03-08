@@ -1,0 +1,15 @@
+# EarlyStopping callback configuration
+# Stops training when monitored metric stops improving
+
+early_stopping:
+  _target_: lightning.pytorch.callbacks.EarlyStopping
+  monitor: "val_loss"
+  min_delta: 0.001
+  patience: 10
+  verbose: true
+  mode: min
+  strict: true
+  check_finite: true
+  stopping_threshold: null
+  divergence_threshold: null
+  check_on_train_epoch_end: null

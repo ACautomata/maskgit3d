@@ -10,7 +10,7 @@ defaults:
   - optional logger: tensorboard
 
 seed: 42
-ckpt_path: null
+checkpoint_path: null
 scheduler: null
 callbacks: null
 logger: null
