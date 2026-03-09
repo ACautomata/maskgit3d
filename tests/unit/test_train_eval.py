@@ -1,5 +1,7 @@
 from unittest.mock import Mock
 
+from pathlib import Path
+
 import pytest
 from omegaconf import OmegaConf
 
@@ -107,8 +109,9 @@ def test_eval_main_loads_checkpoint_and_runs_requested_stage(
 
     class FakeTask:
         @classmethod
-        def load_from_checkpoint(cls, path: str):
+        def load_from_checkpoint(cls, path: str, *, weights_only: bool = True):
             assert path == "/abs/checkpoints/best.ckpt"
+            assert weights_only is False
             return loaded_task
 
     def fake_instantiate(config, **kwargs):
@@ -127,3 +130,26 @@ def test_eval_main_loads_checkpoint_and_runs_requested_stage(
     eval_module.main.__wrapped__(cfg)
 
     getattr(trainer, trainer_method).assert_called_once_with(loaded_task, datamodule=datamodule)
+
+
+def test_packaged_config_targets_use_installable_namespace() -> None:
+    config_root = Path(__file__).resolve().parents[2] / "src" / "maskgit3d" / "conf"
+    target_files = {
+        config_root
+        / "data"
+        / "medmnist3d.yaml": "maskgit3d.data.medmnist.datamodule.MedMNIST3DDataModule",
+        config_root / "task" / "vqvae.yaml": "maskgit3d.tasks.vqvae_task.VQVAETask",
+        config_root / "task" / "maskgit.yaml": "maskgit3d.tasks.maskgit_task.MaskGITTask",
+        config_root / "model" / "vqvae.yaml": "maskgit3d.models.vqvae.VQVAE",
+    }
+
+    for path, expected_target in target_files.items():
+        cfg = OmegaConf.load(path)
+        assert cfg._target_ == expected_target
+
+
+def test_default_trainer_config_disables_gradient_clipping_for_manual_optimization() -> None:
+    config_root = Path(__file__).resolve().parents[2] / "src" / "maskgit3d" / "conf"
+    trainer_cfg = OmegaConf.load(config_root / "trainer" / "default.yaml")
+
+    assert trainer_cfg.gradient_clip_val == 0
