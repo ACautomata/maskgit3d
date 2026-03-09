@@ -3,7 +3,8 @@ dataset_name: organmnist3d
 task_type: reconstruction
 data_dir: ${oc.env:DATA_DIR,./data}
 download: true
-crop_size: [32, 32, 32]
+image_size: 64
+crop_size: [64, 64, 64]
 batch_size: 32
 num_workers: 8
 pin_memory: true

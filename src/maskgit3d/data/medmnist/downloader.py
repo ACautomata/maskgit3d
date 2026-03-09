@@ -134,6 +134,7 @@ class MedMNISTDownloader:
             split=split,
             root=str(self.data_dir),
             download=True,
+            size=self.config.image_size,
         )
 
         return self._get_data_path(split)
