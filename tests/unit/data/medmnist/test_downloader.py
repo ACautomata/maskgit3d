@@ -17,6 +17,7 @@ class TestMedMNISTDownloader:
             dataset_name=MedMNISTDatasetName.ORGAN,
             data_dir=str(tmp_path),
             download=False,
+            image_size=28,
         )
 
     @pytest.fixture
@@ -97,6 +98,18 @@ class TestMedMNISTDownloader:
         path = downloader._get_data_path("train")
         assert "organmnist3d.npz" in str(path)
 
+    def test_get_data_path_with_size_64(self, tmp_path):
+        """Test _get_data_path returns correct path with size 64."""
+        config = MedMNISTConfig(
+            dataset_name=MedMNISTDatasetName.ORGAN,
+            data_dir=str(tmp_path),
+            download=False,
+            image_size=64,
+        )
+        downloader = MedMNISTDownloader(config)
+        path = downloader._get_data_path("train")
+        assert "organmnist3d_64.npz" in str(path)
+
     def test_get_data_path_is_shared_across_splits(self, downloader):
         assert downloader._get_data_path("train") == downloader._get_data_path("val")
         assert downloader._get_data_path("val") == downloader._get_data_path("test")
@@ -118,6 +131,7 @@ class TestMedMNISTDownloader:
             split="train",
             root=str(downloader.data_dir),
             download=True,
+            size=28,
         )
 
     def test_check_cached_exists(self, downloader):
