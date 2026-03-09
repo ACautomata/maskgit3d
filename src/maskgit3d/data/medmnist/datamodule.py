@@ -25,7 +25,8 @@ class MedMNIST3DDataModule(LightningDataModule):
         task_type: str | TaskType = TaskType.RECONSTRUCTION,
         data_dir: str = "./data",
         download: bool = True,
-        crop_size: tuple[int, int, int] = (32, 32, 32),
+        image_size: int = 64,
+        crop_size: tuple[int, int, int] = (64, 64, 64),
         batch_size: int = 32,
         num_workers: int = 8,
         pin_memory: bool = True,
@@ -38,6 +39,7 @@ class MedMNIST3DDataModule(LightningDataModule):
             task_type: Task type (reconstruction or classification)
             data_dir: Root directory for data storage
             download: Whether to download if data not present
+            image_size: Original image size (28 or 64 for MedMNIST-3D)
             crop_size: Spatial crop size for training (D, H, W)
             batch_size: Batch size for data loaders
             num_workers: Number of worker processes
@@ -57,6 +59,7 @@ class MedMNIST3DDataModule(LightningDataModule):
             task_type=task_type,
             data_dir=data_dir,
             download=download,
+            image_size=image_size,
             crop_size=crop_size,
             batch_size=batch_size,
             num_workers=num_workers,

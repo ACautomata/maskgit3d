@@ -45,7 +45,8 @@ class MedMNISTConfig:
     task_type: TaskType = TaskType.RECONSTRUCTION
     data_dir: str = "./data"
     download: bool = True
-    crop_size: tuple[int, int, int] = (32, 32, 32)
+    image_size: int = 64  # MedMNIST3D size: 28 or 64
+    crop_size: tuple[int, int, int] = (64, 64, 64)
     batch_size: int = 32
     num_workers: int = 8
     pin_memory: bool = True
@@ -66,5 +67,5 @@ class MedMNISTConfig:
 
     @property
     def input_size(self) -> int:
-        """Original input size for all MedMNIST-3D datasets."""
-        return 28
+        """Original input size for MedMNIST-3D datasets (28 or 64)."""
+        return self.image_size
