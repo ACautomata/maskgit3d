@@ -13,12 +13,14 @@ class TestMedMNIST3DDataModule:
     @pytest.fixture
     def fake_data(self, tmp_path):
         """Create fake MedMNIST data files."""
-        splits = ["train", "val", "test"]
-        for split in splits:
-            data_file = tmp_path / f"organmnist3d_{split}.npz"
+        data_file = tmp_path / "organmnist3d.npz"
+        archive = {}
+        for split in ["train", "val", "test"]:
             images = np.random.randint(0, 255, size=(10, 28, 28, 28), dtype=np.uint8)
             labels = np.random.randint(0, 11, size=(10, 1))
-            np.savez(data_file, **{f"{split}_images": images, f"{split}_labels": labels})
+            archive[f"{split}_images"] = images
+            archive[f"{split}_labels"] = labels
+        np.savez(data_file, **archive)
         return tmp_path
 
     def test_init_with_default_params(self, tmp_path):

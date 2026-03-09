@@ -1,6 +1,7 @@
 """Tests for MedMNIST Downloader."""
 
-from unittest.mock import Mock, patch
+import sys
+from unittest.mock import Mock
 
 import pytest
 
@@ -36,7 +37,7 @@ class TestMedMNISTDownloader:
     def test_get_data_path(self, downloader):
         """Test data path generation."""
         path = downloader._get_data_path("train")
-        assert path.name == "organmnist3d_train.npz"
+        assert path.name == "organmnist3d.npz"
 
     def test_check_cached_returns_false_when_not_exists(self, downloader, tmp_path):
         """Test _check_cached returns False when file doesn't exist."""
@@ -94,22 +95,30 @@ class TestMedMNISTDownloader:
     def test_get_data_path_format(self, downloader):
         """Test _get_data_path returns correct path."""
         path = downloader._get_data_path("train")
-        assert "organmnist3d_train.npz" in str(path)
+        assert "organmnist3d.npz" in str(path)
 
-    @pytest.mark.skip(reason="Requires medmnist library installation")
-    @patch("importlib.import_module")
-    def test_ensure_data_available_downloads(self, mock_import_module, downloader):
+    def test_get_data_path_is_shared_across_splits(self, downloader):
+        assert downloader._get_data_path("train") == downloader._get_data_path("val")
+        assert downloader._get_data_path("val") == downloader._get_data_path("test")
+
+    def test_ensure_data_available_downloads_single_archive(self, downloader, monkeypatch):
         """Test ensure_data_available downloads when data not cached."""
-        # Setup mock
+        downloader.config.download = True
+
         mock_medmnist = Mock()
-        mock_import_module.return_value = mock_medmnist
         mock_dataset_cls = Mock()
-        mock_medmnist.ORGANMNIST3D = mock_dataset_cls
+        mock_medmnist.OrganMNIST3D = mock_dataset_cls
         mock_dataset_cls.return_value = Mock()
 
+        monkeypatch.setitem(sys.modules, "medmnist", mock_medmnist)
+
         result = downloader.ensure_data_available("train")
-        assert result is not None
-        mock_dataset_cls.assert_called_once()
+        assert result == downloader.data_dir / "organmnist3d.npz"
+        mock_dataset_cls.assert_called_once_with(
+            split="train",
+            root=str(downloader.data_dir),
+            download=True,
+        )
 
     def test_check_cached_exists(self, downloader):
         data_path = downloader._get_data_path("train")
@@ -121,15 +130,18 @@ class TestMedMNISTDownloader:
     def test_check_cached_not_exists(self, downloader):
         assert downloader._check_cached("nonexistent") is False
 
-    @pytest.mark.skip(reason="Requires medmnist library installation")
-    @patch("importlib.import_module")
-    def test_ensure_data_available_returns_cached(self, mock_import_module, downloader, tmp_path):
+    def test_ensure_data_available_returns_cached(self, downloader, tmp_path, monkeypatch):
         data_path = downloader._get_data_path("train")
         data_path.parent.mkdir(parents=True, exist_ok=True)
         data_path.write_bytes(b"cached data")
 
+        class NoDownloadModule:
+            pass
+
+        mock_medmnist = NoDownloadModule()
+        monkeypatch.setitem(sys.modules, "medmnist", mock_medmnist)
+
         result = downloader.ensure_data_available("train")
 
-        # Should not download - check that import_module wasn't called with medmnist
-        mock_import_module.assert_not_called()
         assert result == data_path
+        assert not hasattr(mock_medmnist, "OrganMNIST3D")

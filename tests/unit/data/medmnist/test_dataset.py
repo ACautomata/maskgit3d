@@ -22,10 +22,18 @@ class TestMedMNIST3DDataset:
     @pytest.fixture
     def fake_medmnist_data(self, tmp_path):
         """Create fake MedMNIST data file."""
-        data_file = tmp_path / "organmnist3d_train.npz"
+        data_file = tmp_path / "organmnist3d.npz"
         images = np.random.randint(0, 255, size=(10, 28, 28, 28), dtype=np.uint8)
         labels = np.random.randint(0, 11, size=(10, 1))
-        np.savez(data_file, train_images=images, train_labels=labels)
+        np.savez(
+            data_file,
+            train_images=images,
+            train_labels=labels,
+            val_images=images,
+            val_labels=labels,
+            test_images=images,
+            test_labels=labels,
+        )
         return data_file
 
     @pytest.fixture
@@ -40,10 +48,18 @@ class TestMedMNIST3DDataset:
 
     def test_init_with_reconstruction_task(self, config, tmp_path):
         """Test dataset initialization with reconstruction task."""
-        data_file = tmp_path / "organmnist3d_train.npz"
+        data_file = tmp_path / "organmnist3d.npz"
         images = np.random.randint(0, 255, size=(10, 28, 28, 28), dtype=np.uint8)
         labels = np.random.randint(0, 11, size=(10, 1))
-        np.savez(data_file, train_images=images, train_labels=labels)
+        np.savez(
+            data_file,
+            train_images=images,
+            train_labels=labels,
+            val_images=images,
+            val_labels=labels,
+            test_images=images,
+            test_labels=labels,
+        )
 
         mock_downloader = Mock()
         mock_downloader.ensure_data_available.return_value = data_file
@@ -59,10 +75,18 @@ class TestMedMNIST3DDataset:
     def test_init_with_classification_task(self, config, tmp_path):
         """Test dataset initialization with classification task."""
         config.task_type = TaskType.CLASSIFICATION
-        data_file = tmp_path / "organmnist3d_train.npz"
+        data_file = tmp_path / "organmnist3d.npz"
         images = np.random.randint(0, 255, size=(10, 28, 28, 28), dtype=np.uint8)
         labels = np.random.randint(0, 11, size=(10, 1))
-        np.savez(data_file, train_images=images, train_labels=labels)
+        np.savez(
+            data_file,
+            train_images=images,
+            train_labels=labels,
+            val_images=images,
+            val_labels=labels,
+            test_images=images,
+            test_labels=labels,
+        )
 
         mock_downloader = Mock()
         mock_downloader.ensure_data_available.return_value = data_file
@@ -77,10 +101,18 @@ class TestMedMNIST3DDataset:
     def test_len_returns_correct_count(self, config, tmp_path):
         """Test __len__ returns correct sample count."""
         mock_downloader = Mock()
-        data_file = tmp_path / "organmnist3d_train.npz"
+        data_file = tmp_path / "organmnist3d.npz"
         images = np.random.randint(0, 255, size=(10, 28, 28, 28), dtype=np.uint8)
         labels = np.random.randint(0, 11, size=(10, 1))
-        np.savez(data_file, train_images=images, train_labels=labels)
+        np.savez(
+            data_file,
+            train_images=images,
+            train_labels=labels,
+            val_images=images,
+            val_labels=labels,
+            test_images=images,
+            test_labels=labels,
+        )
         mock_downloader.ensure_data_available.return_value = data_file
 
         dataset = MedMNIST3DDataset(
@@ -94,10 +126,18 @@ class TestMedMNIST3DDataset:
         """Test __getitem__ returns image and image.clone() for reconstruction."""
         config.task_type = TaskType.RECONSTRUCTION
         mock_downloader = Mock()
-        data_file = tmp_path / "organmnist3d_train.npz"
+        data_file = tmp_path / "organmnist3d.npz"
         images = np.random.randint(0, 255, size=(10, 28, 28, 28), dtype=np.uint8)
         labels = np.random.randint(0, 11, size=(10, 1))
-        np.savez(data_file, train_images=images, train_labels=labels)
+        np.savez(
+            data_file,
+            train_images=images,
+            train_labels=labels,
+            val_images=images,
+            val_labels=labels,
+            test_images=images,
+            test_labels=labels,
+        )
         mock_downloader.ensure_data_available.return_value = data_file
 
         dataset = MedMNIST3DDataset(
@@ -117,10 +157,18 @@ class TestMedMNIST3DDataset:
         """Test __getitem__ returns image and label for classification."""
         config.task_type = TaskType.CLASSIFICATION
         mock_downloader = Mock()
-        data_file = tmp_path / "organmnist3d_train.npz"
+        data_file = tmp_path / "organmnist3d.npz"
         images = np.random.randint(0, 255, size=(10, 28, 28, 28), dtype=np.uint8)
         labels = np.random.randint(0, 11, size=(10, 1))
-        np.savez(data_file, train_images=images, train_labels=labels)
+        np.savez(
+            data_file,
+            train_images=images,
+            train_labels=labels,
+            val_images=images,
+            val_labels=labels,
+            test_images=images,
+            test_labels=labels,
+        )
         mock_downloader.ensure_data_available.return_value = data_file
 
         dataset = MedMNIST3DDataset(

@@ -39,6 +39,15 @@ class MedMNISTDownloader:
         "synapsemnist3d": {"train": "", "val": "", "test": ""},
     }
 
+    DATASET_CLASS_NAMES: dict[str, str] = {
+        "organmnist3d": "OrganMNIST3D",
+        "nodulemnist3d": "NoduleMNIST3D",
+        "adrenalmnist3d": "AdrenalMNIST3D",
+        "vesselmnist3d": "VesselMNIST3D",
+        "fracturemnist3d": "FractureMNIST3D",
+        "synapsemnist3d": "SynapseMNIST3D",
+    }
+
     def __init__(self, config: MedMNISTConfig):
         self.config = config
         self.data_dir = Path(config.data_dir)
@@ -97,11 +106,8 @@ class MedMNISTDownloader:
         return True
 
     def _get_data_path(self, split: str) -> Path:
-        """Get path for data file.
-
-        MedMNIST files follow pattern: {dataset_name}_{split}.npz
-        """
-        filename = f"{self.config.dataset_name.value}_{split}.npz"
+        """Get path for data file."""
+        filename = f"{self.config.dataset_name.value}.npz"
         return self.data_dir / filename
 
     def _download(self, split: str) -> Path:
@@ -122,7 +128,7 @@ class MedMNISTDownloader:
             ) from e
 
         # Download will be triggered by creating dataset
-        dataset_cls_name = self.config.dataset_name.value.upper()
+        dataset_cls_name = self.DATASET_CLASS_NAMES[self.config.dataset_name.value]
         dataset_cls = getattr(medmnist, dataset_cls_name)
         _ = dataset_cls(
             split=split,
