@@ -106,8 +106,13 @@ class MedMNISTDownloader:
         return True
 
     def _get_data_path(self, split: str) -> Path:
-        """Get path for data file."""
-        filename = f"{self.config.dataset_name.value}.npz"
+        """Get path for data file.
+
+        The medmnist library creates files with size suffix when size != 28.
+        For example: organmnist3d.npz (size=28) vs organmnist3d_64.npz (size=64)
+        """
+        size_suffix = f"_{self.config.image_size}" if self.config.image_size != 28 else ""
+        filename = f"{self.config.dataset_name.value}{size_suffix}.npz"
         return self.data_dir / filename
 
     def _download(self, split: str) -> Path:
