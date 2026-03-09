@@ -5,8 +5,11 @@ Complete MaskGIT model combining:
 - Bidirectional Transformer for masked token prediction
 """
 
+from typing import Any
+
 import torch
 import torch.nn as nn
+from monai.inferers.inferer import SlidingWindowInferer
 
 from ..vqvae import VQVAE
 from .sampling import MaskGITSampler
@@ -20,6 +23,7 @@ class MaskGIT(nn.Module):
     Combines:
     - VQVAE tokenizer: encodes images to discrete tokens
     - Transformer: bidirectional model for token prediction
+    - Sliding window inference support for large images
 
     Args:
         vqvae: VQVAE model for encoding/decoding
@@ -31,6 +35,7 @@ class MaskGIT(nn.Module):
         gamma_type: Mask scheduling gamma type (default: "cosine")
         num_iterations: Number of decoding iterations (default: 12)
         temperature: Sampling temperature (default: 1.0)
+        sliding_window: Sliding window configuration for encoding/decoding large images
     """
 
     def __init__(
@@ -44,6 +49,7 @@ class MaskGIT(nn.Module):
         gamma_type: str = "cosine",
         num_iterations: int = 12,
         temperature: float = 1.0,
+        sliding_window: dict[str, Any] | None = None,
     ):
         super().__init__()
 
@@ -74,6 +80,11 @@ class MaskGIT(nn.Module):
             temperature=temperature,
         )
 
+        # Sliding window configuration
+        self.sliding_window_cfg = sliding_window or {}
+        self._sliding_window_inferer: SlidingWindowInferer | None = None
+        self._downsampling_factor = 16
+
     @property
     def codebook_size(self) -> int:
         return self._codebook_size
@@ -81,6 +92,45 @@ class MaskGIT(nn.Module):
     @property
     def num_tokens(self) -> int:
         return self.codebook_size + 1
+
+    def _get_sliding_window_inferer(self) -> SlidingWindowInferer | None:
+        if not self.sliding_window_cfg.get("enabled", False):
+            return None
+        if self._sliding_window_inferer is None:
+            roi_size = tuple(self.sliding_window_cfg.get("roi_size", [64, 64, 64]))
+            overlap = self.sliding_window_cfg.get("overlap", 0.25)
+            mode = self.sliding_window_cfg.get("mode", "gaussian")
+            sigma_scale = self.sliding_window_cfg.get("sigma_scale", 0.125)
+            sw_batch_size = self.sliding_window_cfg.get("sw_batch_size", 1)
+            self._sliding_window_inferer = SlidingWindowInferer(
+                roi_size=roi_size,
+                sw_batch_size=sw_batch_size,
+                overlap=overlap,
+                mode=mode,
+                sigma_scale=sigma_scale,
+                padding_mode="constant",
+                cval=0.0,
+            )
+        return self._sliding_window_inferer
+
+    def _pad_to_divisible(self, x: torch.Tensor) -> torch.Tensor:
+        B, C, D, H, W = x.shape
+        k = self._downsampling_factor
+        d_new = ((D + k - 1) // k) * k
+        h_new = ((H + k - 1) // k) * k
+        w_new = ((W + k - 1) // k) * k
+        pad_d = d_new - D
+        pad_h = h_new - H
+        pad_w = w_new - W
+        pad = (
+            pad_w // 2,
+            pad_w - pad_w // 2,
+            pad_h // 2,
+            pad_h - pad_h // 2,
+            pad_d // 2,
+            pad_d - pad_d // 2,
+        )
+        return nn.functional.pad(x, pad, mode="constant", value=-1.0)
 
     def _to_transformer_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
         """Convert VQVAE tokens to Transformer tokens."""
@@ -125,6 +175,71 @@ class MaskGIT(nn.Module):
             Reconstructed images [B, C, D', H', W']
         """
         return self.vqvae.decode_from_indices(self._to_vq_tokens(tokens))
+
+    def encode_images_to_tokens(self, x: torch.Tensor) -> torch.Tensor:
+        """Encode images to discrete tokens with sliding window support.
+
+        Args:
+            x: Input images [B, C, D, H, W]
+
+        Returns:
+            Token indices [B, D', H', W']
+        """
+        inferer = self._get_sliding_window_inferer()
+
+        if inferer is None:
+            return self.encode_tokens(x)
+
+        original_shape = x.shape[2:]
+        x_padded = self._pad_to_divisible(x)
+
+        def encode_fn(patch: torch.Tensor) -> torch.Tensor:
+            z_q, _, indices = self.vqvae.encode(patch)
+            return indices.float().unsqueeze(1)
+
+        indices_padded = inferer(x_padded, encode_fn)
+
+        latent_d = original_shape[0] // self._downsampling_factor
+        latent_h = original_shape[1] // self._downsampling_factor
+        latent_w = original_shape[2] // self._downsampling_factor
+
+        B = x.shape[0]
+        indices = indices_padded[:B, 0, :latent_d, :latent_h, :latent_w]  # type: ignore[index]
+
+        indices = indices.long()
+        return self._to_transformer_tokens(indices)
+
+    def decode_tokens_to_latent(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Decode tokens to latent/images with sliding window support.
+
+        Args:
+            tokens: Token indices [B, D, H, W]
+
+        Returns:
+            Decoded latent/images [B, C, D*16, H*16, W*16]
+        """
+        if tokens.dim() == 2:
+            B, N = tokens.shape
+            D = H = W = int(round(N ** (1 / 3)))
+            tokens = tokens.view(B, D, H, W)
+        elif tokens.dim() != 4:
+            raise ValueError(f"Expected tokens to be 4D [B, D, H, W], got {tokens.shape}")
+
+        vq_tokens = self._to_vq_tokens(tokens)
+        inferer = self._get_sliding_window_inferer()
+
+        if inferer is None:
+            z_q = self.vqvae.quantizer.decode_from_indices(vq_tokens)
+            return self.vqvae.decode(z_q)
+
+        z_q = self.vqvae.quantizer.decode_from_indices(vq_tokens)
+
+        def decode_fn(patch: torch.Tensor) -> torch.Tensor:
+            return self.vqvae.decode(patch)
+
+        result = inferer(z_q, decode_fn)
+        assert isinstance(result, torch.Tensor)
+        return result
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass (reconstruction).

@@ -5,9 +5,9 @@ from typing import Any
 import torch
 import torch.nn as nn
 from lightning import LightningModule
-from monai.inferers.inferer import SlidingWindowInferer
 
 from ..models.maskgit import MaskGIT
+from ..models.maskgit.scheduling import TrainingMaskScheduler
 from ..models.vqvae import VQVAE
 
 
@@ -16,7 +16,7 @@ class MaskGITTask(LightningModule):
 
     Uses standard automatic optimization for single-stage training.
     Frozen VQVAE as tokenizer + Trainable Transformer.
-    Supports sliding window inference for large images.
+    Supports sliding window inference for large images (handled by MaskGIT model).
 
     Args:
         vqvae_ckpt_path: Path to pretrained VQVAE checkpoint
@@ -29,7 +29,7 @@ class MaskGITTask(LightningModule):
         lr: Learning rate (default: 2e-4)
         weight_decay: Weight decay (default: 0.05)
         warmup_steps: Learning rate warmup steps (default: 1000)
-        sliding_window: Sliding window configuration for VQVAE encoding
+        sliding_window: Sliding window configuration for encoding/decoding
     """
 
     def __init__(
@@ -62,7 +62,7 @@ class MaskGITTask(LightningModule):
         self.vqvae.eval()
         self.vqvae.requires_grad_(False)
 
-        # Build MaskGIT model
+        # Build MaskGIT model with sliding window support
         self.maskgit = MaskGIT(
             vqvae=self.vqvae,
             hidden_size=hidden_size,
@@ -71,60 +71,13 @@ class MaskGITTask(LightningModule):
             mlp_ratio=mlp_ratio,
             dropout=dropout,
             gamma_type=gamma_type,
+            sliding_window=sliding_window,
         )
-
-        # Sliding window configuration
-        self.sliding_window_cfg = sliding_window or {}
-        self._sliding_window_inferer: SlidingWindowInferer | None = None
-        self._downsampling_factor = 16
-
-        # Track training step for warmup
-        self.training_step_count = 0
-
-    def _get_sliding_window_inferer(self) -> SlidingWindowInferer | None:
-        """Get or create sliding window inferer for VQVAE encoding."""
-        if not self.sliding_window_cfg.get("enabled", False):
-            return None
-        if self._sliding_window_inferer is None:
-            roi_size = tuple(self.sliding_window_cfg.get("roi_size", [64, 64, 64]))
-            overlap = self.sliding_window_cfg.get("overlap", 0.25)
-            mode = self.sliding_window_cfg.get("mode", "gaussian")
-            sigma_scale = self.sliding_window_cfg.get("sigma_scale", 0.125)
-            sw_batch_size = self.sliding_window_cfg.get("sw_batch_size", 1)
-            self._sliding_window_inferer = SlidingWindowInferer(
-                roi_size=roi_size,
-                sw_batch_size=sw_batch_size,
-                overlap=overlap,
-                mode=mode,
-                sigma_scale=sigma_scale,
-                padding_mode="constant",
-                cval=0.0,
-            )
-        return self._sliding_window_inferer
-
-    def _pad_to_divisible(self, x: torch.Tensor) -> torch.Tensor:
-        B, C, D, H, W = x.shape
-        k = self._downsampling_factor
-        d_new = ((D + k - 1) // k) * k
-        h_new = ((H + k - 1) // k) * k
-        w_new = ((W + k - 1) // k) * k
-        pad_d = d_new - D
-        pad_h = h_new - H
-        pad_w = w_new - W
-        pad = (
-            pad_w // 2,
-            pad_w - pad_w // 2,
-            pad_h // 2,
-            pad_h - pad_h // 2,
-            pad_d // 2,
-            pad_d - pad_d // 2,
-        )
-        return nn.functional.pad(x, pad, mode="constant", value=-1.0)
 
     def encode_images_to_tokens(self, x: torch.Tensor) -> torch.Tensor:
         """Encode images to discrete tokens using VQVAE.
 
-        Uses sliding window inference if enabled, otherwise standard encoding.
+        Uses sliding window inference if enabled in MaskGIT model.
 
         Args:
             x: Input images [B, C, D, H, W]
@@ -132,39 +85,7 @@ class MaskGITTask(LightningModule):
         Returns:
             Token indices [B, D', H', W']
         """
-        inferer = self._get_sliding_window_inferer()
-
-        if inferer is None:
-            # Standard encoding
-            return self.maskgit.encode_tokens(x)
-
-        # Sliding window encoding for large images
-        original_shape = x.shape[2:]
-        x_padded = self._pad_to_divisible(x)
-
-        # Encode patches and get indices
-        def encode_fn(patch: torch.Tensor) -> torch.Tensor:
-            """Encode patch and return one-hot indices."""
-            z_q, _, indices = self.vqvae.encode(patch)
-            # Return indices as float for MONAI compatibility
-            return indices.float().unsqueeze(1)
-
-        # Use sliding window to encode
-        indices_padded = inferer(x_padded, encode_fn)
-
-        # Crop back to original spatial dimensions
-        # Indices spatial shape is smaller due to downsampling
-        latent_d = original_shape[0] // self._downsampling_factor
-        latent_h = original_shape[1] // self._downsampling_factor
-        latent_w = original_shape[2] // self._downsampling_factor
-
-        # Extract the center region
-        B = x.shape[0]
-        indices = indices_padded[:B, 0, :latent_d, :latent_h, :latent_w]  # type: ignore[index,misc,call-overload]
-
-        # Convert to long and shift for transformer
-        indices = indices.long()
-        return (indices + 1) % self.maskgit.codebook_size
+        return self.maskgit.encode_images_to_tokens(x)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out: torch.Tensor = self.maskgit(x)
@@ -178,39 +99,18 @@ class MaskGITTask(LightningModule):
             return batch[0]
         return batch
 
-    def training_step(self, batch: torch.Tensor, batch_idx: int) -> dict[str, Any]:
-        x = self._extract_input_tensor(batch)
-
-        # Encode images to tokens using sliding window if enabled
-        tokens = self.encode_images_to_tokens(x)
-
-        # Compute loss using tokens
-        loss, metrics = self._compute_loss_from_tokens(tokens)
-
-        self.training_step_count += 1
-
-        # Return loss and metrics for callback processing
-        return {
-            "loss": loss,
-            "log_data": metrics,
-        }
-
-    def _compute_loss_from_tokens(
-        self,
-        tokens: torch.Tensor,
-        mask_ratio: float | None = None,
-    ) -> tuple[torch.Tensor, dict[str, float]]:
-        """Compute MaskGIT loss from pre-encoded tokens.
+    def _compute_masked_loss(
+        self, tokens: torch.Tensor, mask_ratio: float | None = None
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        """Compute masked prediction loss and return raw data for metrics.
 
         Args:
             tokens: Token indices [B, D, H, W]
-            mask_ratio: Optional mask ratio
+            mask_ratio: Optional mask ratio (sampled if None)
 
         Returns:
-            Tuple of (loss tensor, metrics dict)
+            Tuple of (loss tensor, raw data dict for metrics computation)
         """
-        from ..models.maskgit.scheduling import TrainingMaskScheduler
-
         B, D, H, W = tokens.shape
         tokens_flat = tokens.view(B, -1)
         n_total = tokens_flat.shape[1]
@@ -237,17 +137,28 @@ class MaskGITTask(LightningModule):
 
         loss = nn.functional.cross_entropy(masked_logits, masked_targets)
 
-        # Get accuracy on masked positions
-        with torch.no_grad():
-            preds = masked_logits.argmax(dim=-1)
-            acc = (preds == masked_targets).float().mean()
-
-        metrics = {
-            "loss": loss.item(),
-            "mask_acc": acc.item(),
-            "mask_ratio": mask_ratio,
+        # Return raw data for metrics computation (done in callback)
+        raw_data = {
+            "masked_logits": masked_logits.detach(),
+            "masked_targets": masked_targets.detach(),
+            "mask_ratio": torch.tensor(mask_ratio),
         }
-        return loss, metrics
+        return loss, raw_data
+
+    def training_step(self, batch: torch.Tensor, batch_idx: int) -> dict[str, Any]:
+        x = self._extract_input_tensor(batch)
+
+        # Encode images to tokens using sliding window if enabled
+        tokens = self.encode_images_to_tokens(x)
+
+        # Compute loss and get raw data for metrics
+        loss, raw_data = self._compute_masked_loss(tokens)
+
+        # Return loss and raw data for callback processing
+        return {
+            "loss": loss,
+            "log_data": raw_data,
+        }
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> dict[str, Any]:
         x = self._extract_input_tensor(batch)
@@ -255,28 +166,43 @@ class MaskGITTask(LightningModule):
         # Encode images to tokens using sliding window if enabled
         tokens = self.encode_images_to_tokens(x)
 
-        # Compute loss
-        loss, metrics = self._compute_loss_from_tokens(tokens)
+        # Compute loss and get raw data for metrics
+        loss, raw_data = self._compute_masked_loss(tokens)
 
-        # Return loss and metrics for callback processing
+        # Return loss and raw data for callback processing
         return {
             "loss": loss,
-            "log_data": metrics,
+            "log_data": raw_data,
         }
+
+    def _decode_tokens_to_latent(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Decode tokens to latent using VQVAE decoder with sliding window support.
+
+        Args:
+            tokens: Token indices [B, D, H, W]
+
+        Returns:
+            Decoded latent/images [B, C, D*16, H*16, W*16]
+        """
+        return self.maskgit.decode_tokens_to_latent(tokens)
 
     def test_step(self, batch: torch.Tensor, batch_idx: int) -> dict[str, Any]:
         x = self._extract_input_tensor(batch)
 
-        # Encode images to tokens using sliding window if enabled
-        tokens = self.encode_images_to_tokens(x)
+        with torch.no_grad():
+            tokens_shape = self.encode_images_to_tokens(x).shape
 
-        # Compute loss
-        loss, metrics = self._compute_loss_from_tokens(tokens)
+        with torch.no_grad():
+            generated_images = self.maskgit.generate(
+                shape=tokens_shape,
+                temperature=1.0,
+                num_iterations=12,
+            )
 
-        # Return loss and metrics for callback processing
         return {
-            "loss": loss,
-            "log_data": metrics,
+            "generated_latent": generated_images,
+            "input_shape": x.shape,
+            "token_shape": tokens_shape,
         }
 
     def configure_optimizers(self):

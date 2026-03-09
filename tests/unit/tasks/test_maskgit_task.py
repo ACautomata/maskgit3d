@@ -59,17 +59,18 @@ def test_maskgit_task_encode_images_to_tokens(vqvae_checkpoint: str):
     assert tokens.dtype == torch.long
 
 
-def test_maskgit_task_compute_loss_from_tokens(vqvae_checkpoint: str):
+def test_maskgit_task_compute_masked_loss(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
     )
     task.eval()
     tokens = torch.randint(0, 100, (2, 4, 4, 4))
-    loss, metrics = task._compute_loss_from_tokens(tokens, mask_ratio=0.5)
+    loss, raw_data = task._compute_masked_loss(tokens, mask_ratio=0.5)
     assert isinstance(loss, torch.Tensor)
     assert loss.item() >= 0
-    assert "mask_acc" in metrics
-    assert "mask_ratio" in metrics
+    assert "masked_logits" in raw_data
+    assert "masked_targets" in raw_data
+    assert "mask_ratio" in raw_data
 
 
 def test_maskgit_task_training_step(vqvae_checkpoint: str):
@@ -100,11 +101,15 @@ def test_maskgit_task_test_step(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
     )
+    task.eval()
     x = torch.randn(1, 1, 16, 16, 16)
-    outputs = task.test_step(x, 0)
+    with torch.no_grad():
+        outputs = task.test_step(x, 0)
     assert isinstance(outputs, dict)
-    assert "loss" in outputs
-    assert "log_data" in outputs
+    assert "generated_latent" in outputs
+    assert "input_shape" in outputs
+    assert "token_shape" in outputs
+    assert isinstance(outputs["generated_latent"], torch.Tensor)
 
 
 def test_maskgit_task_sliding_window_disabled(vqvae_checkpoint: str):
@@ -116,7 +121,7 @@ def test_maskgit_task_sliding_window_disabled(vqvae_checkpoint: str):
         lr=1e-4,
         sliding_window={"enabled": False},
     )
-    inferer = task._get_sliding_window_inferer()
+    inferer = task.maskgit._get_sliding_window_inferer()
     assert inferer is None
 
 
@@ -129,7 +134,7 @@ def test_maskgit_task_sliding_window_enabled(vqvae_checkpoint: str):
         lr=1e-4,
         sliding_window={"enabled": True, "roi_size": [32, 32, 32], "overlap": 0.25},
     )
-    inferer = task._get_sliding_window_inferer()
+    inferer = task.maskgit._get_sliding_window_inferer()
     assert inferer is not None
     assert inferer.roi_size == (32, 32, 32)
     assert inferer.overlap == 0.25
@@ -182,7 +187,7 @@ def test_maskgit_task_pad_to_divisible(vqvae_checkpoint: str):
     )
 
     x = torch.randn(1, 1, 33, 33, 33)
-    x_padded = task._pad_to_divisible(x)
+    x_padded = task.maskgit._pad_to_divisible(x)
 
     assert x_padded.shape[2] % 16 == 0
     assert x_padded.shape[3] % 16 == 0
@@ -224,27 +229,23 @@ def test_maskgit_task_validation_step_with_logging(vqvae_checkpoint: str):
         task.validation_step(x, 0)
 
 
-def test_maskgit_task_test_step_with_logging(vqvae_checkpoint: str):
+def test_maskgit_task_test_step_generates_latent(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
     )
     task.eval()
 
-    class MockLogger:
-        def __init__(self):
-            self.logs = {}
-
-        def __call__(self, name, value, **kwargs):
-            self.logs[name] = value
-
-    task.log = MockLogger()  # type: ignore[assignment]
-
     x = torch.randn(1, 1, 16, 16, 16)
     with torch.no_grad():
-        task.test_step(x, 0)
+        outputs = task.test_step(x, 0)
+
+    assert isinstance(outputs, dict)
+    assert "generated_latent" in outputs
+    assert isinstance(outputs["generated_latent"], torch.Tensor)
+    assert outputs["generated_latent"].shape[0] == 1  # Batch size
 
 
-def test_maskgit_task_test_step_with_sliding_window_returns_log_data(vqvae_checkpoint: str):
+def test_maskgit_task_test_step_with_sliding_window_generates_latent(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint,
         hidden_size=128,
@@ -260,9 +261,8 @@ def test_maskgit_task_test_step_with_sliding_window_returns_log_data(vqvae_check
         outputs = task.test_step(x, 0)
 
     assert isinstance(outputs, dict)
-    assert "loss" in outputs
-    assert "log_data" in outputs
-    # Callback will handle logging sliding_window_enabled
+    assert "generated_latent" in outputs
+    assert isinstance(outputs["generated_latent"], torch.Tensor)
 
 
 def test_maskgit_task_training_step_with_list_batch(vqvae_checkpoint: str):
@@ -306,10 +306,10 @@ def test_maskgit_task_test_step_with_list_batch(vqvae_checkpoint: str):
     with torch.no_grad():
         outputs = task.test_step(batch, 0)  # type: ignore[arg-type]
         assert isinstance(outputs, dict)
-        assert "loss" in outputs
+        assert "generated_latent" in outputs
 
 
-def test_maskgit_task_compute_loss_from_tokens_random_mask_ratio(vqvae_checkpoint: str):
+def test_maskgit_task_compute_masked_loss_random_mask_ratio(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
     )
@@ -318,13 +318,14 @@ def test_maskgit_task_compute_loss_from_tokens_random_mask_ratio(vqvae_checkpoin
     tokens = torch.randint(0, 100, (2, 4, 4, 4))
 
     with torch.no_grad():
-        loss, metrics = task._compute_loss_from_tokens(tokens, mask_ratio=None)
+        loss, raw_data = task._compute_masked_loss(tokens, mask_ratio=None)
 
     assert isinstance(loss, torch.Tensor)
     assert loss.item() >= 0
-    assert "mask_acc" in metrics
-    assert "mask_ratio" in metrics
-    assert 0 <= metrics["mask_ratio"] <= 1
+    assert "masked_logits" in raw_data
+    assert "masked_targets" in raw_data
+    assert "mask_ratio" in raw_data
+    assert 0 <= raw_data["mask_ratio"].item() <= 1
 
 
 def test_maskgit_task_encode_images_to_tokens_with_sliding_window(vqvae_checkpoint: str):
@@ -400,7 +401,7 @@ def test_maskgit_task_no_vqvae_checkpoint(vqvae_checkpoint: str):
     assert not any(p.requires_grad for p in task.vqvae.parameters())
 
 
-def test_maskgit_task_compute_loss_ensures_at_least_one_masked(vqvae_checkpoint: str):
+def test_maskgit_task_compute_masked_loss_ensures_at_least_one_masked(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
     )
@@ -409,7 +410,7 @@ def test_maskgit_task_compute_loss_ensures_at_least_one_masked(vqvae_checkpoint:
     tokens = torch.randint(0, 100, (2, 4, 4, 4))
 
     with torch.no_grad():
-        loss, metrics = task._compute_loss_from_tokens(tokens, mask_ratio=0.0)
+        loss, raw_data = task._compute_masked_loss(tokens, mask_ratio=0.0)
 
     assert isinstance(loss, torch.Tensor)
     assert loss.item() >= 0
