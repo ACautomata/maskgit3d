@@ -56,14 +56,29 @@ class TestCallbackIntegration:
             assert len(trainer.callbacks) >= 7
 
     def test_vqvae_returns_val_loss(self):
-        """Test that VQVAE task returns val_loss for callbacks to monitor."""
-        # Check validation_step method returns dict with loss
-        import inspect
-
         from maskgit3d.tasks.vqvae_task import VQVAETask
 
-        source = inspect.getsource(VQVAETask.validation_step)
-        assert '"loss":' in source and "vq_loss" in source
+        task = VQVAETask(
+            in_channels=1,
+            out_channels=1,
+            latent_channels=64,
+            num_embeddings=100,
+            embedding_dim=64,
+            use_perceptual=False,
+        )
+        logged: dict[str, object] = {}
+
+        def capture_log(name: str, value: object, **_: object) -> None:
+            logged[name] = value
+
+        task.log = capture_log  # type: ignore[method-assign]
+        task.eval()
+
+        task.validation_step(
+            (__import__("torch").randn(1, 1, 32, 32, 32), __import__("torch").zeros(1)), 0
+        )
+
+        assert "val_loss" in logged
 
     def test_maskgit_returns_val_loss(self):
         """Test that MaskGIT task returns val_loss for callbacks to monitor."""

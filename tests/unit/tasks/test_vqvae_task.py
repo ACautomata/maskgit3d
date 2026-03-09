@@ -558,6 +558,55 @@ def test_vqvae_task_training_step_with_optimizers_parameter():
     assert outputs["loss"].item() >= 0
 
 
+def test_vqvae_task_training_step_accepts_tuple_batch():
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        use_perceptual=False,
+    )
+
+    opt_g = torch.optim.Adam(list(task.vqvae.parameters()), lr=1e-4)
+    opt_d = torch.optim.Adam(task.loss_fn.discriminator.parameters(), lr=1e-4)
+
+    task.manual_backward = lambda loss: loss.backward()  # type: ignore[assignment]
+
+    image_batch = torch.randn(1, 1, 32, 32, 32)
+    target_batch = image_batch.clone()
+    outputs = task.training_step((image_batch, target_batch), 0, optimizers=[opt_g, opt_d])
+
+    assert torch.equal(outputs["x_real"], image_batch)
+    assert outputs["x_recon"].shape == image_batch.shape
+
+
+@pytest.mark.parametrize("step_name", ["validation_step", "test_step", "predict_step"])
+def test_vqvae_task_inference_steps_accept_tuple_batch(step_name: str):
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        use_perceptual=False,
+        sliding_window={"enabled": False},
+    )
+    task.eval()
+
+    image_batch = torch.randn(1, 1, 32, 32, 32)
+    target_batch = image_batch.clone()
+
+    with torch.no_grad():
+        output = getattr(task, step_name)((image_batch, target_batch), 0)
+
+    if isinstance(output, dict):
+        assert torch.equal(output["x_real"], image_batch)
+        assert output["x_recon"].shape == image_batch.shape
+    else:
+        assert output.shape == image_batch.shape
+
+
 def test_vqvae_task_test_step_returns_cuda_memory_with_cuda(monkeypatch):
     monkeypatch.setattr("torch.cuda.is_available", lambda: True)
     monkeypatch.setattr("torch.cuda.reset_peak_memory_stats", lambda: None)

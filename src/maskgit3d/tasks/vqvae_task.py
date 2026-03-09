@@ -1,5 +1,6 @@
 """VQVAE training task with GAN-based manual optimization and adaptive weighting."""
 
+from collections.abc import Sequence
 from typing import Any
 
 import torch
@@ -139,6 +140,17 @@ class VQVAETask(BaseTask):
         self._sliding_window_inferer: SlidingWindowInferer | None = None
         self._downsampling_factor = 16
 
+    def _extract_input_tensor(self, batch: torch.Tensor | Sequence[Any]) -> torch.Tensor:
+        if isinstance(batch, torch.Tensor):
+            return batch
+
+        if isinstance(batch, Sequence) and batch:
+            image = batch[0]
+            if isinstance(image, torch.Tensor):
+                return image
+
+        raise TypeError("Expected batch to be a tensor or a sequence whose first item is a tensor.")
+
     def _get_sliding_window_inferer(self) -> SlidingWindowInferer | None:
         if not self.sliding_window_cfg.get("enabled", False):
             return None
@@ -266,7 +278,7 @@ class VQVAETask(BaseTask):
 
     def training_step(
         self,
-        batch: torch.Tensor,
+        batch: torch.Tensor | Sequence[Any],
         batch_idx: int,
         optimizers: list[torch.optim.Optimizer] | None = None,
     ) -> dict[str, Any]:
@@ -275,7 +287,7 @@ class VQVAETask(BaseTask):
 
         opt_g, opt_d = optimizers  # type: ignore[misc]
 
-        x_real = batch
+        x_real = self._extract_input_tensor(batch)
         last_layer = self._get_decoder_last_layer()
 
         x_recon, vq_loss = self.vqvae(x_real)
@@ -313,9 +325,19 @@ class VQVAETask(BaseTask):
             "last_layer": last_layer,
         }
 
-    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> dict[str, Any]:
-        x_real = batch
+    def validation_step(
+        self, batch: torch.Tensor | Sequence[Any], batch_idx: int
+    ) -> dict[str, Any]:
+        x_real = self._extract_input_tensor(batch)
         x_recon, vq_loss = self.vqvae(x_real)
+        self.log(
+            "val_loss",
+            vq_loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            batch_size=x_real.shape[0],
+        )
 
         return {
             "loss": vq_loss,
@@ -339,8 +361,8 @@ class VQVAETask(BaseTask):
         )
         return [opt_g, opt_d]
 
-    def test_step(self, batch: torch.Tensor, batch_idx: int) -> dict[str, Any]:
-        x_real = batch
+    def test_step(self, batch: torch.Tensor | Sequence[Any], batch_idx: int) -> dict[str, Any]:
+        x_real = self._extract_input_tensor(batch)
         original_shape = x_real.shape[2:]
         inferer = self._get_sliding_window_inferer()
 
@@ -381,8 +403,8 @@ class VQVAETask(BaseTask):
             "use_sliding_window": inferer is not None,
         }
 
-    def predict_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
-        x_real = batch
+    def predict_step(self, batch: torch.Tensor | Sequence[Any], batch_idx: int) -> torch.Tensor:
+        x_real = self._extract_input_tensor(batch)
         x_recon: torch.Tensor
         x_recon, _ = self.vqvae(x_real)  # type: ignore[misc]
         return x_recon
