@@ -6,21 +6,22 @@ latent_channels: 256
 num_embeddings: 8192
 embedding_dim: 256
 
-lr_g: 4.5e-6
+lr_g: 5.0e-5
 lr_d: 1.0e-4
 
 lambda_l1: 1.0
 lambda_vq: 1.0
-lambda_gan: 0.1
+lambda_gan: 0.5
 
 use_perceptual: true
-lambda_perceptual: 0.1
+lambda_perceptual: 0.5
 perceptual_network: alex
 
-disc_start: 50001
+disc_start: 15000
 disc_factor: 1.0
 use_adaptive_weight: true
 disc_loss: hinge
+commitment_cost: 0.5
 
 sliding_window:
   enabled: true

@@ -104,6 +104,7 @@ class VQVAETask(BaseTask):
         use_adaptive_weight: bool = True,
         disc_loss: str = "hinge",
         sliding_window: dict[str, Any] | None = None,
+        commitment_cost: float = 0.25,
     ):
         super().__init__()
         self.automatic_optimization = False
@@ -114,6 +115,7 @@ class VQVAETask(BaseTask):
             latent_channels=latent_channels,
             num_embeddings=num_embeddings,
             embedding_dim=embedding_dim,
+            commitment_cost=commitment_cost,
         )
 
         self.loss_fn = VQPerceptualLoss(

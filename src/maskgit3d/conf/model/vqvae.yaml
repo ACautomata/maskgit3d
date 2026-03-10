@@ -16,4 +16,4 @@ attention_levels:
   - false
   - false
   - false
-commitment_cost: 0.25
+commitment_cost: 0.5
