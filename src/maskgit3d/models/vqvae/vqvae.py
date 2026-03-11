@@ -9,6 +9,44 @@ from .quantizer import VectorQuantizer
 
 
 class VQVAE(nn.Module):
+    """Vector Quantized Variational Autoencoder for 3D medical images.
+
+    Implements a VQ-VAE architecture for encoding 3D medical images into
+    discrete latent tokens and decoding them back to reconstructed images.
+
+    The model consists of:
+    - Encoder: Converts input images to latent representations
+    - Vector Quantizer: Maps latents to discrete embedding indices
+    - Decoder: Reconstructs images from quantized latents
+
+    Args:
+        in_channels: Number of input channels (default: 1 for grayscale).
+        out_channels: Number of output channels (default: 1 for grayscale).
+        latent_channels: Number of channels in the latent space (default: 256).
+        num_embeddings: Number of discrete embeddings in the codebook (default: 8192).
+        embedding_dim: Dimension of each embedding vector (default: 256).
+        num_channels: Tuple of channel numbers for each encoder/decoder block.
+            Default: (64, 128, 256).
+        num_res_blocks: Number of residual blocks at each resolution level.
+            Default: (2, 2, 2).
+        attention_levels: Boolean tuple indicating which levels use attention.
+            Default: (False, False, False).
+        commitment_cost: Weight for commitment loss in VQ training (default: 0.25).
+
+    Attributes:
+        encoder: Encoder network that processes input images.
+        quant_conv: Conv3d layer that transforms encoder output to embedding dimension.
+        post_quant_conv: Conv3d layer that transforms embedding back to latent channels.
+        quantizer: VectorQuantizer layer for discretizing latents.
+        decoder: Decoder network that reconstructs images from quantized latents.
+
+    Example:
+        >>> model = VQVAE(in_channels=1, out_channels=1, num_embeddings=1024)
+        >>> x = torch.randn(1, 1, 32, 32, 32)
+        >>> x_recon, vq_loss = model(x)
+        >>> print(f"Reconstructed shape: {x_recon.shape}, VQ loss: {vq_loss}")
+    """
+
     def __init__(
         self,
         in_channels: int = 1,

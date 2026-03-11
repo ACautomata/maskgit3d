@@ -2,7 +2,7 @@ defaults:
   - _self_
   - model: vqvae
   - task: vqvae
-  - dataset@data: medmnist3d
+  - data: medmnist3d
   - trainer: default
 
 ckpt_path: null
