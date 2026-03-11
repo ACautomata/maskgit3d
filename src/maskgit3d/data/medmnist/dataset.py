@@ -111,7 +111,11 @@ class MedMNIST3DDataset(Dataset):
         if self.task_type == TaskType.RECONSTRUCTION:
             target = image.clone()
         else:
-            target = torch.tensor(label.item(), dtype=torch.long)
+            if isinstance(label, np.ndarray):
+                label_tensor = torch.from_numpy(label).long()
+            else:
+                label_tensor = torch.tensor(label, dtype=torch.long)
+            target = label_tensor.squeeze() if label_tensor.numel() == 1 else label_tensor
 
         return image, target
 

@@ -7,6 +7,7 @@ Dataset-specific transforms have been moved to their respective modules:
 - VQVAE: tasks/vqvae_task.py
 """
 
+import torch
 from monai.transforms.compose import Compose
 from monai.transforms.intensity.array import NormalizeIntensity, ScaleIntensity, ScaleIntensityRange
 from monai.transforms.spatial.array import Resize
@@ -60,7 +61,7 @@ def create_3d_preprocessing(
     return Compose(transforms)
 
 
-def normalize_to_neg_one_one(x):
+def normalize_to_neg_one_one(x: torch.Tensor) -> torch.Tensor:
     """Normalize tensor from [0, 1] range to [-1, 1] range.
 
     Args:

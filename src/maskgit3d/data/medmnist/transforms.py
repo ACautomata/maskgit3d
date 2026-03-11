@@ -34,13 +34,13 @@ def create_training_transforms(config: MedMNISTConfig) -> Callable:
     return Compose(
         [
             EnsureType(),
+            SpatialPad(spatial_size=crop_size, mode="constant"),
             ScaleIntensityRange(
                 a_min=0.0,
                 a_max=255.0,
                 b_min=-1.0,
                 b_max=1.0,
             ),
-            SpatialPad(spatial_size=crop_size, mode="constant"),
             RandSpatialCrop(
                 roi_size=crop_size,
                 random_center=True,
