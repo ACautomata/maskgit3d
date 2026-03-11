@@ -33,10 +33,7 @@ class PositionalEncoding3D(nn.Module):
         Returns:
             Tokens with positional information added
         """
-        B = x.shape[0]
-        # Repeat positional embeddings for each sample in batch
-        pos_emb = self.pos_embed.repeat(B, 1, 1)
-        return x + pos_emb
+        return x + self.pos_embed
 
 
 class TransformerBlock(nn.Module):
@@ -91,15 +88,8 @@ class TransformerBlock(nn.Module):
             Output [B, N, C]
         """
         # Self-attention with residual
-        x = (
-            x
-            + self.attn(
-                self.norm1(x),
-                self.norm1(x),
-                self.norm1(x),
-                attn_mask=mask,
-            )[0]
-        )
+        normed = self.norm1(x)
+        x = x + self.attn(normed, normed, normed, attn_mask=mask)[0]
 
         # Feedforward with residual
         x = x + self.mlp(self.norm2(x))
@@ -175,7 +165,7 @@ class MaskGITTransformer(nn.Module):
         self.norm = nn.LayerNorm(hidden_size)
         self.head = nn.Linear(hidden_size, vocab_size, bias=False)
 
-    def _init_pos_encoding(self, seq_len: int, device: torch.device):
+    def _init_pos_encoding(self, seq_len: int, device: torch.device) -> None:
         """Initialize positional encoding if needed."""
         if self.pos_encoding is None:
             self.pos_encoding = PositionalEncoding3D(seq_len, self.hidden_size).to(device)
@@ -292,10 +282,12 @@ class MaskGITTransformer(nn.Module):
         # Random masking
         mask = torch.rand(B, N, device=device) < mask_ratio
 
-        # Ensure at least one token is masked per sample
-        for i in range(B):
-            if not mask[i].any():
-                mask[i, torch.randint(0, N, (1,), device=device)] = True
+        # Ensure at least one token is masked per sample (vectorized)
+        any_masked = mask.any(dim=1)
+        if not any_masked.all():
+            needs_mask = ~any_masked
+            random_indices = torch.randint(0, N, (int(needs_mask.sum().item()),), device=device)
+            mask[needs_mask, random_indices] = True
 
         # Get predictions
         logits = self.forward(tokens, mask_indices=mask)
