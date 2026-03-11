@@ -9,6 +9,7 @@ from monai.inferers.inferer import SlidingWindowInferer
 
 from ..losses.vq_perceptual_loss import VQPerceptualLoss
 from ..models.vqvae import VQVAE
+from ..utils.sliding_window import create_sliding_window_inferer, pad_to_divisible
 from .base_task import BaseTask
 
 
@@ -154,47 +155,12 @@ class VQVAETask(BaseTask):
         raise TypeError("Expected batch to be a tensor or a sequence whose first item is a tensor.")
 
     def _get_sliding_window_inferer(self) -> SlidingWindowInferer | None:
-        if not self.sliding_window_cfg.get("enabled", False):
-            return None
         if self._sliding_window_inferer is None:
-            roi_size = tuple(self.sliding_window_cfg.get("roi_size", [64, 64, 64]))
-            overlap = self.sliding_window_cfg.get("overlap", 0.25)
-            mode = self.sliding_window_cfg.get("mode", "gaussian")
-            sigma_scale = self.sliding_window_cfg.get("sigma_scale", 0.125)
-            sw_batch_size = self.sliding_window_cfg.get("sw_batch_size", 1)
-            self._sliding_window_inferer = SlidingWindowInferer(
-                roi_size=roi_size,
-                sw_batch_size=sw_batch_size,
-                overlap=overlap,
-                mode=mode,
-                sigma_scale=sigma_scale,
-                padding_mode="constant",
-                cval=0.0,
-            )
+            self._sliding_window_inferer = create_sliding_window_inferer(self.sliding_window_cfg)
         return self._sliding_window_inferer
 
     def _pad_to_divisible(self, x: torch.Tensor) -> torch.Tensor:
-        B, C, D, H, W = x.shape
-        k = self._downsampling_factor
-
-        d_new = ((D + k - 1) // k) * k
-        h_new = ((H + k - 1) // k) * k
-        w_new = ((W + k - 1) // k) * k
-
-        pad_d = d_new - D
-        pad_h = h_new - H
-        pad_w = w_new - W
-
-        pad = (
-            pad_w // 2,
-            pad_w - pad_w // 2,
-            pad_h // 2,
-            pad_h - pad_h // 2,
-            pad_d // 2,
-            pad_d - pad_d // 2,
-        )
-
-        return F.pad(x, pad, mode="constant", value=-1.0)
+        return pad_to_divisible(x, self._downsampling_factor)
 
     def _get_decoder_last_layer(self) -> torch.nn.Parameter | None:
         """Get the last layer weight of the decoder for adaptive weight calculation.
@@ -203,10 +169,14 @@ class VQVAETask(BaseTask):
         Used for computing gradient norms in adaptive GAN loss weighting.
 
         Returns:
-            The last layer parameter, or None if not found.
+            The last layer parameter (weight, dim >= 2), or None if not found.
         """
         try:
-            return list(self.vqvae.decoder.decoder.parameters())[-1]
+            decoder = self.vqvae.decoder.decoder
+            params = [p for p in decoder.parameters() if p.ndim >= 2]
+            if params:
+                return params[-1]
+            return None
         except (AttributeError, IndexError):
             return None
 
@@ -275,8 +245,8 @@ class VQVAETask(BaseTask):
         )
         return loss_d, log_d
 
-    def forward(self, x: torch.Tensor):
-        return self.vqvae(x)
+    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:  # type: ignore[override]
+        return self.vqvae(x)  # type: ignore[no-any-return]
 
     def training_step(
         self,

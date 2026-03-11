@@ -7,14 +7,13 @@ import torch.nn as nn
 from lightning import LightningModule
 
 from ..models.maskgit import MaskGIT
-from ..models.maskgit.scheduling import TrainingMaskScheduler
 from ..models.vqvae import VQVAE
 
 
 class MaskGITTask(LightningModule):
     """MaskGIT training task with automatic optimization.
 
-    Uses standard automatic optimization for single-stage training.
+    Uses standard automatic optimisation for single-stage training.
     Frozen VQVAE as tokenizer + Trainable Transformer.
     Supports sliding window inference for large images (handled by MaskGIT model).
 
@@ -30,6 +29,13 @@ class MaskGITTask(LightningModule):
         weight_decay: Weight decay (default: 0.05)
         warmup_steps: Learning rate warmup steps (default: 1000)
         sliding_window: Sliding window configuration for encoding/decoding
+
+    Attributes:
+        vqvae: Frozen VQVAE model for encoding images to tokens and decoding.
+        maskgit: MaskGIT model containing transformer and generation logic.
+        lr: Learning rate for optimizer.
+        weight_decay: Weight decay for optimizer.
+        warmup_steps: Number of warmup steps for learning rate scheduler.
     """
 
     def __init__(
@@ -113,35 +119,28 @@ class MaskGITTask(LightningModule):
         """
         B, D, H, W = tokens.shape
         tokens_flat = tokens.view(B, -1)
-        n_total = tokens_flat.shape[1]
 
-        # Sample mask ratio if not provided
         if mask_ratio is None:
-            scheduler = TrainingMaskScheduler(gamma_type=self.maskgit.mask_scheduler.gamma_type)
-            mask_ratio = scheduler.sample_mask_ratio()
+            mask_ratio = self.maskgit.mask_scheduler.sample_mask_ratio()
 
-        # Random masking
-        mask = torch.rand(B, n_total, device=tokens.device) < mask_ratio
-
-        # Ensure at least one token masked per sample
-        for i in range(B):
-            if not mask[i].any():
-                mask[i, torch.randint(0, n_total, (1,), device=tokens.device)] = True
-
-        # Get predictions
-        logits = self.maskgit.transformer.forward(tokens_flat, mask_indices=mask)
-
-        # Compute loss only on masked positions
-        masked_logits = logits[mask]
-        masked_targets = tokens_flat[mask]
+        # Use transformer's predict_masked for masking logic
+        masked_logits, masked_targets, mask = self.maskgit.transformer.predict_masked(
+            tokens_flat, mask_ratio=mask_ratio
+        )
 
         loss = nn.functional.cross_entropy(masked_logits, masked_targets)
 
-        # Return raw data for metrics computation (done in callback)
-        raw_data = {
-            "masked_logits": masked_logits.detach(),
-            "masked_targets": masked_targets.detach(),
-            "mask_ratio": torch.tensor(mask_ratio),
+        # Compute accuracy in-step to avoid storing large tensors
+        with torch.no_grad():
+            predictions = masked_logits.argmax(dim=-1)
+            correct = (predictions == masked_targets).sum().item()
+            total = masked_targets.numel()
+
+        # Return scalars for metrics (memory efficient)
+        raw_data: dict[str, torch.Tensor] = {
+            "correct": torch.tensor(correct, device=tokens.device),
+            "total": torch.tensor(total, device=tokens.device),
+            "mask_ratio": torch.tensor(mask_ratio, device=tokens.device),
         }
         return loss, raw_data
 
@@ -205,7 +204,9 @@ class MaskGITTask(LightningModule):
             "token_shape": tokens_shape,
         }
 
-    def configure_optimizers(self):
+    def configure_optimizers(  # type: ignore[override]
+        self,
+    ) -> dict[str, Any]:
         optimizer = torch.optim.AdamW(
             self.maskgit.transformer.parameters(),
             lr=self.lr,
@@ -218,4 +219,10 @@ class MaskGITTask(LightningModule):
             return 1.0
 
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-        return [optimizer], [scheduler]
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+            },
+        }
