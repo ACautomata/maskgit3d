@@ -30,10 +30,12 @@ def test_maskgit_task_configure_optimizers(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
     )
-    optimizers, schedulers = task.configure_optimizers()
-    assert len(optimizers) == 1
-    assert isinstance(optimizers[0], torch.optim.AdamW)
-    assert len(schedulers) == 1
+    result = task.configure_optimizers()
+    assert isinstance(result, dict)
+    assert "optimizer" in result
+    assert "lr_scheduler" in result
+    optimizer = result["optimizer"]
+    assert isinstance(optimizer, torch.optim.AdamW)
 
 
 def test_maskgit_task_forward(vqvae_checkpoint: str):
@@ -68,9 +70,12 @@ def test_maskgit_task_compute_masked_loss(vqvae_checkpoint: str):
     loss, raw_data = task._compute_masked_loss(tokens, mask_ratio=0.5)
     assert isinstance(loss, torch.Tensor)
     assert loss.item() >= 0
-    assert "masked_logits" in raw_data
-    assert "masked_targets" in raw_data
+    assert "correct" in raw_data
+    assert "total" in raw_data
     assert "mask_ratio" in raw_data
+    assert isinstance(raw_data["correct"], torch.Tensor)
+    assert isinstance(raw_data["total"], torch.Tensor)
+    assert raw_data["mask_ratio"].item() == 0.5
 
 
 def test_maskgit_task_training_step(vqvae_checkpoint: str):
@@ -205,8 +210,9 @@ def test_maskgit_task_warmup_scheduler(vqvae_checkpoint: str):
         warmup_steps=10,
     )
 
-    optimizers, schedulers = task.configure_optimizers()
-    assert len(schedulers) == 1
+    result = task.configure_optimizers()
+    assert isinstance(result, dict)
+    assert "lr_scheduler" in result
 
 
 def test_maskgit_task_validation_step_with_logging(vqvae_checkpoint: str):
@@ -322,9 +328,11 @@ def test_maskgit_task_compute_masked_loss_random_mask_ratio(vqvae_checkpoint: st
 
     assert isinstance(loss, torch.Tensor)
     assert loss.item() >= 0
-    assert "masked_logits" in raw_data
-    assert "masked_targets" in raw_data
+    assert "correct" in raw_data
+    assert "total" in raw_data
     assert "mask_ratio" in raw_data
+    assert isinstance(raw_data["correct"], torch.Tensor)
+    assert isinstance(raw_data["total"], torch.Tensor)
     assert 0 <= raw_data["mask_ratio"].item() <= 1
 
 
@@ -426,9 +434,10 @@ def test_maskgit_task_warmup_scheduler_after_warmup(vqvae_checkpoint: str):
         warmup_steps=5,
     )
 
-    optimizers, schedulers = task.configure_optimizers()
-    optimizer = optimizers[0]
-    scheduler = schedulers[0]
+    result = task.configure_optimizers()
+    assert isinstance(result, dict)
+    optimizer = result["optimizer"]
+    scheduler = result["lr_scheduler"]["scheduler"]
 
     for _ in range(10):
         optimizer.step()

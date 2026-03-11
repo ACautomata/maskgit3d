@@ -27,7 +27,7 @@ class TestMedMNISTConfig:
     def test_default_values(self):
         config = MedMNISTConfig(dataset_name=MedMNISTDatasetName.ORGAN)
         assert config.task_type == TaskType.RECONSTRUCTION
-        assert config.crop_size == (32, 32, 32)
+        assert config.crop_size == (64, 64, 64)
         assert config.batch_size == 32
         assert config.num_workers == 8
         assert config.pin_memory is True
@@ -49,7 +49,7 @@ class TestMedMNISTConfig:
 
     def test_input_size_property(self):
         config = MedMNISTConfig(dataset_name=MedMNISTDatasetName.ORGAN)
-        assert config.input_size == 28
+        assert config.input_size == 64
 
     def test_custom_values(self):
         config = MedMNISTConfig(
