@@ -11,6 +11,10 @@ import torch
 import torch.nn as nn
 from monai.inferers.inferer import SlidingWindowInferer
 
+from maskgit3d.utils.sliding_window import (
+    create_sliding_window_inferer,
+    pad_to_divisible,
+)
 from ..vqvae import VQVAE
 from .sampling import MaskGITSampler
 from .scheduling import TrainingMaskScheduler
@@ -94,43 +98,12 @@ class MaskGIT(nn.Module):
         return self.codebook_size + 1
 
     def _get_sliding_window_inferer(self) -> SlidingWindowInferer | None:
-        if not self.sliding_window_cfg.get("enabled", False):
-            return None
         if self._sliding_window_inferer is None:
-            roi_size = tuple(self.sliding_window_cfg.get("roi_size", [64, 64, 64]))
-            overlap = self.sliding_window_cfg.get("overlap", 0.25)
-            mode = self.sliding_window_cfg.get("mode", "gaussian")
-            sigma_scale = self.sliding_window_cfg.get("sigma_scale", 0.125)
-            sw_batch_size = self.sliding_window_cfg.get("sw_batch_size", 1)
-            self._sliding_window_inferer = SlidingWindowInferer(
-                roi_size=roi_size,
-                sw_batch_size=sw_batch_size,
-                overlap=overlap,
-                mode=mode,
-                sigma_scale=sigma_scale,
-                padding_mode="constant",
-                cval=0.0,
-            )
+            self._sliding_window_inferer = create_sliding_window_inferer(self.sliding_window_cfg)
         return self._sliding_window_inferer
 
     def _pad_to_divisible(self, x: torch.Tensor) -> torch.Tensor:
-        B, C, D, H, W = x.shape
-        k = self._downsampling_factor
-        d_new = ((D + k - 1) // k) * k
-        h_new = ((H + k - 1) // k) * k
-        w_new = ((W + k - 1) // k) * k
-        pad_d = d_new - D
-        pad_h = h_new - H
-        pad_w = w_new - W
-        pad = (
-            pad_w // 2,
-            pad_w - pad_w // 2,
-            pad_h // 2,
-            pad_h - pad_h // 2,
-            pad_d // 2,
-            pad_d - pad_d // 2,
-        )
-        return nn.functional.pad(x, pad, mode="constant", value=-1.0)
+        return pad_to_divisible(x, self._downsampling_factor)
 
     def _to_transformer_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
         """Convert VQVAE tokens to Transformer tokens."""
@@ -204,7 +177,7 @@ class MaskGIT(nn.Module):
         latent_w = original_shape[2] // self._downsampling_factor
 
         B = x.shape[0]
-        indices = indices_padded[:B, 0, :latent_d, :latent_h, :latent_w]  # type: ignore[index]
+        indices = indices_padded[:B, 0, :latent_d, :latent_h, :latent_w]  # type: ignore[call-overload]
 
         indices = indices.long()
         return self._to_transformer_tokens(indices)
