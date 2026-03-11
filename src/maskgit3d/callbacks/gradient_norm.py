@@ -118,7 +118,7 @@ class GradientNormCallback(Callback):
         if norms and trainer.logger is not None:
             trainer.logger.log_metrics(norms, step=trainer.global_step)
 
-    def _get_parameters(self, pl_module: LightningModule):
+    def _get_parameters(self, pl_module: LightningModule) -> list[torch.Tensor]:
         """Get parameters to compute norms for."""
         if self.only_trainable:
             return [p for p in pl_module.parameters() if p.requires_grad]
@@ -128,12 +128,12 @@ class GradientNormCallback(Callback):
         """Reset step counter at epoch start."""
         self._step_count = 0
 
-    def state_dict(self) -> dict:
+    def state_dict(self) -> dict[str, Any]:
         """Return state dict for checkpointing."""
         return {
             "step_count": self._step_count,
         }
 
-    def load_state_dict(self, state_dict: dict) -> None:
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load state from checkpoint."""
         self._step_count = state_dict.get("step_count", 0)

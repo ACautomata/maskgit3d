@@ -167,7 +167,7 @@ class NaNDetectionCallback(Callback):
             "action": self.action,
         }
 
-    def load_state_dict(self, state_dict: dict) -> None:
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load state from checkpoint."""
         self._nan_count = state_dict.get("nan_count", 0)
         self.action = state_dict.get("action", self.action)
