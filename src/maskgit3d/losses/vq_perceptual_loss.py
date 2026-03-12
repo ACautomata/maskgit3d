@@ -149,6 +149,7 @@ class VQPerceptualLoss(nn.Module):
         disc_start: int = 0,
         disc_factor: float = 1.0,
         use_adaptive_weight: bool = True,
+        adaptive_weight_max: float = 100.0,
         perceptual_network: str = "alex",
         use_perceptual: bool = True,
     ) -> None:
@@ -162,6 +163,7 @@ class VQPerceptualLoss(nn.Module):
         self.disc_start = disc_start
         self.disc_factor = disc_factor
         self.use_adaptive_weight = use_adaptive_weight
+        self.adaptive_weight_max = adaptive_weight_max
 
         self.discriminator = PatchDiscriminator3D(
             in_channels=disc_in_channels,
@@ -219,7 +221,7 @@ class VQPerceptualLoss(nn.Module):
         g_grads = torch.autograd.grad(g_loss, last_layer, retain_graph=True)[0]
 
         d_weight = torch.norm(nll_grads) / (torch.norm(g_grads) + 1e-4)
-        d_weight = torch.clamp(d_weight, 0.0, 1e4).detach()
+        d_weight = torch.clamp(d_weight, 0.0, self.adaptive_weight_max).detach()
 
         return d_weight * self.discriminator_weight
 

@@ -1,7 +1,7 @@
 """VQVAE training task with GAN-based manual optimization and adaptive weighting."""
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal
 
 import torch
 import torch.nn.functional as F
@@ -103,9 +103,14 @@ class VQVAETask(BaseTask):
         disc_start: int = 0,
         disc_factor: float = 1.0,
         use_adaptive_weight: bool = True,
+        adaptive_weight_max: float = 100.0,
         disc_loss: str = "hinge",
         sliding_window: dict[str, Any] | None = None,
         commitment_cost: float = 0.25,
+        gradient_clip_val: float = 1.0,
+        gradient_clip_enabled: bool = True,
+        quantizer_type: Literal["vq", "fsq"] = "vq",
+        fsq_levels: Sequence[int] = (8, 8, 8, 5, 5, 5),
     ):
         super().__init__()
         self.automatic_optimization = False
@@ -117,6 +122,8 @@ class VQVAETask(BaseTask):
             num_embeddings=num_embeddings,
             embedding_dim=embedding_dim,
             commitment_cost=commitment_cost,
+            quantizer_type=quantizer_type,
+            fsq_levels=fsq_levels,
         )
 
         self.loss_fn = VQPerceptualLoss(
@@ -132,12 +139,15 @@ class VQVAETask(BaseTask):
             disc_start=disc_start,
             disc_factor=disc_factor,
             use_adaptive_weight=use_adaptive_weight,
+            adaptive_weight_max=adaptive_weight_max,
             perceptual_network=perceptual_network,
             use_perceptual=use_perceptual,
         )
 
         self.lr_g = lr_g
         self.lr_d = lr_d
+        self.gradient_clip_val = gradient_clip_val
+        self.gradient_clip_enabled = gradient_clip_enabled
 
         self.sliding_window_cfg = sliding_window or {}
         self._sliding_window_inferer: SlidingWindowInferer | None = None
@@ -264,7 +274,7 @@ class VQVAETask(BaseTask):
 
         x_recon, vq_loss = self.vqvae(x_real)
 
-        loss_g, _ = self.loss_fn(
+        loss_g, log_g = self.loss_fn(
             inputs=x_real,
             reconstructions=x_recon,
             vq_loss=vq_loss,
@@ -273,11 +283,46 @@ class VQVAETask(BaseTask):
             last_layer=last_layer,
             split="train",
         )
+
+        for key, value in log_g.items():
+            if isinstance(value, torch.Tensor):
+                self.log(
+                    key,
+                    value,
+                    on_step=True,
+                    on_epoch=False,
+                    prog_bar=False,
+                    batch_size=x_real.shape[0],
+                )
+
+        self.log("train/x_recon_min", x_recon.min(), on_step=True, on_epoch=False, prog_bar=False)
+        self.log("train/x_recon_max", x_recon.max(), on_step=True, on_epoch=False, prog_bar=False)
+        self.log(
+            "train/x_recon_abs_mean",
+            x_recon.abs().mean(),
+            on_step=True,
+            on_epoch=False,
+            prog_bar=False,
+        )
+        self.log("train/x_real_min", x_real.min(), on_step=True, on_epoch=False, prog_bar=False)
+        self.log("train/x_real_max", x_real.max(), on_step=True, on_epoch=False, prog_bar=False)
+
         opt_g.zero_grad()
         self.manual_backward(loss_g)
+
+        # Manual gradient clipping for generator
+        if self.gradient_clip_enabled and self.gradient_clip_val > 0:
+            torch.nn.utils.clip_grad_norm_(
+                list(self.vqvae.encoder.parameters())
+                + list(self.vqvae.quant_conv.parameters())
+                + list(self.vqvae.post_quant_conv.parameters())
+                + list(self.vqvae.quantizer.parameters())
+                + list(self.vqvae.decoder.parameters()),
+                self.gradient_clip_val,
+            )
         opt_g.step()
 
-        loss_d, _ = self.loss_fn(
+        loss_d, log_d = self.loss_fn(
             inputs=x_real,
             reconstructions=x_recon,
             vq_loss=vq_loss,
@@ -285,8 +330,27 @@ class VQVAETask(BaseTask):
             global_step=self.global_step,
             split="train",
         )
+
+        for key, value in log_d.items():
+            if isinstance(value, torch.Tensor):
+                self.log(
+                    key,
+                    value,
+                    on_step=True,
+                    on_epoch=False,
+                    prog_bar=False,
+                    batch_size=x_real.shape[0],
+                )
+
         opt_d.zero_grad()
         self.manual_backward(loss_d)
+
+        # Manual gradient clipping for discriminator
+        if self.gradient_clip_enabled and self.gradient_clip_val > 0:
+            torch.nn.utils.clip_grad_norm_(
+                self.loss_fn.discriminator.parameters(),
+                self.gradient_clip_val,
+            )
         opt_d.step()
 
         return {

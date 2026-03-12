@@ -20,8 +20,12 @@ perceptual_network: alex
 disc_start: 15000
 disc_factor: 1.0
 use_adaptive_weight: true
+adaptive_weight_max: 100.0
 disc_loss: hinge
 commitment_cost: 0.5
+
+gradient_clip_enabled: true
+gradient_clip_val: 1.0
 
 sliding_window:
   enabled: true

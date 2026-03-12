@@ -3,6 +3,7 @@
 from .gradient_norm import GradientNormCallback
 from .maskgit_metrics import MaskGITMetricsCallback
 from .nan_detection import NaNDetectionCallback
+from .training_stability import TrainingStabilityCallback
 from .training_time import TrainingTimeCallback
 from .vqvae_metrics import VQVAEMetricsCallback
 
@@ -10,6 +11,7 @@ __all__ = [
     "GradientNormCallback",
     "MaskGITMetricsCallback",
     "NaNDetectionCallback",
+    "TrainingStabilityCallback",
     "TrainingTimeCallback",
     "VQVAEMetricsCallback",
 ]

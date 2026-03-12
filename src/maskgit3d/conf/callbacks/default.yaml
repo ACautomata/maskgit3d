@@ -8,6 +8,7 @@ defaults:
   - nan_detection
   - training_time
   - gradient_norm
+  - training_stability
   - _self_
 
 # Rich progress bar for better visualization (optional)
