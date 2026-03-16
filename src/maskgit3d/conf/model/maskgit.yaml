@@ -1,0 +1,9 @@
+# MaskGIT Transformer model configuration
+# Note: vqvae is passed programmatically by MaskGITTask, not in config
+_target_: maskgit3d.models.maskgit.MaskGIT
+hidden_size: 768
+num_layers: 12
+num_heads: 12
+mlp_ratio: 4.0
+dropout: 0.1
+gamma_type: cosine

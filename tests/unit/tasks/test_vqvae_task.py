@@ -2,6 +2,7 @@
 
 import pytest
 import torch
+from omegaconf import DictConfig
 
 from src.maskgit3d.tasks.vqvae_task import (
     VQVAETask,
@@ -672,3 +673,247 @@ def test_vqvae_task_pad_to_divisible_consistency():
 
     assert x_padded1.shape == x_padded2.shape
     assert torch.allclose(x_padded1, x_padded2)
+
+
+class TestVQVAETaskModelConfig:
+    """Tests for VQVAETask accepting model via DictConfig."""
+
+    def test_accepts_model_config(self):
+        """VQVAETask can be constructed with model_config DictConfig."""
+        from omegaconf import DictConfig
+        from maskgit3d.tasks.vqvae_task import VQVAETask
+        from maskgit3d.models.vqvae import VQVAE
+
+        model_cfg = DictConfig(
+            {
+                "_target_": "maskgit3d.models.vqvae.VQVAE",
+                "in_channels": 1,
+                "out_channels": 1,
+                "latent_channels": 4,
+                "num_embeddings": 32,
+                "embedding_dim": 4,
+                "num_channels": [32, 64],
+                "num_res_blocks": [1, 1],
+                "attention_levels": [False, False],
+                "commitment_cost": 0.25,
+            }
+        )
+        task = VQVAETask(model_config=model_cfg, lr_g=1e-4, lr_d=1e-4)
+        assert isinstance(task.vqvae, VQVAE)
+        assert task.vqvae.in_channels == 1
+
+    def test_model_config_overrides_scalar_params(self):
+        """When model_config is provided, scalar model params are ignored."""
+        from omegaconf import DictConfig
+        from maskgit3d.tasks.vqvae_task import VQVAETask
+
+        model_cfg = DictConfig(
+            {
+                "_target_": "maskgit3d.models.vqvae.VQVAE",
+                "in_channels": 2,  # different from scalar
+                "out_channels": 2,
+                "latent_channels": 4,
+                "num_embeddings": 32,
+                "embedding_dim": 4,
+                "num_channels": [32, 64],
+                "num_res_blocks": [1, 1],
+                "attention_levels": [False, False],
+            }
+        )
+        task = VQVAETask(
+            model_config=model_cfg,
+            in_channels=1,  # should be ignored
+            out_channels=1,  # should be ignored
+            lr_g=1e-4,
+            lr_d=1e-4,
+        )
+        assert task.vqvae.in_channels == 2
+
+    def test_scalar_params_still_work(self):
+        """Backward compat: scalar params still construct VQVAE when no model_config."""
+        from maskgit3d.tasks.vqvae_task import VQVAETask
+        from maskgit3d.models.vqvae import VQVAE
+
+        task = VQVAETask(
+            in_channels=1,
+            out_channels=1,
+            latent_channels=4,
+            num_embeddings=32,
+            embedding_dim=4,
+            num_channels=[32, 64],
+            num_res_blocks=[1, 1],
+            attention_levels=[False, False],
+            lr_g=1e-4,
+            lr_d=1e-4,
+        )
+        assert isinstance(task.vqvae, VQVAE)
+
+    def test_model_config_saved_in_hparams(self):
+        """model_config should be serializable via save_hyperparameters."""
+        from omegaconf import DictConfig
+        from maskgit3d.tasks.vqvae_task import VQVAETask
+
+        model_cfg = DictConfig(
+            {
+                "_target_": "maskgit3d.models.vqvae.VQVAE",
+                "in_channels": 1,
+                "out_channels": 1,
+                "latent_channels": 4,
+                "num_embeddings": 32,
+                "embedding_dim": 4,
+                "num_channels": [32, 64],
+                "num_res_blocks": [1, 1],
+                "attention_levels": [False, False],
+            }
+        )
+        task = VQVAETask(model_config=model_cfg, lr_g=1e-4, lr_d=1e-4)
+        assert "model_config" in task.hparams
+
+    def test_fsq_model_config(self):
+        """VQVAETask works with FSQ model variant via model_config."""
+        from omegaconf import DictConfig
+        from maskgit3d.tasks.vqvae_task import VQVAETask
+        from maskgit3d.models.vqvae import VQVAE
+
+        model_cfg = DictConfig(
+            {
+                "_target_": "maskgit3d.models.vqvae.VQVAE",
+                "in_channels": 1,
+                "out_channels": 1,
+                "latent_channels": 4,
+                "num_channels": [32, 64],
+                "num_res_blocks": [1, 1],
+                "attention_levels": [False, False],
+                "quantizer_type": "fsq",
+                "fsq_levels": [8, 8, 8, 5, 5, 5],
+            }
+        )
+        task = VQVAETask(model_config=model_cfg, lr_g=1e-4, lr_d=1e-4)
+        assert isinstance(task.vqvae, VQVAE)
+
+
+class TestVQVAETaskOptimizerConfig:
+    """Tests for VQVAETask accepting optimizer via DictConfig."""
+
+    def test_accepts_optimizer_config(self):
+        """VQVAETask uses optimizer_config for generator optimizer."""
+        opt_cfg = DictConfig(
+            {
+                "_target_": "torch.optim.AdamW",
+                "lr": 2e-4,
+                "weight_decay": 0.01,
+            }
+        )
+        task = VQVAETask(
+            model_config=DictConfig(
+                {
+                    "_target_": "maskgit3d.models.vqvae.VQVAE",
+                    "in_channels": 1,
+                    "out_channels": 1,
+                    "latent_channels": 4,
+                    "num_embeddings": 32,
+                    "embedding_dim": 4,
+                    "num_channels": [32, 64],
+                    "num_res_blocks": [1, 1],
+                    "attention_levels": [False, False],
+                }
+            ),
+            optimizer_config=opt_cfg,
+            lr_g=1e-4,
+            lr_d=1e-4,
+        )
+        optimizers = task.configure_optimizers()
+        # Generator optimizer should be AdamW (from config)
+        assert isinstance(optimizers[0], torch.optim.AdamW)
+        # Discriminator optimizer should still be Adam (default)
+        assert isinstance(optimizers[1], torch.optim.Adam)
+
+    def test_accepts_disc_optimizer_config(self):
+        """VQVAETask uses disc_optimizer_config for discriminator optimizer."""
+        disc_opt_cfg = DictConfig(
+            {
+                "_target_": "torch.optim.SGD",
+                "lr": 1e-3,
+                "momentum": 0.9,
+            }
+        )
+        task = VQVAETask(
+            model_config=DictConfig(
+                {
+                    "_target_": "maskgit3d.models.vqvae.VQVAE",
+                    "in_channels": 1,
+                    "out_channels": 1,
+                    "latent_channels": 4,
+                    "num_embeddings": 32,
+                    "embedding_dim": 4,
+                    "num_channels": [32, 64],
+                    "num_res_blocks": [1, 1],
+                    "attention_levels": [False, False],
+                }
+            ),
+            disc_optimizer_config=disc_opt_cfg,
+            lr_g=1e-4,
+            lr_d=1e-4,
+        )
+        optimizers = task.configure_optimizers()
+        assert isinstance(optimizers[1], torch.optim.SGD)
+
+    def test_optimizer_config_fallback_to_scalar(self):
+        """Without optimizer_config, uses hardcoded Adam with lr_g/lr_d."""
+        task = VQVAETask(
+            model_config=DictConfig(
+                {
+                    "_target_": "maskgit3d.models.vqvae.VQVAE",
+                    "in_channels": 1,
+                    "out_channels": 1,
+                    "latent_channels": 4,
+                    "num_embeddings": 32,
+                    "embedding_dim": 4,
+                    "num_channels": [32, 64],
+                    "num_res_blocks": [1, 1],
+                    "attention_levels": [False, False],
+                }
+            ),
+            lr_g=1e-4,
+            lr_d=1e-4,
+        )
+        optimizers = task.configure_optimizers()
+        assert isinstance(optimizers[0], torch.optim.Adam)
+        assert isinstance(optimizers[1], torch.optim.Adam)
+
+    def test_both_optimizer_configs(self):
+        """Both generator and discriminator optimizers can be configured."""
+        gen_opt_cfg = DictConfig(
+            {
+                "_target_": "torch.optim.AdamW",
+                "lr": 2e-4,
+                "weight_decay": 0.01,
+            }
+        )
+        disc_opt_cfg = DictConfig(
+            {
+                "_target_": "torch.optim.AdamW",
+                "lr": 1e-4,
+                "weight_decay": 0.0,
+            }
+        )
+        task = VQVAETask(
+            model_config=DictConfig(
+                {
+                    "_target_": "maskgit3d.models.vqvae.VQVAE",
+                    "in_channels": 1,
+                    "out_channels": 1,
+                    "latent_channels": 4,
+                    "num_embeddings": 32,
+                    "embedding_dim": 4,
+                    "num_channels": [32, 64],
+                    "num_res_blocks": [1, 1],
+                    "attention_levels": [False, False],
+                }
+            ),
+            optimizer_config=gen_opt_cfg,
+            disc_optimizer_config=disc_opt_cfg,
+        )
+        optimizers = task.configure_optimizers()
+        assert isinstance(optimizers[0], torch.optim.AdamW)
+        assert isinstance(optimizers[1], torch.optim.AdamW)

@@ -1,16 +1,19 @@
 """VQVAE training task with GAN-based manual optimization and adaptive weighting."""
 
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 import torch
 import torch.nn.functional as F
+from hydra.utils import instantiate
 from monai.inferers.inferer import SlidingWindowInferer
+from omegaconf import DictConfig
 
 from ..losses.vq_perceptual_loss import VQPerceptualLoss
 from ..models.vqvae import VQVAE
 from ..utils.sliding_window import create_sliding_window_inferer, pad_to_divisible
 from .base_task import BaseTask
+from .gan_training_strategy import GANTrainingStrategy
 
 
 def compute_downsampling_factor(
@@ -87,11 +90,17 @@ def compute_padded_size(
 class VQVAETask(BaseTask):
     def __init__(
         self,
+        model_config: Optional[DictConfig] = None,
+        optimizer_config: Optional[DictConfig] = None,
+        disc_optimizer_config: Optional[DictConfig] = None,
         in_channels: int = 1,
         out_channels: int = 1,
         latent_channels: int = 256,
         num_embeddings: int = 8192,
         embedding_dim: int = 256,
+        num_channels: Sequence[int] = (64, 128, 256),
+        num_res_blocks: Sequence[int] = (2, 2, 2),
+        attention_levels: Sequence[bool] = (False, False, False),
         lr_g: float = 4.5e-06,
         lr_d: float = 1e-04,
         lambda_l1: float = 1.0,
@@ -115,16 +124,22 @@ class VQVAETask(BaseTask):
         super().__init__()
         self.automatic_optimization = False
 
-        self.vqvae = VQVAE(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            latent_channels=latent_channels,
-            num_embeddings=num_embeddings,
-            embedding_dim=embedding_dim,
-            commitment_cost=commitment_cost,
-            quantizer_type=quantizer_type,
-            fsq_levels=fsq_levels,
-        )
+        if model_config is not None:
+            self.vqvae = instantiate(model_config)
+        else:
+            self.vqvae = VQVAE(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                latent_channels=latent_channels,
+                num_embeddings=num_embeddings,
+                embedding_dim=embedding_dim,
+                num_channels=num_channels,
+                num_res_blocks=num_res_blocks,
+                attention_levels=attention_levels,
+                commitment_cost=commitment_cost,
+                quantizer_type=quantizer_type,
+                fsq_levels=fsq_levels,
+            )
 
         self.loss_fn = VQPerceptualLoss(
             disc_in_channels=out_channels,
@@ -148,10 +163,13 @@ class VQVAETask(BaseTask):
         self.lr_d = lr_d
         self.gradient_clip_val = gradient_clip_val
         self.gradient_clip_enabled = gradient_clip_enabled
+        self.gan_strategy = GANTrainingStrategy(gradient_clip_val, gradient_clip_enabled)
 
         self.sliding_window_cfg = sliding_window or {}
         self._sliding_window_inferer: SlidingWindowInferer | None = None
         self._downsampling_factor = 16
+
+        self.save_hyperparameters()
 
     def _extract_input_tensor(self, batch: torch.Tensor | Sequence[Any]) -> torch.Tensor:
         if isinstance(batch, torch.Tensor):
@@ -309,18 +327,7 @@ class VQVAETask(BaseTask):
 
         opt_g.zero_grad()
         self.manual_backward(loss_g)
-
-        # Manual gradient clipping for generator
-        if self.gradient_clip_enabled and self.gradient_clip_val > 0:
-            torch.nn.utils.clip_grad_norm_(
-                list(self.vqvae.encoder.parameters())
-                + list(self.vqvae.quant_conv.parameters())
-                + list(self.vqvae.post_quant_conv.parameters())
-                + list(self.vqvae.quantizer.parameters())
-                + list(self.vqvae.decoder.parameters()),
-                self.gradient_clip_val,
-            )
-        opt_g.step()
+        self.gan_strategy.step_generator(opt_g, loss_g, self.vqvae)
 
         loss_d, log_d = self.loss_fn(
             inputs=x_real,
@@ -344,14 +351,7 @@ class VQVAETask(BaseTask):
 
         opt_d.zero_grad()
         self.manual_backward(loss_d)
-
-        # Manual gradient clipping for discriminator
-        if self.gradient_clip_enabled and self.gradient_clip_val > 0:
-            torch.nn.utils.clip_grad_norm_(
-                self.loss_fn.discriminator.parameters(),
-                self.gradient_clip_val,
-            )
-        opt_d.step()
+        self.gan_strategy.step_discriminator(opt_d, loss_d)
 
         return {
             "loss": loss_g,
@@ -383,18 +383,35 @@ class VQVAETask(BaseTask):
         }
 
     def configure_optimizers(self) -> list[torch.optim.Optimizer]:
-        opt_g = torch.optim.Adam(
-            list(self.vqvae.encoder.parameters())
-            + list(self.vqvae.quant_conv.parameters())
-            + list(self.vqvae.post_quant_conv.parameters())
-            + list(self.vqvae.quantizer.parameters())
-            + list(self.vqvae.decoder.parameters()),
-            lr=self.lr_g,
-        )
-        opt_d = torch.optim.Adam(
-            self.loss_fn.discriminator.parameters(),
-            lr=self.lr_d,
-        )
+        if self.hparams.get("optimizer_config") is not None:
+            param_groups = [
+                {"params": self.vqvae.encoder.parameters()},
+                {"params": self.vqvae.quant_conv.parameters()},
+                {"params": self.vqvae.post_quant_conv.parameters()},
+                {"params": self.vqvae.quantizer.parameters()},
+                {"params": self.vqvae.decoder.parameters()},
+            ]
+            opt_g = instantiate(self.hparams["optimizer_config"], _partial_=True)(param_groups)
+        else:
+            opt_g = torch.optim.Adam(
+                list(self.vqvae.encoder.parameters())
+                + list(self.vqvae.quant_conv.parameters())
+                + list(self.vqvae.post_quant_conv.parameters())
+                + list(self.vqvae.quantizer.parameters())
+                + list(self.vqvae.decoder.parameters()),
+                lr=self.lr_g,
+            )
+
+        if self.hparams.get("disc_optimizer_config") is not None:
+            opt_d = instantiate(self.hparams["disc_optimizer_config"], _partial_=True)(
+                self.loss_fn.discriminator.parameters()
+            )
+        else:
+            opt_d = torch.optim.Adam(
+                self.loss_fn.discriminator.parameters(),
+                lr=self.lr_d,
+            )
+
         return [opt_g, opt_d]
 
     def test_step(self, batch: torch.Tensor | Sequence[Any], batch_idx: int) -> dict[str, Any]:

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 import torch
+from omegaconf import DictConfig
 
 from src.maskgit3d.models.vqvae import VQVAE
 from src.maskgit3d.tasks.maskgit_task import MaskGITTask
@@ -444,3 +445,176 @@ def test_maskgit_task_warmup_scheduler_after_warmup(vqvae_checkpoint: str):
         scheduler.step()
 
     assert scheduler.get_last_lr()[0] == 1e-4
+
+
+class TestMaskGITTaskModelConfig:
+    """Tests for MaskGITTask accepting model via DictConfig."""
+
+    def test_accepts_model_config(self, vqvae_checkpoint):
+        """MaskGITTask can be constructed with model_config DictConfig."""
+        from omegaconf import DictConfig
+        from maskgit3d.tasks.maskgit_task import MaskGITTask
+        from maskgit3d.models.maskgit import MaskGIT
+
+        model_cfg = DictConfig(
+            {
+                "_target_": "maskgit3d.models.maskgit.MaskGIT",
+                "hidden_size": 128,
+                "num_layers": 2,
+                "num_heads": 4,
+                "mlp_ratio": 4.0,
+                "dropout": 0.0,
+            }
+        )
+        task = MaskGITTask(
+            model_config=model_cfg,
+            vqvae_ckpt_path=str(vqvae_checkpoint),
+        )
+        assert isinstance(task.maskgit, MaskGIT)
+        assert task.maskgit.hidden_size == 128
+
+    def test_model_config_overrides_scalar_params(self, vqvae_checkpoint):
+        """When model_config is provided, scalar transformer params are ignored."""
+        from omegaconf import DictConfig
+        from maskgit3d.tasks.maskgit_task import MaskGITTask
+
+        model_cfg = DictConfig(
+            {
+                "_target_": "maskgit3d.models.maskgit.MaskGIT",
+                "hidden_size": 256,
+                "num_layers": 4,
+                "num_heads": 8,
+            }
+        )
+        task = MaskGITTask(
+            model_config=model_cfg,
+            vqvae_ckpt_path=str(vqvae_checkpoint),
+            hidden_size=128,  # should be ignored
+            num_layers=2,
+        )
+        assert task.maskgit.hidden_size == 256
+
+    def test_scalar_params_still_work(self, vqvae_checkpoint):
+        """Backward compat: scalar params still work without model_config."""
+        from maskgit3d.tasks.maskgit_task import MaskGITTask
+        from maskgit3d.models.maskgit import MaskGIT
+
+        task = MaskGITTask(
+            vqvae_ckpt_path=str(vqvae_checkpoint),
+            hidden_size=128,
+            num_layers=2,
+            num_heads=4,
+        )
+        assert isinstance(task.maskgit, MaskGIT)
+
+    def test_model_config_saved_in_hparams(self, vqvae_checkpoint):
+        """model_config should be in hparams for checkpoint loading."""
+        from omegaconf import DictConfig
+        from maskgit3d.tasks.maskgit_task import MaskGITTask
+
+        model_cfg = DictConfig(
+            {
+                "_target_": "maskgit3d.models.maskgit.MaskGIT",
+                "hidden_size": 128,
+                "num_layers": 2,
+                "num_heads": 4,
+            }
+        )
+        task = MaskGITTask(model_config=model_cfg, vqvae_ckpt_path=str(vqvae_checkpoint))
+        assert "model_config" in task.hparams
+
+
+class TestMaskGITTaskOptimizerConfig:
+    """Tests for MaskGITTask accepting optimizer via DictConfig."""
+
+    def test_accepts_optimizer_config(self, vqvae_checkpoint):
+        """MaskGITTask uses optimizer_config for optimizer."""
+        opt_cfg = DictConfig(
+            {
+                "_target_": "torch.optim.Adam",  # different from default AdamW
+                "lr": 2e-4,
+            }
+        )
+        task = MaskGITTask(
+            model_config=DictConfig(
+                {
+                    "_target_": "maskgit3d.models.maskgit.MaskGIT",
+                    "hidden_size": 128,
+                    "num_layers": 2,
+                    "num_heads": 4,
+                    "mlp_ratio": 4.0,
+                    "dropout": 0.0,
+                }
+            ),
+            vqvae_ckpt_path=str(vqvae_checkpoint),
+            optimizer_config=opt_cfg,
+        )
+        result = task.configure_optimizers()
+        optimizer = result["optimizer"]
+        assert isinstance(optimizer, torch.optim.Adam)
+
+    def test_optimizer_config_with_scheduler(self, vqvae_checkpoint):
+        """MaskGITTask scheduler still works with optimizer_config."""
+        opt_cfg = DictConfig(
+            {
+                "_target_": "torch.optim.AdamW",
+                "lr": 1e-4,
+            }
+        )
+        task = MaskGITTask(
+            model_config=DictConfig(
+                {
+                    "_target_": "maskgit3d.models.maskgit.MaskGIT",
+                    "hidden_size": 128,
+                    "num_layers": 2,
+                    "num_heads": 4,
+                }
+            ),
+            vqvae_ckpt_path=str(vqvae_checkpoint),
+            optimizer_config=opt_cfg,
+            warmup_steps=100,
+        )
+        result = task.configure_optimizers()
+        assert "optimizer" in result
+        assert "lr_scheduler" in result
+
+    def test_optimizer_config_fallback_to_scalar(self, vqvae_checkpoint):
+        """Without optimizer_config, uses hardcoded AdamW with lr/weight_decay."""
+        task = MaskGITTask(
+            model_config=DictConfig(
+                {
+                    "_target_": "maskgit3d.models.maskgit.MaskGIT",
+                    "hidden_size": 128,
+                    "num_layers": 2,
+                    "num_heads": 4,
+                }
+            ),
+            vqvae_ckpt_path=str(vqvae_checkpoint),
+            lr=1e-4,
+            weight_decay=0.01,
+        )
+        result = task.configure_optimizers()
+        optimizer = result["optimizer"]
+        assert isinstance(optimizer, torch.optim.AdamW)
+
+    def test_optimizer_config_saved_in_hparams(self, vqvae_checkpoint):
+        """optimizer_config should be in hparams for checkpoint loading."""
+        opt_cfg = DictConfig(
+            {
+                "_target_": "torch.optim.AdamW",
+                "lr": 1e-4,
+            }
+        )
+        task = MaskGITTask(
+            model_config=DictConfig(
+                {
+                    "_target_": "maskgit3d.models.maskgit.MaskGIT",
+                    "hidden_size": 128,
+                    "num_layers": 2,
+                    "num_heads": 4,
+                }
+            ),
+            vqvae_ckpt_path=str(vqvae_checkpoint),
+            optimizer_config=opt_cfg,
+        )
+        assert "optimizer_config" in task.hparams

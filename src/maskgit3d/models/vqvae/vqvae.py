@@ -7,6 +7,7 @@ import torch.nn as nn
 from .decoder import Decoder
 from .encoder import Encoder
 from .fsq import FSQQuantizer
+from .protocol import QuantizerProtocol
 from .quantizer import VectorQuantizer
 
 
@@ -79,6 +80,9 @@ class VQVAE(nn.Module):
     ):
         super().__init__()
 
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+
         self.encoder = Encoder(
             spatial_dims=3,
             in_channels=in_channels,
@@ -92,13 +96,13 @@ class VQVAE(nn.Module):
         self.post_quant_conv = nn.Conv3d(embedding_dim, latent_channels, 1)
 
         if quantizer_type == "vq":
-            self.quantizer = VectorQuantizer(
+            self.quantizer: QuantizerProtocol = VectorQuantizer(
                 num_embeddings=num_embeddings,
                 embedding_dim=embedding_dim,
                 commitment_cost=commitment_cost,
             )
         elif quantizer_type == "fsq":
-            self.quantizer = FSQQuantizer(
+            self.quantizer: QuantizerProtocol = FSQQuantizer(
                 levels=list(fsq_levels),
                 embedding_dim=embedding_dim,
             )

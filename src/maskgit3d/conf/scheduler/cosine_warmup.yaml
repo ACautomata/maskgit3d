@@ -1,0 +1,5 @@
+# Cosine warmup scheduler config for MaskGIT
+# Note: The actual LambdaLR is constructed in the task since it needs
+# access to warmup_steps for the lr_lambda function.
+# This config provides the parameters, not a _target_.
+warmup_steps: 1000

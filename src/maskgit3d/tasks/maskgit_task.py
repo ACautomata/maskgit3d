@@ -1,10 +1,12 @@
 """MaskGIT training task with automatic optimization."""
 
-from typing import Any
+from typing import Any, Optional
 
 import torch
 import torch.nn as nn
+from hydra.utils import instantiate
 from lightning import LightningModule
+from omegaconf import DictConfig
 
 from ..models.maskgit import MaskGIT
 from ..models.vqvae import VQVAE
@@ -40,6 +42,8 @@ class MaskGITTask(LightningModule):
 
     def __init__(
         self,
+        model_config: Optional[DictConfig] = None,
+        optimizer_config: Optional[DictConfig] = None,
         vqvae_ckpt_path: str | None = None,
         hidden_size: int = 768,
         num_layers: int = 12,
@@ -68,17 +72,19 @@ class MaskGITTask(LightningModule):
         self.vqvae.eval()
         self.vqvae.requires_grad_(False)
 
-        # Build MaskGIT model with sliding window support
-        self.maskgit = MaskGIT(
-            vqvae=self.vqvae,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            num_heads=num_heads,
-            mlp_ratio=mlp_ratio,
-            dropout=dropout,
-            gamma_type=gamma_type,
-            sliding_window=sliding_window,
-        )
+        if model_config is not None:
+            self.maskgit = instantiate(model_config, vqvae=self.vqvae)
+        else:
+            self.maskgit = MaskGIT(
+                vqvae=self.vqvae,
+                hidden_size=hidden_size,
+                num_layers=num_layers,
+                num_heads=num_heads,
+                mlp_ratio=mlp_ratio,
+                dropout=dropout,
+                gamma_type=gamma_type,
+                sliding_window=sliding_window,
+            )
 
     def encode_images_to_tokens(self, x: torch.Tensor) -> torch.Tensor:
         """Encode images to discrete tokens using VQVAE.
@@ -207,15 +213,23 @@ class MaskGITTask(LightningModule):
     def configure_optimizers(  # type: ignore[override]
         self,
     ) -> dict[str, Any]:
-        optimizer = torch.optim.AdamW(
-            self.maskgit.transformer.parameters(),
-            lr=self.lr,
-            weight_decay=self.weight_decay,
-        )
+        if self.hparams.get("optimizer_config") is not None:
+            optimizer = instantiate(
+                self.hparams.optimizer_config,
+                params=self.maskgit.parameters(),
+            )
+        else:
+            optimizer = torch.optim.AdamW(
+                self.maskgit.transformer.parameters(),
+                lr=self.lr,
+                weight_decay=self.weight_decay,
+            )
+
+        warmup_steps = self.hparams.get("warmup_steps", self.warmup_steps)
 
         def lr_lambda(step: int) -> float:
-            if step < self.warmup_steps:
-                return float(step) / float(max(1, self.warmup_steps))
+            if step < warmup_steps:
+                return float(step) / float(max(1, warmup_steps))
             return 1.0
 
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)

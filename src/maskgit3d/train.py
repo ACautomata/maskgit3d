@@ -14,7 +14,7 @@ def _resolve_optional_path(path: str | None) -> str | None:
 @hydra.main(version_base=None, config_path="conf", config_name="train")
 def main(cfg: DictConfig) -> None:
     datamodule = instantiate(cfg.data)
-    task = instantiate(cfg.task)
+    task = instantiate(cfg.task, _recursive_=False)
 
     callbacks: Any = instantiate(cfg.callbacks) if cfg.get("callbacks") is not None else None
     logger: Any = instantiate(cfg.logger) if cfg.get("logger") is not None else None

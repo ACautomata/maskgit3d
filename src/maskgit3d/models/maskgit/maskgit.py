@@ -58,6 +58,7 @@ class MaskGIT(nn.Module):
         super().__init__()
 
         self.vqvae = vqvae
+        self.hidden_size = hidden_size
         self._codebook_size = vqvae.quantizer.num_embeddings
 
         # Mask token is the last token in vocab (codebook_size)
