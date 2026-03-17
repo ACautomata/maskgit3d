@@ -382,7 +382,9 @@ class VQVAETask(BaseTask):
         # Returning a dict causes Lightning to accumulate results across the
         # epoch, holding references to CUDA tensors and preventing memory reuse.
 
-    def validation_step(self, batch: torch.Tensor | Sequence[Any], batch_idx: int) -> None:
+    def validation_step(
+        self, batch: torch.Tensor | Sequence[Any], batch_idx: int
+    ) -> dict[str, Any]:
         x_real = self._extract_input_tensor(batch)
         x_recon, vq_loss = self.vqvae(x_real)
         rec_loss = F.l1_loss(x_recon, x_real)
@@ -411,6 +413,10 @@ class VQVAETask(BaseTask):
             prog_bar=False,
             batch_size=x_real.shape[0],
         )
+        return {
+            "x_real": x_real.detach().cpu(),
+            "x_recon": x_recon.detach().cpu(),
+        }
 
     def configure_optimizers(self) -> list[torch.optim.Optimizer]:
         if self.hparams.get("optimizer_config") is not None:
@@ -485,6 +491,8 @@ class VQVAETask(BaseTask):
             "loss": loss.item(),
             "inference_time": 0.0,
             "use_sliding_window": inferer is not None,
+            "x_real": x_real.detach().cpu(),
+            "x_recon": x_recon.detach().cpu(),
         }
 
     def predict_step(self, batch: torch.Tensor | Sequence[Any], batch_idx: int) -> torch.Tensor:

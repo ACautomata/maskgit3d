@@ -1,0 +1,9 @@
+# Sample saving callback configuration for evaluation
+# Saves generated/reconstructed samples as PNG during validation/testing
+
+sample_saving:
+  _target_: maskgit3d.callbacks.sample_saving.SampleSavingCallback
+  output_dir: "samples"
+  max_samples_per_batch: 4
+  save_validation: true
+  save_test: true

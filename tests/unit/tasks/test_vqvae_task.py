@@ -232,8 +232,12 @@ def test_vqvae_task_validation_step():
     with torch.no_grad():
         outputs = task.validation_step(x, 0)
 
-    # validation_step returns None to avoid VRAM leaks
-    assert outputs is None
+    # validation_step returns dict with x_real and x_recon for SampleSavingCallback
+    assert isinstance(outputs, dict)
+    assert "x_real" in outputs
+    assert "x_recon" in outputs
+    assert isinstance(outputs["x_real"], torch.Tensor)
+    assert isinstance(outputs["x_recon"], torch.Tensor)
 
 
 def test_vqvae_task_validation_step_with_perceptual():
@@ -252,7 +256,10 @@ def test_vqvae_task_validation_step_with_perceptual():
     with torch.no_grad():
         outputs = task.validation_step(x, 0)
 
-    assert outputs is None
+    # validation_step returns dict with x_real and x_recon for SampleSavingCallback
+    assert isinstance(outputs, dict)
+    assert "x_real" in outputs
+    assert "x_recon" in outputs
 
 
 def test_vqvae_task_test_step_without_sliding_window():
@@ -276,6 +283,11 @@ def test_vqvae_task_test_step_without_sliding_window():
     assert "loss" in outputs
     assert "inference_time" in outputs
     assert "use_sliding_window" in outputs
+    # test_step also returns x_real and x_recon for SampleSavingCallback
+    assert "x_real" in outputs
+    assert "x_recon" in outputs
+    assert isinstance(outputs["x_real"], torch.Tensor)
+    assert isinstance(outputs["x_recon"], torch.Tensor)
 
 
 @pytest.mark.integration
@@ -578,10 +590,18 @@ def test_vqvae_task_inference_steps_accept_tuple_batch(step_name: str):
         output = getattr(task, step_name)((image_batch, target_batch), 0)
 
     if step_name == "validation_step":
-        assert output is None
-    elif isinstance(output, dict):
+        # validation_step now returns dict with x_real/x_recon
+        assert isinstance(output, dict)
+        assert "x_real" in output
+        assert "x_recon" in output
+    elif step_name == "test_step":
+        # test_step returns dict with loss and x_real/x_recon
+        assert isinstance(output, dict)
         assert "loss" in output
+        assert "x_real" in output
+        assert "x_recon" in output
     else:
+        # predict_step returns tensor
         assert output.shape == image_batch.shape
 
 

@@ -96,9 +96,12 @@ def test_maskgit_task_validation_step(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
     )
+    task.eval()
     x = torch.randn(1, 1, 16, 16, 16)
-    outputs = task.validation_step(x, 0)
-    assert outputs is None
+    with torch.no_grad():
+        outputs = task.validation_step(x, 0)
+    assert isinstance(outputs, dict)
+    assert "generated_images" in outputs
 
 
 def test_maskgit_task_test_step(vqvae_checkpoint: str):
@@ -110,10 +113,10 @@ def test_maskgit_task_test_step(vqvae_checkpoint: str):
     with torch.no_grad():
         outputs = task.test_step(x, 0)
     assert isinstance(outputs, dict)
-    assert "generated_latent" in outputs
+    assert "generated_images" in outputs
     assert "input_shape" in outputs
     assert "token_shape" in outputs
-    assert isinstance(outputs["generated_latent"], torch.Tensor)
+    assert isinstance(outputs["generated_images"], torch.Tensor)
 
 
 def test_maskgit_task_sliding_window_disabled(vqvae_checkpoint: str):
@@ -234,7 +237,7 @@ def test_maskgit_task_validation_step_with_logging(vqvae_checkpoint: str):
         task.validation_step(x, 0)
 
 
-def test_maskgit_task_test_step_generates_latent(vqvae_checkpoint: str):
+def test_maskgit_task_test_step_generates_images(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
     )
@@ -245,12 +248,12 @@ def test_maskgit_task_test_step_generates_latent(vqvae_checkpoint: str):
         outputs = task.test_step(x, 0)
 
     assert isinstance(outputs, dict)
-    assert "generated_latent" in outputs
-    assert isinstance(outputs["generated_latent"], torch.Tensor)
-    assert outputs["generated_latent"].shape[0] == 1  # Batch size
+    assert "generated_images" in outputs
+    assert isinstance(outputs["generated_images"], torch.Tensor)
+    assert outputs["generated_images"].shape[0] == 1
 
 
-def test_maskgit_task_test_step_with_sliding_window_generates_latent(vqvae_checkpoint: str):
+def test_maskgit_task_test_step_with_sliding_window_generates_images(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint,
         hidden_size=128,
@@ -266,8 +269,8 @@ def test_maskgit_task_test_step_with_sliding_window_generates_latent(vqvae_check
         outputs = task.test_step(x, 0)
 
     assert isinstance(outputs, dict)
-    assert "generated_latent" in outputs
-    assert isinstance(outputs["generated_latent"], torch.Tensor)
+    assert "generated_images" in outputs
+    assert isinstance(outputs["generated_images"], torch.Tensor)
 
 
 def test_maskgit_task_training_step_with_list_batch(vqvae_checkpoint: str):
@@ -297,7 +300,8 @@ def test_maskgit_task_validation_step_with_list_batch(vqvae_checkpoint: str):
 
     with torch.no_grad():
         outputs = task.validation_step(batch, 0)  # type: ignore[arg-type]
-        assert outputs is None
+        assert isinstance(outputs, dict)
+        assert "generated_images" in outputs
 
 
 def test_maskgit_task_test_step_with_list_batch(vqvae_checkpoint: str):
@@ -312,7 +316,7 @@ def test_maskgit_task_test_step_with_list_batch(vqvae_checkpoint: str):
     with torch.no_grad():
         outputs = task.test_step(batch, 0)  # type: ignore[arg-type]
         assert isinstance(outputs, dict)
-        assert "generated_latent" in outputs
+        assert "generated_images" in outputs
 
 
 def test_maskgit_task_compute_masked_loss_random_mask_ratio(vqvae_checkpoint: str):
@@ -363,7 +367,7 @@ def test_maskgit_task_encode_images_to_tokens_with_sliding_window(vqvae_checkpoi
     assert tokens.shape[0] == 1
 
 
-def test_maskgit_task_validation_step_logs_metrics_and_returns_none(vqvae_checkpoint: str):
+def test_maskgit_task_validation_step_logs_metrics_and_returns_dict(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
     )
@@ -380,7 +384,8 @@ def test_maskgit_task_validation_step_logs_metrics_and_returns_none(vqvae_checkp
     with torch.no_grad():
         outputs = task.validation_step(x, 0)
 
-    assert outputs is None
+    assert isinstance(outputs, dict)
+    assert "generated_images" in outputs
     assert "val_loss" in logged
     assert "val_mask_acc" in logged
     assert "val_mask_ratio" in logged
@@ -397,8 +402,10 @@ def test_maskgit_task_validation_step_returns_consistent_structure(vqvae_checkpo
         outputs_batch_0 = task.validation_step(x, 0)
         outputs_batch_1 = task.validation_step(x, 1)
 
-    assert outputs_batch_0 is None
-    assert outputs_batch_1 is None
+    assert isinstance(outputs_batch_0, dict)
+    assert isinstance(outputs_batch_1, dict)
+    assert "generated_images" in outputs_batch_0
+    assert "generated_images" in outputs_batch_1
 
 
 def test_maskgit_task_no_vqvae_checkpoint(vqvae_checkpoint: str):

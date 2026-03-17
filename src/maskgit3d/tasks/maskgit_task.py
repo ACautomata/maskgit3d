@@ -166,7 +166,7 @@ class MaskGITTask(LightningModule):
             "log_data": raw_data,
         }
 
-    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
+    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> dict[str, Any]:
         x = self._extract_input_tensor(batch)
 
         # Encode images to tokens using sliding window if enabled
@@ -204,6 +204,15 @@ class MaskGITTask(LightningModule):
             batch_size=x.shape[0],
         )
 
+        with torch.no_grad():
+            generated_images = self.maskgit.generate(
+                shape=tokens.shape,
+                temperature=1.0,
+                num_iterations=12,
+            )
+
+        return {"generated_images": generated_images.detach().cpu()}
+
     def _decode_tokens_to_latent(self, tokens: torch.Tensor) -> torch.Tensor:
         """Decode tokens to latent using VQVAE decoder with sliding window support.
 
@@ -229,7 +238,7 @@ class MaskGITTask(LightningModule):
             )
 
         return {
-            "generated_latent": generated_images,
+            "generated_images": generated_images,
             "input_shape": x.shape,
             "token_shape": tokens_shape,
         }

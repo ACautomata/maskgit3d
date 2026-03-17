@@ -97,7 +97,8 @@ class TestCallbackIntegration:
         with torch.no_grad():
             result = task.validation_step(torch.randn(1, 1, 16, 16, 16), 0)
 
-        assert result is None
+        assert isinstance(result, dict)
+        assert "generated_images" in result
         assert "val_loss" in logged
 
     def test_checkpoint_monitor_metric_exists(self):
