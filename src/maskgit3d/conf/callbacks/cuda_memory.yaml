@@ -1,0 +1,2 @@
+cuda_memory:
+  _target_: maskgit3d.callbacks.cuda_memory.CUDAMemoryCleanupCallback

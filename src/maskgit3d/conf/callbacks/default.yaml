@@ -9,6 +9,7 @@ defaults:
   - training_time
   - gradient_norm
   - training_stability
+  - cuda_memory
   - _self_
 
 # Rich progress bar for better visualization (optional)
