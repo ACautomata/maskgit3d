@@ -74,9 +74,9 @@ def test_maskgit_task_compute_masked_loss(vqvae_checkpoint: str):
     assert "correct" in raw_data
     assert "total" in raw_data
     assert "mask_ratio" in raw_data
-    assert isinstance(raw_data["correct"], torch.Tensor)
-    assert isinstance(raw_data["total"], torch.Tensor)
-    assert raw_data["mask_ratio"].item() == 0.5
+    assert isinstance(raw_data["correct"], int)
+    assert isinstance(raw_data["total"], int)
+    assert raw_data["mask_ratio"] == 0.5
 
 
 def test_maskgit_task_training_step(vqvae_checkpoint: str):
@@ -98,9 +98,7 @@ def test_maskgit_task_validation_step(vqvae_checkpoint: str):
     )
     x = torch.randn(1, 1, 16, 16, 16)
     outputs = task.validation_step(x, 0)
-    assert isinstance(outputs, dict)
-    assert "loss" in outputs
-    assert "log_data" in outputs
+    assert outputs is None
 
 
 def test_maskgit_task_test_step(vqvae_checkpoint: str):
@@ -284,6 +282,8 @@ def test_maskgit_task_training_step_with_list_batch(vqvae_checkpoint: str):
     assert isinstance(outputs, dict)
     assert "loss" in outputs
     assert outputs["loss"].item() >= 0
+    assert isinstance(outputs["log_data"]["correct"], int)
+    assert isinstance(outputs["log_data"]["total"], int)
 
 
 def test_maskgit_task_validation_step_with_list_batch(vqvae_checkpoint: str):
@@ -297,8 +297,7 @@ def test_maskgit_task_validation_step_with_list_batch(vqvae_checkpoint: str):
 
     with torch.no_grad():
         outputs = task.validation_step(batch, 0)  # type: ignore[arg-type]
-        assert isinstance(outputs, dict)
-        assert "loss" in outputs
+        assert outputs is None
 
 
 def test_maskgit_task_test_step_with_list_batch(vqvae_checkpoint: str):
@@ -332,9 +331,9 @@ def test_maskgit_task_compute_masked_loss_random_mask_ratio(vqvae_checkpoint: st
     assert "correct" in raw_data
     assert "total" in raw_data
     assert "mask_ratio" in raw_data
-    assert isinstance(raw_data["correct"], torch.Tensor)
-    assert isinstance(raw_data["total"], torch.Tensor)
-    assert 0 <= raw_data["mask_ratio"].item() <= 1
+    assert isinstance(raw_data["correct"], int)
+    assert isinstance(raw_data["total"], int)
+    assert 0 <= raw_data["mask_ratio"] <= 1
 
 
 def test_maskgit_task_encode_images_to_tokens_with_sliding_window(vqvae_checkpoint: str):
@@ -364,19 +363,27 @@ def test_maskgit_task_encode_images_to_tokens_with_sliding_window(vqvae_checkpoi
     assert tokens.shape[0] == 1
 
 
-def test_maskgit_task_validation_step_returns_log_data(vqvae_checkpoint: str):
+def test_maskgit_task_validation_step_logs_metrics_and_returns_none(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
     )
     task.eval()
 
+    logged: dict[str, object] = {}
+
+    def capture_log(name: str, value: object, **_: object) -> None:
+        logged[name] = value
+
+    task.log = capture_log  # type: ignore[method-assign]
+
     x = torch.randn(1, 1, 16, 16, 16)
     with torch.no_grad():
         outputs = task.validation_step(x, 0)
 
-    assert isinstance(outputs, dict)
-    assert "loss" in outputs
-    assert "log_data" in outputs
+    assert outputs is None
+    assert "val_loss" in logged
+    assert "val_mask_acc" in logged
+    assert "val_mask_ratio" in logged
 
 
 def test_maskgit_task_validation_step_returns_consistent_structure(vqvae_checkpoint: str):
@@ -390,11 +397,8 @@ def test_maskgit_task_validation_step_returns_consistent_structure(vqvae_checkpo
         outputs_batch_0 = task.validation_step(x, 0)
         outputs_batch_1 = task.validation_step(x, 1)
 
-    # Both should return same structure regardless of batch_idx
-    assert isinstance(outputs_batch_0, dict)
-    assert isinstance(outputs_batch_1, dict)
-    assert "loss" in outputs_batch_0
-    assert "loss" in outputs_batch_1
+    assert outputs_batch_0 is None
+    assert outputs_batch_1 is None
 
 
 def test_maskgit_task_no_vqvae_checkpoint(vqvae_checkpoint: str):

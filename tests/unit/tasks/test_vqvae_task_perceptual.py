@@ -86,32 +86,23 @@ class TestVQVAETaskPerceptualTraining:
 
         return task, [opt_g, opt_d]
 
-    def test_training_step_returns_raw_data_with_perceptual(self) -> None:
-        """Training step returns raw data for callback processing."""
+    def test_training_step_returns_none_with_perceptual(self) -> None:
         task, optimizers = self._make_task_and_optimizers(use_perceptual=True)
 
         batch = torch.randn(2, 1, 32, 32, 32)
 
         outputs = task.training_step(batch, batch_idx=0, optimizers=optimizers)
 
-        assert "x_real" in outputs
-        assert "x_recon" in outputs
-        assert "vq_loss" in outputs
-        assert "last_layer" in outputs
-        assert isinstance(outputs["loss"], torch.Tensor)
+        assert outputs is None
 
-    def test_training_step_returns_raw_data_without_perceptual(self) -> None:
-        """Training step returns raw data without perceptual loss."""
+    def test_training_step_returns_none_without_perceptual(self) -> None:
         task, optimizers = self._make_task_and_optimizers(use_perceptual=False)
 
         batch = torch.randn(2, 1, 32, 32, 32)
 
         outputs = task.training_step(batch, batch_idx=0, optimizers=optimizers)
 
-        assert "x_real" in outputs
-        assert "x_recon" in outputs
-        assert "vq_loss" in outputs
-        assert isinstance(outputs["loss"], torch.Tensor)
+        assert outputs is None
 
     def test_perceptual_task_has_perceptual_loss(self) -> None:
         """Task with use_perceptual=True has perceptual loss component."""
@@ -163,8 +154,7 @@ class TestVQVAETaskAdaptiveWeight:
 
         assert task.loss_fn.disc_start == 50001
 
-    def test_training_step_returns_raw_data_with_adaptive_weight(self) -> None:
-        """Training step returns raw data for callback processing."""
+    def test_training_step_returns_none_with_adaptive_weight(self) -> None:
         task = VQVAETask(
             in_channels=1,
             out_channels=1,
@@ -181,8 +171,4 @@ class TestVQVAETaskAdaptiveWeight:
         batch = torch.randn(2, 1, 32, 32, 32)
         outputs = task.training_step(batch, batch_idx=0, optimizers=[opt_g, opt_d])
 
-        assert "x_real" in outputs
-        assert "x_recon" in outputs
-        assert "vq_loss" in outputs
-        assert "last_layer" in outputs
-        assert isinstance(outputs["loss"], torch.Tensor)
+        assert outputs is None

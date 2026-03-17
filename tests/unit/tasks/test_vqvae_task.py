@@ -232,14 +232,8 @@ def test_vqvae_task_validation_step():
     with torch.no_grad():
         outputs = task.validation_step(x, 0)
 
-    assert isinstance(outputs, dict)
-    assert "loss" in outputs
-    assert "x_real" in outputs
-    assert "x_recon" in outputs
-    assert "vq_loss" in outputs
-    assert isinstance(outputs["x_real"], torch.Tensor)
-    assert isinstance(outputs["x_recon"], torch.Tensor)
-    assert isinstance(outputs["vq_loss"], torch.Tensor)
+    # validation_step returns None to avoid VRAM leaks
+    assert outputs is None
 
 
 def test_vqvae_task_validation_step_with_perceptual():
@@ -258,11 +252,7 @@ def test_vqvae_task_validation_step_with_perceptual():
     with torch.no_grad():
         outputs = task.validation_step(x, 0)
 
-    assert isinstance(outputs, dict)
-    assert "loss" in outputs
-    assert "x_real" in outputs
-    assert "x_recon" in outputs
-    assert "vq_loss" in outputs
+    assert outputs is None
 
 
 def test_vqvae_task_test_step_without_sliding_window():
@@ -284,8 +274,6 @@ def test_vqvae_task_test_step_without_sliding_window():
 
     assert isinstance(outputs, dict)
     assert "loss" in outputs
-    assert "x_real" in outputs
-    assert "x_recon" in outputs
     assert "inference_time" in outputs
     assert "use_sliding_window" in outputs
 
@@ -317,8 +305,6 @@ def test_vqvae_task_test_step_with_sliding_window():
 
     assert isinstance(outputs, dict)
     assert "loss" in outputs
-    assert "x_real" in outputs
-    assert "x_recon" in outputs
 
 
 def test_vqvae_task_predict_step_without_sliding_window():
@@ -414,8 +400,6 @@ def test_vqvae_task_test_step_returns_no_cuda_memory_without_cuda(monkeypatch):
         outputs = task.test_step(x, 0)
 
     assert isinstance(outputs, dict)
-    assert "x_real" in outputs
-    assert "x_recon" in outputs
     assert "inference_time" in outputs
 
 
@@ -549,14 +533,7 @@ def test_vqvae_task_training_step_with_optimizers_parameter():
     batch = torch.randn(1, 1, 32, 32, 32)
     outputs = task.training_step(batch, 0, optimizers=[opt_g, opt_d])
 
-    assert isinstance(outputs, dict)
-    assert "loss" in outputs
-    assert "x_real" in outputs
-    assert "x_recon" in outputs
-    assert "vq_loss" in outputs
-    assert "last_layer" in outputs
-    assert isinstance(outputs["loss"], torch.Tensor)
-    assert outputs["loss"].item() >= 0
+    assert outputs is None
 
 
 def test_vqvae_task_training_step_accepts_tuple_batch():
@@ -578,8 +555,7 @@ def test_vqvae_task_training_step_accepts_tuple_batch():
     target_batch = image_batch.clone()
     outputs = task.training_step((image_batch, target_batch), 0, optimizers=[opt_g, opt_d])
 
-    assert torch.equal(outputs["x_real"], image_batch)
-    assert outputs["x_recon"].shape == image_batch.shape
+    assert outputs is None
 
 
 @pytest.mark.parametrize("step_name", ["validation_step", "test_step", "predict_step"])
@@ -601,9 +577,10 @@ def test_vqvae_task_inference_steps_accept_tuple_batch(step_name: str):
     with torch.no_grad():
         output = getattr(task, step_name)((image_batch, target_batch), 0)
 
-    if isinstance(output, dict):
-        assert torch.equal(output["x_real"], image_batch)
-        assert output["x_recon"].shape == image_batch.shape
+    if step_name == "validation_step":
+        assert output is None
+    elif isinstance(output, dict):
+        assert "loss" in output
     else:
         assert output.shape == image_batch.shape
 
@@ -630,8 +607,6 @@ def test_vqvae_task_test_step_returns_cuda_memory_with_cuda(monkeypatch):
         outputs = task.test_step(x, 0)
 
     assert isinstance(outputs, dict)
-    assert "x_real" in outputs
-    assert "x_recon" in outputs
     assert "inference_time" in outputs
 
 
