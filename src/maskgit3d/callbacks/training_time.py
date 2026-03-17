@@ -2,6 +2,7 @@
 
 import logging
 import time
+from collections import deque
 from typing import Any
 
 from lightning.pytorch import Callback, LightningModule, Trainer
@@ -19,6 +20,8 @@ class TrainingTimeCallback(Callback):
     Args:
         log_every_n_epochs: Log time metrics every N epochs (0 = every epoch).
         estimate_time_to_completion: Whether to estimate and log time to completion.
+        max_epoch_history: Maximum number of epoch times to keep for ETC calculation.
+            Uses bounded deque to prevent memory leaks during long training runs.
 
     Example:
         >>> callback = TrainingTimeCallback(log_every_n_epochs=1)
@@ -29,10 +32,12 @@ class TrainingTimeCallback(Callback):
         self,
         log_every_n_epochs: int = 1,
         estimate_time_to_completion: bool = True,
+        max_epoch_history: int = 100,
     ) -> None:
         super().__init__()
         self.log_every_n_epochs = log_every_n_epochs
         self.estimate_time_to_completion = estimate_time_to_completion
+        self.max_epoch_history = max_epoch_history
 
         # Timing state
         self._epoch_start_time: float | None = None
@@ -42,7 +47,8 @@ class TrainingTimeCallback(Callback):
         # Aggregated metrics
         self._total_train_time = 0.0
         self._total_validation_time = 0.0
-        self._epoch_times: list[float] = []
+        # Use bounded deque to prevent unbounded memory growth during long training runs
+        self._epoch_times: deque[float] = deque(maxlen=max_epoch_history)
 
     def on_train_start(self, trainer: Trainer, pl_module: LightningModule) -> None:
         """Record training start time."""
@@ -168,7 +174,8 @@ class TrainingTimeCallback(Callback):
             return 0.0
 
         # Use last 5 epochs or all available
-        recent_times = self._epoch_times[-5:]
+        epoch_list = list(self._epoch_times)
+        recent_times = epoch_list[-5:]
         return sum(recent_times) / len(recent_times)
 
     @staticmethod
@@ -188,11 +195,12 @@ class TrainingTimeCallback(Callback):
         return {
             "total_train_time": self._total_train_time,
             "total_validation_time": self._total_validation_time,
-            "epoch_times": self._epoch_times,
+            "epoch_times": list(self._epoch_times),
         }
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load state from checkpoint."""
         self._total_train_time = state_dict.get("total_train_time", 0.0)
         self._total_validation_time = state_dict.get("total_validation_time", 0.0)
-        self._epoch_times = state_dict.get("epoch_times", [])
+        epoch_times = state_dict.get("epoch_times", [])
+        self._epoch_times = deque(epoch_times, maxlen=self.max_epoch_history)

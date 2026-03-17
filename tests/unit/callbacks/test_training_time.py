@@ -1,5 +1,6 @@
 """Tests for training time callback."""
 
+from collections import deque
 
 import pytest
 
@@ -29,13 +30,13 @@ class TestTrainingTimeCallback:
     def test_etc_estimation(self):
         """Test time to completion estimation."""
         callback = TrainingTimeCallback()
-        callback._epoch_times = [100.0, 110.0, 105.0]
+        callback._epoch_times = deque([100.0, 110.0, 105.0], maxlen=100)
 
         class MockTrainer:
             max_epochs = 10
             current_epoch = 3
 
-        etc = callback._estimate_etc(MockTrainer())
+        etc = callback._estimate_etc(MockTrainer())  # type: ignore[arg-type]
         assert etc is not None
         assert etc > 0
 
@@ -45,25 +46,25 @@ class TestTrainingTimeCallback:
     def test_etc_with_no_epochs(self):
         """Test ETC estimation with no epoch history."""
         callback = TrainingTimeCallback()
-        callback._epoch_times = []
+        callback._epoch_times = deque(maxlen=100)
 
         class MockTrainer:
             max_epochs = 10
             current_epoch = 0
 
-        etc = callback._estimate_etc(MockTrainer())
+        etc = callback._estimate_etc(MockTrainer())  # type: ignore[arg-type]
         assert etc is None
 
     def test_average_epoch_time(self):
         """Test average epoch time calculation."""
         callback = TrainingTimeCallback()
-        callback._epoch_times = [100.0, 110.0, 105.0, 95.0, 100.0]
+        callback._epoch_times = deque([100.0, 110.0, 105.0, 95.0, 100.0], maxlen=100)
 
         avg = callback._get_avg_epoch_time()
         assert avg == pytest.approx(102.0, abs=0.1)
 
         # Should use last 5 epochs
-        callback._epoch_times = [100.0, 110.0, 105.0, 95.0, 100.0, 90.0]
+        callback._epoch_times = deque([100.0, 110.0, 105.0, 95.0, 100.0, 90.0], maxlen=100)
         avg = callback._get_avg_epoch_time()
         assert avg == pytest.approx(100.0, abs=0.1)
 
@@ -72,7 +73,7 @@ class TestTrainingTimeCallback:
         callback = TrainingTimeCallback()
         callback._total_train_time = 1000.0
         callback._total_validation_time = 100.0
-        callback._epoch_times = [100.0, 110.0, 105.0]
+        callback._epoch_times = deque([100.0, 110.0, 105.0], maxlen=100)
 
         state = callback.state_dict()
         assert state["total_train_time"] == 1000.0
@@ -83,7 +84,7 @@ class TestTrainingTimeCallback:
         new_callback.load_state_dict(state)
         assert new_callback._total_train_time == 1000.0
         assert new_callback._total_validation_time == 100.0
-        assert new_callback._epoch_times == [100.0, 110.0, 105.0]
+        assert list(new_callback._epoch_times) == [100.0, 110.0, 105.0]
 
     def test_train_start_tracking(self):
         """Test training start time tracking."""
