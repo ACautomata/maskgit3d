@@ -198,22 +198,6 @@ class VQPerceptualLoss(nn.Module):
         g_loss: torch.Tensor,
         last_layer: nn.Parameter | None = None,
     ) -> torch.Tensor:
-        """Calculate adaptive weight for GAN loss.
-
-        The adaptive weight is computed as the ratio of gradient norms:
-            d_weight = ||grad_nll|| / (||grad_gan|| + eps)
-
-        This balances the contribution of reconstruction loss and GAN loss
-        by scaling the GAN loss to have similar gradient magnitude.
-
-        Args:
-            nll_loss: Negative log-likelihood (reconstruction) loss.
-            g_loss: Generator (GAN) loss.
-            last_layer: Last layer of decoder for gradient computation.
-
-        Returns:
-            Adaptive weight for GAN loss.
-        """
         if last_layer is None:
             return torch.tensor(self.discriminator_weight, device=nll_loss.device)
 
@@ -222,6 +206,8 @@ class VQPerceptualLoss(nn.Module):
 
         d_weight = torch.norm(nll_grads) / (torch.norm(g_grads) + 1e-4)
         d_weight = torch.clamp(d_weight, 0.0, self.adaptive_weight_max).detach()
+
+        del nll_grads, g_grads
 
         return d_weight * self.discriminator_weight
 
@@ -251,6 +237,27 @@ class VQPerceptualLoss(nn.Module):
                 - loss: Scalar loss tensor for backpropagation.
                 - log_dict: Dictionary of metrics for logging.
         """
+        # Discriminator factor (warmup)
+        disc_factor = adopt_weight(self.disc_factor, global_step, threshold=self.disc_start)
+
+        if optimizer_idx == 1:
+            # =====================
+            # Discriminator update (early return — skip rec/perceptual computation)
+            # =====================
+            logits_real = self.discriminator(inputs.contiguous().detach())[0][0]
+            logits_fake = self.discriminator(reconstructions.contiguous().detach())[0][0]
+
+            d_loss = disc_factor * self._disc_loss(logits_real, logits_fake)
+
+            log = {
+                f"{split}/disc_loss": d_loss.detach().mean(),
+                f"{split}/logits_real": logits_real.detach().mean(),
+                f"{split}/logits_fake": logits_fake.detach().mean(),
+                f"{split}/disc_factor": torch.tensor(disc_factor),
+            }
+
+            return d_loss, log
+
         # Reconstruction loss (L1)
         rec_loss = torch.abs(inputs.contiguous() - reconstructions.contiguous())
 
@@ -263,36 +270,39 @@ class VQPerceptualLoss(nn.Module):
         # Total reconstruction loss (NLL)
         nll_loss = torch.mean(rec_loss)
 
-        # Discriminator factor (warmup)
-        disc_factor = adopt_weight(self.disc_factor, global_step, threshold=self.disc_start)
-
         if optimizer_idx == 0:
             # =====================
             # Generator update
             # =====================
 
-            # Get discriminator logits for fake images
-            logits_fake = self.discriminator(reconstructions.contiguous())[0][0]
+            if disc_factor > 0:
+                # GAN is active — run discriminator forward + adaptive weight
+                logits_fake = self.discriminator(reconstructions.contiguous())[0][0]
+                g_loss = self._gen_loss(logits_fake)
 
-            # Generator GAN loss
-            g_loss = self._gen_loss(logits_fake)
-
-            # Calculate adaptive weight
-            if self.use_adaptive_weight and disc_factor > 0:
-                try:
-                    d_weight = self.calculate_adaptive_weight(nll_loss, g_loss, last_layer)
-                except RuntimeError:
-                    # Edge case: training=False or no grad
+                # Calculate adaptive weight
+                if self.use_adaptive_weight:
+                    try:
+                        d_weight = self.calculate_adaptive_weight(nll_loss, g_loss, last_layer)
+                    except RuntimeError:
+                        d_weight = torch.tensor(self.discriminator_weight, device=inputs.device)
+                else:
                     d_weight = torch.tensor(self.discriminator_weight, device=inputs.device)
-            else:
-                d_weight = torch.tensor(self.discriminator_weight, device=inputs.device)
 
-            # Total generator loss
-            loss = (
-                self.lambda_l1 * nll_loss
-                + d_weight * disc_factor * g_loss
-                + self.lambda_vq * vq_loss
-            )
+                # Total generator loss with GAN
+                loss = (
+                    self.lambda_l1 * nll_loss
+                    + d_weight * disc_factor * g_loss
+                    + self.lambda_vq * vq_loss
+                )
+            else:
+                # GAN is inactive (before disc_start) — skip discriminator entirely
+                # This avoids: discriminator forward graph, retain_graph=True in
+                # adaptive weight, and the extra memory for g_loss backward
+                g_loss = torch.tensor(0.0, device=inputs.device)
+                d_weight = torch.tensor(0.0, device=inputs.device)
+
+                loss = self.lambda_l1 * nll_loss + self.lambda_vq * vq_loss
 
             # Logging
             log = {
@@ -313,27 +323,5 @@ class VQPerceptualLoss(nn.Module):
             }
 
             return loss, log
-
-        if optimizer_idx == 1:
-            # =====================
-            # Discriminator update
-            # =====================
-
-            # Get discriminator logits
-            logits_real = self.discriminator(inputs.contiguous().detach())[0][0]
-            logits_fake = self.discriminator(reconstructions.contiguous().detach())[0][0]
-
-            # Discriminator loss
-            d_loss = disc_factor * self._disc_loss(logits_real, logits_fake)
-
-            # Logging
-            log = {
-                f"{split}/disc_loss": d_loss.detach().mean(),
-                f"{split}/logits_real": logits_real.detach().mean(),
-                f"{split}/logits_fake": logits_fake.detach().mean(),
-                f"{split}/disc_factor": torch.tensor(disc_factor),
-            }
-
-            return d_loss, log
 
         raise ValueError(f"Invalid optimizer_idx: {optimizer_idx}. Expected 0 or 1.")
