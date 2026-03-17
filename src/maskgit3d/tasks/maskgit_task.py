@@ -1,6 +1,6 @@
 """MaskGIT training task with automatic optimization."""
 
-from typing import Any, Optional
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -42,8 +42,8 @@ class MaskGITTask(LightningModule):
 
     def __init__(
         self,
-        model_config: Optional[DictConfig] = None,
-        optimizer_config: Optional[DictConfig] = None,
+        model_config: DictConfig | None = None,
+        optimizer_config: DictConfig | None = None,
         vqvae_ckpt_path: str | None = None,
         hidden_size: int = 768,
         num_layers: int = 12,
@@ -107,13 +107,13 @@ class MaskGITTask(LightningModule):
         self,
         batch: torch.Tensor | tuple[torch.Tensor, ...] | list[torch.Tensor],
     ) -> torch.Tensor:
-        if isinstance(batch, (tuple, list)):
+        if isinstance(batch, tuple | list):
             return batch[0]
         return batch
 
     def _compute_masked_loss(
         self, tokens: torch.Tensor, mask_ratio: float | None = None
-    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    ) -> tuple[torch.Tensor, dict[str, int | float]]:
         """Compute masked prediction loss and return raw data for metrics.
 
         Args:
@@ -126,12 +126,13 @@ class MaskGITTask(LightningModule):
         B, D, H, W = tokens.shape
         tokens_flat = tokens.view(B, -1)
 
-        if mask_ratio is None:
-            mask_ratio = self.maskgit.mask_scheduler.sample_mask_ratio()
+        effective_mask_ratio = (
+            self.maskgit.mask_scheduler.sample_mask_ratio() if mask_ratio is None else mask_ratio
+        )
 
         # Use transformer's predict_masked for masking logic
         masked_logits, masked_targets, mask = self.maskgit.transformer.predict_masked(
-            tokens_flat, mask_ratio=mask_ratio
+            tokens_flat, mask_ratio=effective_mask_ratio
         )
 
         loss = nn.functional.cross_entropy(masked_logits, masked_targets)
@@ -143,10 +144,10 @@ class MaskGITTask(LightningModule):
             total = masked_targets.numel()
 
         # Return scalars for metrics (memory efficient)
-        raw_data: dict[str, torch.Tensor] = {
-            "correct": torch.tensor(correct, device=tokens.device),
-            "total": torch.tensor(total, device=tokens.device),
-            "mask_ratio": torch.tensor(mask_ratio, device=tokens.device),
+        raw_data: dict[str, int | float] = {
+            "correct": correct,
+            "total": total,
+            "mask_ratio": float(effective_mask_ratio),
         }
         return loss, raw_data
 
@@ -165,7 +166,7 @@ class MaskGITTask(LightningModule):
             "log_data": raw_data,
         }
 
-    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> dict[str, Any]:
+    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
         x = self._extract_input_tensor(batch)
 
         # Encode images to tokens using sliding window if enabled
@@ -174,11 +175,34 @@ class MaskGITTask(LightningModule):
         # Compute loss and get raw data for metrics
         loss, raw_data = self._compute_masked_loss(tokens)
 
-        # Return loss and raw data for callback processing
-        return {
-            "loss": loss,
-            "log_data": raw_data,
-        }
+        self.log(
+            "val_loss",
+            loss.detach(),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=x.shape[0],
+        )
+
+        total = raw_data["total"]
+        if total > 0:
+            self.log(
+                "val_mask_acc",
+                raw_data["correct"] / total,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+                batch_size=x.shape[0],
+            )
+
+        self.log(
+            "val_mask_ratio",
+            raw_data["mask_ratio"],
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            batch_size=x.shape[0],
+        )
 
     def _decode_tokens_to_latent(self, tokens: torch.Tensor) -> torch.Tensor:
         """Decode tokens to latent using VQVAE decoder with sliding window support.
@@ -215,7 +239,7 @@ class MaskGITTask(LightningModule):
     ) -> dict[str, Any]:
         if self.hparams.get("optimizer_config") is not None:
             optimizer = instantiate(
-                self.hparams.optimizer_config,
+                self.hparams["optimizer_config"],
                 params=self.maskgit.parameters(),
             )
         else:

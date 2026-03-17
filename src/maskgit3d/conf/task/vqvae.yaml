@@ -12,7 +12,7 @@ lambda_vq: 1.0
 lambda_gan: 0.5
 
 use_perceptual: true
-lambda_perceptual: 0.5
+lambda_perceptual: 0.1
 perceptual_network: alex
 
 disc_start: 15000

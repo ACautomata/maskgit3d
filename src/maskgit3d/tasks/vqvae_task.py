@@ -169,6 +169,8 @@ class VQVAETask(BaseTask):
         self._sliding_window_inferer: SlidingWindowInferer | None = None
         self._downsampling_factor = 16
 
+        self.vqvae.enable_gradient_checkpointing()
+
         self.save_hyperparameters()
 
     def _extract_input_tensor(self, batch: torch.Tensor | Sequence[Any]) -> torch.Tensor:
@@ -281,7 +283,7 @@ class VQVAETask(BaseTask):
         batch: torch.Tensor | Sequence[Any],
         batch_idx: int,
         optimizers: list[torch.optim.Optimizer] | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         if optimizers is None:
             optimizers = self.optimizers()  # type: ignore[assignment]
 
@@ -302,36 +304,55 @@ class VQVAETask(BaseTask):
             split="train",
         )
 
+        prog_bar_keys = {"total_loss", "vq_loss", "g_loss"}
         for key, value in log_g.items():
             if isinstance(value, torch.Tensor):
+                metric_name = key.split("/")[-1]
                 self.log(
                     key,
-                    value,
+                    value.item(),
                     on_step=True,
                     on_epoch=False,
-                    prog_bar=False,
+                    prog_bar=metric_name in prog_bar_keys,
                     batch_size=x_real.shape[0],
                 )
 
-        self.log("train/x_recon_min", x_recon.min(), on_step=True, on_epoch=False, prog_bar=False)
-        self.log("train/x_recon_max", x_recon.max(), on_step=True, on_epoch=False, prog_bar=False)
+        self.log(
+            "train/x_recon_min", x_recon.min().item(), on_step=True, on_epoch=False, prog_bar=False
+        )
+        self.log(
+            "train/x_recon_max", x_recon.max().item(), on_step=True, on_epoch=False, prog_bar=False
+        )
         self.log(
             "train/x_recon_abs_mean",
-            x_recon.abs().mean(),
+            x_recon.abs().mean().item(),
             on_step=True,
             on_epoch=False,
             prog_bar=False,
         )
-        self.log("train/x_real_min", x_real.min(), on_step=True, on_epoch=False, prog_bar=False)
-        self.log("train/x_real_max", x_real.max(), on_step=True, on_epoch=False, prog_bar=False)
+        self.log(
+            "train/x_real_min", x_real.min().item(), on_step=True, on_epoch=False, prog_bar=False
+        )
+        self.log(
+            "train/x_real_max", x_real.max().item(), on_step=True, on_epoch=False, prog_bar=False
+        )
 
         opt_g.zero_grad()
         self.manual_backward(loss_g)
         self.gan_strategy.step_generator(opt_g, loss_g, self.vqvae)
 
+        # Detach reconstructions before discriminator step to free the generator
+        # computation graph. The disc loss_fn already detaches internally for its
+        # logits, but keeping x_recon attached here prevents the gen graph from
+        # being freed until after disc backward — a major memory leak on 3D volumes.
+        x_recon_detached = x_recon.detach()
+
+        # Explicitly delete generator graph tensors now that backward is done
+        del loss_g, log_g, x_recon
+
         loss_d, log_d = self.loss_fn(
             inputs=x_real,
-            reconstructions=x_recon,
+            reconstructions=x_recon_detached,
             vq_loss=vq_loss,
             optimizer_idx=1,
             global_step=self.global_step,
@@ -340,12 +361,13 @@ class VQVAETask(BaseTask):
 
         for key, value in log_d.items():
             if isinstance(value, torch.Tensor):
+                metric_name = key.split("/")[-1]
                 self.log(
                     key,
-                    value,
+                    value.item(),
                     on_step=True,
                     on_epoch=False,
-                    prog_bar=False,
+                    prog_bar=metric_name == "disc_loss",
                     batch_size=x_real.shape[0],
                 )
 
@@ -353,58 +375,68 @@ class VQVAETask(BaseTask):
         self.manual_backward(loss_d)
         self.gan_strategy.step_discriminator(opt_d, loss_d)
 
-        return {
-            "loss": loss_g,
-            "x_real": x_real,
-            "x_recon": x_recon,
-            "vq_loss": vq_loss,
-            "last_layer": last_layer,
-        }
+        # Explicitly delete all remaining large tensors to help CUDA free memory
+        del x_real, x_recon_detached, loss_d, log_d, vq_loss
 
-    def validation_step(
-        self, batch: torch.Tensor | Sequence[Any], batch_idx: int
-    ) -> dict[str, Any]:
+        # Return None — manual optimization doesn't need return values.
+        # Returning a dict causes Lightning to accumulate results across the
+        # epoch, holding references to CUDA tensors and preventing memory reuse.
+
+    def validation_step(self, batch: torch.Tensor | Sequence[Any], batch_idx: int) -> None:
         x_real = self._extract_input_tensor(batch)
         x_recon, vq_loss = self.vqvae(x_real)
+        rec_loss = F.l1_loss(x_recon, x_real)
+        val_total_loss = rec_loss + vq_loss
         self.log(
             "val_loss",
-            vq_loss,
+            val_total_loss.item(),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=x_real.shape[0],
+        )
+        self.log(
+            "val_rec_loss",
+            rec_loss.item(),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=x_real.shape[0],
+        )
+        self.log(
+            "val_vq_loss",
+            vq_loss.item(),
             on_step=False,
             on_epoch=True,
             prog_bar=False,
             batch_size=x_real.shape[0],
         )
 
-        return {
-            "loss": vq_loss,
-            "x_real": x_real,
-            "x_recon": x_recon,
-            "vq_loss": vq_loss,
-        }
-
     def configure_optimizers(self) -> list[torch.optim.Optimizer]:
         if self.hparams.get("optimizer_config") is not None:
+            # Override lr from optimizer config with lr_g for generator
             param_groups = [
-                {"params": self.vqvae.encoder.parameters()},
-                {"params": self.vqvae.quant_conv.parameters()},
-                {"params": self.vqvae.post_quant_conv.parameters()},
-                {"params": self.vqvae.quantizer.parameters()},
-                {"params": self.vqvae.decoder.parameters()},
+                {"params": self.vqvae.encoder.parameters(), "lr": self.lr_g},
+                {"params": self.vqvae.quant_conv.parameters(), "lr": self.lr_g},
+                {"params": self.vqvae.post_quant_conv.parameters(), "lr": self.lr_g},
+                {"params": self.vqvae.decoder.parameters(), "lr": self.lr_g},
             ]
-            opt_g = instantiate(self.hparams["optimizer_config"], _partial_=True)(param_groups)
+            opt_g = instantiate(self.hparams["optimizer_config"], _partial_=True)(
+                param_groups, lr=self.lr_g
+            )
         else:
             opt_g = torch.optim.Adam(
                 list(self.vqvae.encoder.parameters())
                 + list(self.vqvae.quant_conv.parameters())
                 + list(self.vqvae.post_quant_conv.parameters())
-                + list(self.vqvae.quantizer.parameters())
                 + list(self.vqvae.decoder.parameters()),
                 lr=self.lr_g,
             )
 
         if self.hparams.get("disc_optimizer_config") is not None:
+            # Override lr from optimizer config with lr_d for discriminator
             opt_d = instantiate(self.hparams["disc_optimizer_config"], _partial_=True)(
-                self.loss_fn.discriminator.parameters()
+                self.loss_fn.discriminator.parameters(), lr=self.lr_d
             )
         else:
             opt_d = torch.optim.Adam(
@@ -414,6 +446,7 @@ class VQVAETask(BaseTask):
 
         return [opt_g, opt_d]
 
+    @torch.no_grad()
     def test_step(self, batch: torch.Tensor | Sequence[Any], batch_idx: int) -> dict[str, Any]:
         x_real = self._extract_input_tensor(batch)
         original_shape = x_real.shape[2:]
@@ -449,9 +482,7 @@ class VQVAETask(BaseTask):
         loss = F.l1_loss(x_recon, x_real)
 
         return {
-            "loss": loss,
-            "x_real": x_real,
-            "x_recon": x_recon,
+            "loss": loss.item(),
             "inference_time": 0.0,
             "use_sliding_window": inferer is not None,
         }
