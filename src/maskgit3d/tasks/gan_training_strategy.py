@@ -41,11 +41,14 @@ class GANTrainingStrategy:
         optimizer.step()
 
     def _get_generator_params(self, vqvae: "VQVAE") -> list[torch.nn.Parameter]:
-        """Get all generator parameters for gradient clipping."""
+        """Get generator parameters for gradient clipping.
+
+        Note: Excludes quantizer parameters since VQVAE uses EMA-based codebook updates.
+        This matches configure_optimizers() which also excludes quantizer from the optimizer.
+        """
         return (
             list(vqvae.encoder.parameters())
             + list(vqvae.quant_conv.parameters())
             + list(vqvae.post_quant_conv.parameters())
-            + list(vqvae.quantizer.parameters())
             + list(vqvae.decoder.parameters())
         )
