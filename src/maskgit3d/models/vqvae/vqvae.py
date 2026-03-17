@@ -118,6 +118,18 @@ class VQVAE(nn.Module):
             attention_levels=attention_levels[::-1],
         )
 
+        self.use_gradient_checkpointing = False
+
+    def enable_gradient_checkpointing(self) -> None:
+        self.use_gradient_checkpointing = True
+        self.encoder.use_gradient_checkpointing = True
+        self.decoder.use_gradient_checkpointing = True
+
+    def disable_gradient_checkpointing(self) -> None:
+        self.use_gradient_checkpointing = False
+        self.encoder.use_gradient_checkpointing = False
+        self.decoder.use_gradient_checkpointing = False
+
     def encode(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         h = self.encoder(x)
         h = self.quant_conv(h)

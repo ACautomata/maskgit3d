@@ -1,8 +1,10 @@
 from collections.abc import Sequence
+from typing import cast
 
 import torch
 from monai.apps.generation.maisi.networks.autoencoderkl_maisi import MaisiDecoder
 from torch import nn
+from torch.utils.checkpoint import checkpoint
 
 
 class Decoder(nn.Module):
@@ -38,7 +40,13 @@ class Decoder(nn.Module):
             norm_float16=norm_float16,
             use_flash_attention=use_flash_attention,
         )
+        self.use_gradient_checkpointing = False
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
+        if self.use_gradient_checkpointing and self.training:
+            x: torch.Tensor = z
+            for block in self.decoder.blocks:
+                x = cast(torch.Tensor, checkpoint(block, x, use_reentrant=False))
+            return torch.tanh(x)
         out: torch.Tensor = self.decoder(z)
-        return out
+        return torch.tanh(out)

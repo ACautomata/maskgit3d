@@ -3,6 +3,7 @@ from collections.abc import Sequence
 import torch
 import torch.nn as nn
 from monai.apps.generation.maisi.networks.autoencoderkl_maisi import MaisiEncoder
+from torch.utils.checkpoint import checkpoint
 
 
 class Encoder(nn.Module):
@@ -39,7 +40,12 @@ class Encoder(nn.Module):
             norm_float16=norm_float16,
             use_flash_attention=use_flash_attention,
         )
+        self.use_gradient_checkpointing = False
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.use_gradient_checkpointing and self.training:
+            for block in self.encoder.blocks:
+                x = checkpoint(block, x, use_reentrant=False)
+            return x
         out: torch.Tensor = self.encoder(x)
         return out
