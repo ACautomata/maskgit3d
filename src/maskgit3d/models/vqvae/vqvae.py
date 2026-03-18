@@ -119,9 +119,9 @@ class VQVAE(nn.Module):
             spatial_dims=3,
             in_channels=latent_channels,
             out_channels=out_channels,
-            num_channels=num_channels[::-1],
-            num_res_blocks=num_res_blocks[::-1],
-            attention_levels=attention_levels[::-1],
+            num_channels=num_channels,
+            num_res_blocks=num_res_blocks,
+            attention_levels=attention_levels,
             num_splits=num_splits,
             dim_split=dim_split,
         )
