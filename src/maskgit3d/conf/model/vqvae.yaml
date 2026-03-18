@@ -15,5 +15,5 @@ num_res_blocks:
 attention_levels:
   - false
   - false
-  - false
+  - true
 commitment_cost: 0.5

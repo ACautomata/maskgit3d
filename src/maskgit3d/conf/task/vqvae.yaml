@@ -15,7 +15,7 @@ use_perceptual: true
 lambda_perceptual: 0.1
 perceptual_network: alex
 
-disc_start: 15000
+disc_start: 1000
 disc_factor: 1.0
 use_adaptive_weight: true
 adaptive_weight_max: 100.0
@@ -26,7 +26,7 @@ gradient_clip_val: 1.0
 
 sliding_window:
   enabled: true
-  roi_size: [64, 64, 64]
+  roi_size: [32, 32, 32]
   overlap: 0.25
   mode: gaussian
   sigma_scale: 0.125

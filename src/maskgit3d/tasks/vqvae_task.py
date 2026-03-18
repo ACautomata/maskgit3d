@@ -386,17 +386,47 @@ class VQVAETask(BaseTask):
         self, batch: torch.Tensor | Sequence[Any], batch_idx: int
     ) -> dict[str, Any]:
         x_real = self._extract_input_tensor(batch)
-        x_recon, vq_loss = self.vqvae(x_real)
-        rec_loss = F.l1_loss(x_recon, x_real)
-        val_total_loss = rec_loss + vq_loss
+        original_shape = x_real.shape[2:]
+        inferer = self._get_sliding_window_inferer()
+
+        if inferer is not None:
+            x_real_padded = self._pad_to_divisible(x_real)
+            padded_shape = x_real_padded.shape[2:]
+
+            def model_forward(x: torch.Tensor) -> torch.Tensor:
+                recon: torch.Tensor
+                recon, _ = self.vqvae(x)  # type: ignore[misc]
+                return recon
+
+            x_recon_padded = inferer(x_real_padded, model_forward)
+
+            pad_d = padded_shape[0] - original_shape[0]
+            pad_h = padded_shape[1] - original_shape[1]
+            pad_w = padded_shape[2] - original_shape[2]
+            x_recon = x_recon_padded[  # type: ignore[call-overload]
+                :,
+                :,
+                pad_d // 2 : pad_d // 2 + original_shape[0],
+                pad_h // 2 : pad_h // 2 + original_shape[1],
+                pad_w // 2 : pad_w // 2 + original_shape[2],
+            ]
+        else:
+            x_recon, _ = self.vqvae(x_real)  # type: ignore[misc]
+
+        perceptual_loss = torch.tensor(0.0, device=x_real.device)
+        if self.loss_fn.use_perceptual and self.loss_fn.perceptual_loss is not None:
+            perceptual_loss = self.loss_fn.perceptual_loss(x_recon, x_real)
+
         self.log(
-            "val_loss",
-            val_total_loss.item(),
+            "val_perceptual_loss",
+            perceptual_loss.item(),
             on_step=False,
             on_epoch=True,
             prog_bar=True,
             batch_size=x_real.shape[0],
         )
+
+        rec_loss = F.l1_loss(x_recon, x_real)
         self.log(
             "val_rec_loss",
             rec_loss.item(),
@@ -405,14 +435,7 @@ class VQVAETask(BaseTask):
             prog_bar=True,
             batch_size=x_real.shape[0],
         )
-        self.log(
-            "val_vq_loss",
-            vq_loss.item(),
-            on_step=False,
-            on_epoch=True,
-            prog_bar=False,
-            batch_size=x_real.shape[0],
-        )
+
         return {
             "x_real": x_real.detach().cpu(),
             "x_recon": x_recon.detach().cpu(),

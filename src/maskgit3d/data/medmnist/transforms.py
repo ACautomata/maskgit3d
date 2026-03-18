@@ -51,21 +51,12 @@ def create_training_transforms(config: MedMNISTConfig) -> Callable:
 
 
 def create_inference_transforms(config: MedMNISTConfig) -> Callable:
-    """Create inference transforms pipeline.
+    crop_size = config.crop_size
 
-    Pipeline:
-    1. EnsureType - Ensure tensor type
-    2. ScaleIntensityRange - Normalize [0,255] to [-1,1]
-
-    Args:
-        config: MedMNIST configuration
-
-    Returns:
-        Composed transform callable
-    """
     return Compose(
         [
             EnsureType(),
+            SpatialPad(spatial_size=crop_size, mode="constant"),
             ScaleIntensityRange(
                 a_min=0.0,
                 a_max=255.0,
