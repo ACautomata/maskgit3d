@@ -1,9 +1,11 @@
 """Tests for VQVAE metrics callback."""
 
-from unittest.mock import MagicMock, Mock, patch
+from collections.abc import Callable
+from unittest.mock import MagicMock
 
 import torch
-from lightning.pytorch import LightningModule
+import torch.nn as nn
+from lightning.pytorch import LightningModule, Trainer
 
 from maskgit3d.callbacks.vqvae_metrics import VQVAEMetricsCallback
 
@@ -14,31 +16,41 @@ class SimpleModel(LightningModule):
     def __init__(self, use_perceptual: bool = False):
         super().__init__()
         self.use_perceptual_flag = use_perceptual
+        self.logged_values: list[tuple[str, torch.Tensor]] = []
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch: object, batch_idx: int) -> dict[str, torch.Tensor]:
         return {}
 
+    def log(self, *args: object, **kwargs: object) -> None:
+        if len(args) >= 2 and isinstance(args[0], str) and isinstance(args[1], torch.Tensor):
+            self.logged_values.append((args[0], args[1]))
 
-class MockLossFn:
+
+class MockLossFn(nn.Module):
     """Mock loss function for testing."""
 
     def __init__(self, use_perceptual: bool = False):
         self.use_perceptual = use_perceptual
-        self.perceptual_loss = Mock(return_value=torch.tensor(0.1)) if use_perceptual else None
+        self.perceptual_loss: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] | None
+        super().__init__()
+        self.perceptual_loss = self._perceptual_loss if use_perceptual else None
 
-    def __call__(
+    def _perceptual_loss(self, x_recon: torch.Tensor, x_real: torch.Tensor) -> torch.Tensor:
+        return torch.tensor(0.1)
+
+    def forward(
         self,
-        inputs,
-        reconstructions,
-        vq_loss,
-        optimizer_idx=0,
-        global_step=0,
-        last_layer=None,
-        split="train",
-    ):
+        inputs: torch.Tensor,
+        reconstructions: torch.Tensor,
+        vq_loss: torch.Tensor,
+        optimizer_idx: int = 0,
+        global_step: int = 0,
+        last_layer: torch.Tensor | None = None,
+        split: str = "train",
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         if optimizer_idx == 0:
             loss = torch.tensor(1.0)
             log = {"loss_g": loss, "loss_recon": torch.tensor(0.5)}
@@ -64,7 +76,6 @@ class TestVQVAEMetricsCallback:
         assert callback.log_every_n_steps == 10
         assert callback.log_val_every_n_batches == 5
 
-    @patch.object(LightningModule, "log", MagicMock())
     def test_on_train_batch_end_with_none_outputs(self):
         """Test on_train_batch_end with None outputs."""
         callback = VQVAEMetricsCallback()
@@ -76,7 +87,6 @@ class TestVQVAEMetricsCallback:
         callback.on_train_batch_end(trainer, model, None, None, 0)
         assert callback._train_step_count == 1
 
-    @patch.object(LightningModule, "log", MagicMock())
     def test_on_train_batch_end_with_tensor_outputs(self):
         """Test on_train_batch_end with tensor outputs (should skip)."""
         callback = VQVAEMetricsCallback()
@@ -88,7 +98,6 @@ class TestVQVAEMetricsCallback:
         callback.on_train_batch_end(trainer, model, torch.tensor(1.0), None, 0)
         assert callback._train_step_count == 1
 
-    @patch("maskgit3d.callbacks.vqvae_metrics.LightningModule.log", MagicMock())
     def test_on_train_batch_end_with_dict_outputs(self):
         """Test on_train_batch_end extracts and logs from dict outputs."""
         callback = VQVAEMetricsCallback()
@@ -106,10 +115,11 @@ class TestVQVAEMetricsCallback:
 
         callback.on_train_batch_end(trainer, model, outputs, None, 0)
 
-        # Verify metrics were logged - since we patched log, check it's called
-        assert LightningModule.log.called or True  # Patched log is called
+        logged_names = [name for name, _ in model.logged_values]
+        assert "loss_g:train" in logged_names
+        assert "loss_recon:train" in logged_names
+        assert "loss_d:train" in logged_names
 
-    @patch("maskgit3d.callbacks.vqvae_metrics.LightningModule.log", MagicMock())
     def test_on_train_batch_end_with_missing_keys(self):
         """Test on_train_batch_end with dict but missing required keys."""
         callback = VQVAEMetricsCallback()
@@ -120,8 +130,8 @@ class TestVQVAEMetricsCallback:
         # Dict without required keys should be skipped - no exception
         outputs = {"some_key": "some_value"}
         callback.on_train_batch_end(trainer, model, outputs, None, 0)
+        assert model.logged_values == []
 
-    @patch("maskgit3d.callbacks.vqvae_metrics.LightningModule.log", MagicMock())
     def test_on_train_batch_end_log_every_n_steps(self):
         """Test on_train_batch_end respects log_every_n_steps."""
         callback = VQVAEMetricsCallback(log_every_n_steps=2)
@@ -139,12 +149,13 @@ class TestVQVAEMetricsCallback:
         # First call - should not log (step 1, not divisible by 2)
         callback.on_train_batch_end(trainer, model, outputs, None, 0)
         assert callback._train_step_count == 1
+        assert model.logged_values == []
 
         # Second call - should log (step 2, divisible by 2)
         callback.on_train_batch_end(trainer, model, outputs, None, 1)
         assert callback._train_step_count == 2
+        assert len(model.logged_values) == 3
 
-    @patch.object(LightningModule, "log", MagicMock())
     def test_on_validation_batch_end_with_none_outputs(self):
         """Test on_validation_batch_end with None outputs."""
         callback = VQVAEMetricsCallback()
@@ -154,7 +165,6 @@ class TestVQVAEMetricsCallback:
         # Should not raise
         callback.on_validation_batch_end(trainer, model, None, None, 0)
 
-    @patch.object(LightningModule, "log", MagicMock())
     def test_on_validation_batch_end_with_tensor_outputs(self):
         """Test on_validation_batch_end with tensor outputs (should skip)."""
         callback = VQVAEMetricsCallback()
@@ -164,18 +174,13 @@ class TestVQVAEMetricsCallback:
         # Tensor outputs should be skipped
         callback.on_validation_batch_end(trainer, model, torch.tensor(1.0), None, 0)
 
-    @patch("maskgit3d.callbacks.vqvae_metrics.LightningModule.log", MagicMock())
     def test_on_validation_batch_end_with_dict_outputs(self):
         """Test on_validation_batch_end computes and logs L1 loss."""
         callback = VQVAEMetricsCallback()
         trainer = MagicMock()
         model = SimpleModel()
 
-        # Add a mock loss_fn with use_perceptual=False to avoid AttributeError
-        mock_loss_fn = Mock()
-        mock_loss_fn.use_perceptual = False
-        mock_loss_fn.perceptual_loss = None
-        model.loss_fn = mock_loss_fn
+        model.loss_fn = MockLossFn()
 
         # Create mock outputs with required keys
         x_real = torch.randn(1, 1, 8, 8, 8)
@@ -188,10 +193,11 @@ class TestVQVAEMetricsCallback:
 
         callback.on_validation_batch_end(trainer, model, outputs, None, 0)
 
-        # Verify metrics were logged - log should have been called
-        assert LightningModule.log.called
+        logged_names = [name for name, _ in model.logged_values]
+        assert "val_loss:val" in logged_names
+        assert "loss_l1:val" in logged_names
+        assert "loss_vq:val" in logged_names
 
-    @patch.object(LightningModule, "log", MagicMock())
     def test_on_validation_batch_end_with_missing_keys(self):
         """Test on_validation_batch_end with dict but missing keys."""
         callback = VQVAEMetricsCallback()
@@ -201,8 +207,8 @@ class TestVQVAEMetricsCallback:
         # Dict without required keys should be skipped - no exception
         outputs = {"some_key": "some_value"}
         callback.on_validation_batch_end(trainer, model, outputs, None, 0)
+        assert model.logged_values == []
 
-    @patch("maskgit3d.callbacks.vqvae_metrics.LightningModule.log", MagicMock())
     def test_on_validation_batch_end_with_perceptual_loss(self):
         """Test on_validation_batch_end computes perceptual loss when enabled."""
         callback = VQVAEMetricsCallback()
@@ -220,8 +226,8 @@ class TestVQVAEMetricsCallback:
 
         callback.on_validation_batch_end(trainer, model, outputs, None, 0)
 
-        # Verify metrics were logged
-        assert LightningModule.log.called
+        logged_names = [name for name, _ in model.logged_values]
+        assert "loss_perceptual:val" in logged_names
 
     def test_on_train_epoch_start_resets_counter(self):
         """Test that on_train_epoch_start resets step counter."""
@@ -229,6 +235,7 @@ class TestVQVAEMetricsCallback:
         callback._train_step_count = 50
 
         model = SimpleModel()
-        callback.on_train_epoch_start(None, model)
+        trainer = MagicMock(spec=Trainer)
+        callback.on_train_epoch_start(trainer, model)
 
         assert callback._train_step_count == 0

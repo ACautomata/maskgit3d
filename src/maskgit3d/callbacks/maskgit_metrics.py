@@ -79,7 +79,7 @@ class MaskGITMetricsCallback(Callback):
             # Log mask ratio (already a float)
             if "mask_ratio" in log_data:
                 mask_ratio = log_data["mask_ratio"]
-                if isinstance(mask_ratio, (int, float)):
+                if isinstance(mask_ratio, int | float):
                     pl_module.log("mask_ratio:train", torch.tensor(mask_ratio), prog_bar=False)
 
     def on_train_epoch_start(self, trainer: Trainer, pl_module: LightningModule) -> None:
@@ -155,7 +155,7 @@ class MaskGITMetricsCallback(Callback):
                 value = log_data["mask_acc"]
                 if isinstance(value, torch.Tensor):
                     pl_module.log("mask_acc:test", value, prog_bar=True)
-                elif isinstance(value, (int, float)):
+                elif isinstance(value, int | float):
                     pl_module.log("mask_acc:test", torch.tensor(value), prog_bar=True)
 
         maskgit_model = getattr(pl_module, "maskgit", None)
