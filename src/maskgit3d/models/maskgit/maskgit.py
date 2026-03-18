@@ -88,7 +88,17 @@ class MaskGIT(nn.Module):
         # Sliding window configuration
         self.sliding_window_cfg = sliding_window or {}
         self._sliding_window_inferer: SlidingWindowInferer | None = None
-        self._downsampling_factor = 16
+        self._downsampling_factor = self._compute_downsampling_factor()
+
+    def _compute_downsampling_factor(self) -> int:
+        encoder = self.vqvae.encoder
+        if hasattr(encoder, "encoder"):
+            inner_encoder = encoder.encoder
+            if hasattr(inner_encoder, "num_channels"):
+                num_channels = inner_encoder.num_channels
+                if isinstance(num_channels, (list, tuple)):
+                    return 2 ** (len(num_channels) - 1)
+        return 8
 
     @property
     def codebook_size(self) -> int:
@@ -200,20 +210,8 @@ class MaskGIT(nn.Module):
             raise ValueError(f"Expected tokens to be 4D [B, D, H, W], got {tokens.shape}")
 
         vq_tokens = self._to_vq_tokens(tokens)
-        inferer = self._get_sliding_window_inferer()
-
-        if inferer is None:
-            z_q = self.vqvae.quantizer.decode_from_indices(vq_tokens)
-            return self.vqvae.decode(z_q)
-
         z_q = self.vqvae.quantizer.decode_from_indices(vq_tokens)
-
-        def decode_fn(patch: torch.Tensor) -> torch.Tensor:
-            return self.vqvae.decode(patch)
-
-        result = inferer(z_q, decode_fn)
-        assert isinstance(result, torch.Tensor)
-        return result
+        return self.vqvae.decode(z_q)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass (reconstruction).
