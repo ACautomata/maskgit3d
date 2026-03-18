@@ -63,8 +63,7 @@ class TestCreateInferenceTransforms:
         transform = create_inference_transforms(config)
         assert callable(transform)
 
-    def test_no_cropping(self):
-        """Test that inference transform does not crop."""
+    def test_pads_to_crop_size_without_cropping(self):
         config = MedMNISTConfig(
             dataset_name=MedMNISTDatasetName.ORGAN,
             crop_size=(32, 32, 32),
@@ -76,8 +75,7 @@ class TestCreateInferenceTransforms:
 
         output = _assert_tensor(transform(input_tensor))
 
-        # Output should keep original size (no cropping)
-        assert output.shape == (1, 28, 28, 28)
+        assert output.shape == (1, 32, 32, 32)
 
     def test_normalization(self):
         """Test that values are normalized to [-1, 1]."""
