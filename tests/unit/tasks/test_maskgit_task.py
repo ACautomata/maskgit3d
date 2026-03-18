@@ -196,9 +196,9 @@ def test_maskgit_task_pad_to_divisible(vqvae_checkpoint: str):
     x = torch.randn(1, 1, 33, 33, 33)
     x_padded = task.maskgit._pad_to_divisible(x)
 
-    assert x_padded.shape[2] % 16 == 0
-    assert x_padded.shape[3] % 16 == 0
-    assert x_padded.shape[4] % 16 == 0
+    assert x_padded.shape[2] % task.maskgit._downsampling_factor == 0
+    assert x_padded.shape[3] % task.maskgit._downsampling_factor == 0
+    assert x_padded.shape[4] % task.maskgit._downsampling_factor == 0
     assert x_padded.shape[1] == x.shape[1]
 
 
@@ -464,8 +464,9 @@ class TestMaskGITTaskModelConfig:
     def test_accepts_model_config(self, vqvae_checkpoint):
         """MaskGITTask can be constructed with model_config DictConfig."""
         from omegaconf import DictConfig
-        from maskgit3d.tasks.maskgit_task import MaskGITTask
+
         from maskgit3d.models.maskgit import MaskGIT
+        from maskgit3d.tasks.maskgit_task import MaskGITTask
 
         model_cfg = DictConfig(
             {
@@ -487,6 +488,7 @@ class TestMaskGITTaskModelConfig:
     def test_model_config_overrides_scalar_params(self, vqvae_checkpoint):
         """When model_config is provided, scalar transformer params are ignored."""
         from omegaconf import DictConfig
+
         from maskgit3d.tasks.maskgit_task import MaskGITTask
 
         model_cfg = DictConfig(
@@ -507,8 +509,8 @@ class TestMaskGITTaskModelConfig:
 
     def test_scalar_params_still_work(self, vqvae_checkpoint):
         """Backward compat: scalar params still work without model_config."""
-        from maskgit3d.tasks.maskgit_task import MaskGITTask
         from maskgit3d.models.maskgit import MaskGIT
+        from maskgit3d.tasks.maskgit_task import MaskGITTask
 
         task = MaskGITTask(
             vqvae_ckpt_path=str(vqvae_checkpoint),
@@ -521,6 +523,7 @@ class TestMaskGITTaskModelConfig:
     def test_model_config_saved_in_hparams(self, vqvae_checkpoint):
         """model_config should be in hparams for checkpoint loading."""
         from omegaconf import DictConfig
+
         from maskgit3d.tasks.maskgit_task import MaskGITTask
 
         model_cfg = DictConfig(

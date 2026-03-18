@@ -15,6 +15,7 @@ from maskgit3d.utils.sliding_window import (
     create_sliding_window_inferer,
     pad_to_divisible,
 )
+
 from ..vqvae import VQVAE
 from .sampling import MaskGITSampler
 from .scheduling import TrainingMaskScheduler
@@ -96,7 +97,7 @@ class MaskGIT(nn.Module):
             inner_encoder = encoder.encoder
             if hasattr(inner_encoder, "num_channels"):
                 num_channels = inner_encoder.num_channels
-                if isinstance(num_channels, (list, tuple)):
+                if isinstance(num_channels, list | tuple):
                     return 2 ** (len(num_channels) - 1)
         return 8
 
