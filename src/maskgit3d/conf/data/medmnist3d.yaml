@@ -5,7 +5,7 @@ data_dir: ${oc.env:DATA_DIR,./data}
 download: true
 image_size: 64
 crop_size: [32, 32, 32]
-batch_size: 4
+batch_size: 8
 num_workers: 8
 pin_memory: true
 drop_last_train: true
