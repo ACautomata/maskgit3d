@@ -23,11 +23,13 @@ class QuantizerProtocol(Protocol):
         """Dimension of each embedding vector."""
         ...
 
-    def forward(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+    def __call__(self, z: Tensor) -> tuple[Tensor, Tensor, Tensor]: ...
+
+    def forward(self, z: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """Quantize input tensor.
 
         Args:
-            x: Input tensor to quantize, typically of shape (B, C, D, H, W).
+            z: Input tensor to quantize, typically of shape (B, C, D, H, W).
 
         Returns:
             Tuple of (quantized tensor, vq_loss, encoding indices).

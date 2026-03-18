@@ -6,7 +6,6 @@ Code adapted from: https://github.com/duchenzhuang/FSQ-pytorch
 """
 
 import math
-from typing import List
 
 import torch
 import torch.nn as nn
@@ -24,13 +23,13 @@ class FSQ(nn.Module):
     No learned parameters - pure deterministic quantization.
     """
 
-    def __init__(self, levels: List[int]):
+    def __init__(self, levels: list[int]):
         super().__init__()
-        _levels = torch.tensor(levels, dtype=torch.int32)
-        self.register_buffer("_levels", _levels)
+        levels_tensor = torch.tensor(levels, dtype=torch.int32)
+        self.register_buffer("_levels", levels_tensor)
 
-        _basis = torch.cumprod(torch.tensor([1] + levels[:-1], dtype=torch.int32), dim=0)
-        self.register_buffer("_basis", _basis)
+        basis_tensor = torch.cumprod(torch.tensor([1, *levels[:-1]], dtype=torch.int32), dim=0)
+        self.register_buffer("_basis", basis_tensor)
 
         self.dim = len(levels)
         self.n_codes = math.prod(levels)
@@ -40,11 +39,27 @@ class FSQ(nn.Module):
             self.indices_to_codes(torch.arange(self.n_codes)),
         )
 
+    @property
+    def levels_tensor(self) -> torch.Tensor:
+        levels = self._buffers.get("_levels")
+        if not isinstance(levels, torch.Tensor):
+            raise RuntimeError("FSQ levels buffer is not initialized")
+        return levels
+
+    @property
+    def basis_tensor(self) -> torch.Tensor:
+        basis = self._buffers.get("_basis")
+        if not isinstance(basis, torch.Tensor):
+            raise RuntimeError("FSQ basis buffer is not initialized")
+        return basis
+
     def quantize(self, z: torch.Tensor) -> torch.Tensor:
         """Quantize continuous values to discrete levels."""
-        levels = self._levels.float()
+        levels = self.levels_tensor.float()
         half_l = (levels - 1) / 2
-        offset = torch.where(levels % 2 == 0, torch.tensor(0.5), torch.tensor(0.0))
+        offset = torch.where(
+            levels.remainder(2) == 0, torch.full_like(levels, 0.5), torch.zeros_like(levels)
+        )
         shift = half_l - offset
 
         z_bounded = z.tanh() * (half_l - 1e-3 * half_l) + offset
@@ -54,22 +69,26 @@ class FSQ(nn.Module):
 
     def codes_to_indices(self, z_q: torch.Tensor) -> torch.Tensor:
         """Convert quantized codes to flat indices."""
-        levels = self._levels.float()
+        levels = self.levels_tensor.float()
         half_l = (levels - 1) / 2
-        offset = torch.where(levels % 2 == 0, torch.tensor(0.5), torch.tensor(0.0))
+        offset = torch.where(
+            levels.remainder(2) == 0, torch.full_like(levels, 0.5), torch.zeros_like(levels)
+        )
         shift = half_l - offset
 
         codes = (z_q * shift + offset).round().long()
-        return (codes * self._basis.float()).sum(dim=-1)
+        return (codes * self.basis_tensor.float()).sum(dim=-1)
 
     def indices_to_codes(self, indices: torch.Tensor) -> torch.Tensor:
         """Convert flat indices back to quantized codes."""
         indices = indices.unsqueeze(-1)
-        codes_non_centered = (indices // self._basis) % self._levels
+        codes_non_centered = (indices // self.basis_tensor) % self.levels_tensor
 
-        levels = self._levels.float()
+        levels = self.levels_tensor.float()
         half_l = (levels - 1) / 2
-        offset = torch.where(levels % 2 == 0, torch.tensor(0.5), torch.tensor(0.0))
+        offset = torch.where(
+            levels.remainder(2) == 0, torch.full_like(levels, 0.5), torch.zeros_like(levels)
+        )
         shift = half_l - offset
 
         return (codes_non_centered.float() - offset) / shift
@@ -95,10 +114,10 @@ class FSQQuantizer(nn.Module):
     Key difference: FSQ has NO VQ loss (returns tensor(0.0))
     """
 
-    def __init__(self, levels: List[int], embedding_dim: int):
+    def __init__(self, levels: list[int], embedding_dim: int):
         super().__init__()
         self.embedding_dim = embedding_dim
-        self.levels = levels
+        self.levels = list(levels)
         fsq_dim = len(levels)
 
         self.fsq = FSQ(levels=levels)
