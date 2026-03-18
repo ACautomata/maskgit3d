@@ -162,9 +162,9 @@ def test_vqvae_task_divisible_pad():
 
     x = torch.randn(1, 1, 33, 33, 33)
     x_padded = task._pad_to_divisible(x)
-    assert x_padded.shape[2] % 16 == 0
-    assert x_padded.shape[3] % 16 == 0
-    assert x_padded.shape[4] % 16 == 0
+    assert x_padded.shape[2] % task._downsampling_factor == 0
+    assert x_padded.shape[3] % task._downsampling_factor == 0
+    assert x_padded.shape[4] % task._downsampling_factor == 0
     assert x_padded.shape[1] == x.shape[1]
 
 
@@ -676,8 +676,9 @@ class TestVQVAETaskModelConfig:
     def test_accepts_model_config(self):
         """VQVAETask can be constructed with model_config DictConfig."""
         from omegaconf import DictConfig
-        from maskgit3d.tasks.vqvae_task import VQVAETask
+
         from maskgit3d.models.vqvae import VQVAE
+        from maskgit3d.tasks.vqvae_task import VQVAETask
 
         model_cfg = DictConfig(
             {
@@ -700,6 +701,7 @@ class TestVQVAETaskModelConfig:
     def test_model_config_overrides_scalar_params(self):
         """When model_config is provided, scalar model params are ignored."""
         from omegaconf import DictConfig
+
         from maskgit3d.tasks.vqvae_task import VQVAETask
 
         model_cfg = DictConfig(
@@ -726,8 +728,8 @@ class TestVQVAETaskModelConfig:
 
     def test_scalar_params_still_work(self):
         """Backward compat: scalar params still construct VQVAE when no model_config."""
-        from maskgit3d.tasks.vqvae_task import VQVAETask
         from maskgit3d.models.vqvae import VQVAE
+        from maskgit3d.tasks.vqvae_task import VQVAETask
 
         task = VQVAETask(
             in_channels=1,
@@ -746,6 +748,7 @@ class TestVQVAETaskModelConfig:
     def test_model_config_saved_in_hparams(self):
         """model_config should be serializable via save_hyperparameters."""
         from omegaconf import DictConfig
+
         from maskgit3d.tasks.vqvae_task import VQVAETask
 
         model_cfg = DictConfig(
@@ -767,8 +770,9 @@ class TestVQVAETaskModelConfig:
     def test_fsq_model_config(self):
         """VQVAETask works with FSQ model variant via model_config."""
         from omegaconf import DictConfig
-        from maskgit3d.tasks.vqvae_task import VQVAETask
+
         from maskgit3d.models.vqvae import VQVAE
+        from maskgit3d.tasks.vqvae_task import VQVAETask
 
         model_cfg = DictConfig(
             {

@@ -17,3 +17,5 @@ attention_levels:
   - false
   - true
 commitment_cost: 0.5
+num_splits: 1
+dim_split: 0

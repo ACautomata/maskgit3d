@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from typing import cast
 
 import torch
 import torch.nn as nn
@@ -45,7 +46,7 @@ class Encoder(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.use_gradient_checkpointing and self.training:
             for block in self.encoder.blocks:
-                x = checkpoint(block, x, use_reentrant=False)
+                x = cast(torch.Tensor, checkpoint(block, x, use_reentrant=False))
             return x
         out: torch.Tensor = self.encoder(x)
         return out

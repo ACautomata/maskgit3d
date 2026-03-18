@@ -77,11 +77,15 @@ class VQVAE(nn.Module):
         commitment_cost: float = 0.25,
         quantizer_type: Literal["vq", "fsq"] = "vq",
         fsq_levels: Sequence[int] = (8, 8, 8, 5, 5, 5),
+        num_splits: int = 1,
+        dim_split: int = 1,
     ):
         super().__init__()
 
         self.in_channels = in_channels
         self.out_channels = out_channels
+        self.num_splits = num_splits
+        self.dim_split = dim_split
 
         self.encoder = Encoder(
             spatial_dims=3,
@@ -90,6 +94,8 @@ class VQVAE(nn.Module):
             num_channels=num_channels,
             num_res_blocks=num_res_blocks,
             attention_levels=attention_levels,
+            num_splits=num_splits,
+            dim_split=dim_split,
         )
 
         self.quant_conv = nn.Conv3d(latent_channels, embedding_dim, 1)
@@ -116,6 +122,8 @@ class VQVAE(nn.Module):
             num_channels=num_channels[::-1],
             num_res_blocks=num_res_blocks[::-1],
             attention_levels=attention_levels[::-1],
+            num_splits=num_splits,
+            dim_split=dim_split,
         )
 
         self.use_gradient_checkpointing = False

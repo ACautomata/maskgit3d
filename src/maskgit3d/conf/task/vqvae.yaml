@@ -3,6 +3,7 @@ _target_: maskgit3d.tasks.vqvae_task.VQVAETask
 model_config: ${model}
 optimizer_config: ${optimizer}
 disc_optimizer_config: ${optimizer}
+data_config: ${data}
 
 lr_g: 5.0e-5
 lr_d: 1.0e-4
@@ -23,6 +24,9 @@ disc_loss: hinge
 
 gradient_clip_enabled: true
 gradient_clip_val: 1.0
+
+num_splits: null
+dim_split: 0
 
 sliding_window:
   enabled: true

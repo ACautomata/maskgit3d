@@ -1,7 +1,7 @@
 """VQVAE training task with GAN-based manual optimization and adaptive weighting."""
 
 from collections.abc import Sequence
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 import torch
 import torch.nn.functional as F
@@ -11,6 +11,7 @@ from omegaconf import DictConfig
 
 from ..losses.vq_perceptual_loss import VQPerceptualLoss
 from ..models.vqvae import VQVAE
+from ..models.vqvae.splitting import resolve_num_splits
 from ..utils.sliding_window import create_sliding_window_inferer, pad_to_divisible
 from .base_task import BaseTask
 from .gan_training_strategy import GANTrainingStrategy
@@ -90,9 +91,9 @@ def compute_padded_size(
 class VQVAETask(BaseTask):
     def __init__(
         self,
-        model_config: Optional[DictConfig] = None,
-        optimizer_config: Optional[DictConfig] = None,
-        disc_optimizer_config: Optional[DictConfig] = None,
+        model_config: DictConfig | None = None,
+        optimizer_config: DictConfig | None = None,
+        disc_optimizer_config: DictConfig | None = None,
         in_channels: int = 1,
         out_channels: int = 1,
         latent_channels: int = 256,
@@ -120,12 +121,42 @@ class VQVAETask(BaseTask):
         gradient_clip_enabled: bool = True,
         quantizer_type: Literal["vq", "fsq"] = "vq",
         fsq_levels: Sequence[int] = (8, 8, 8, 5, 5, 5),
+        num_splits: int | None = None,
+        dim_split: int = 1,
+        data_config: DictConfig | None = None,
     ):
         super().__init__()
         self.automatic_optimization = False
 
+        crop_size: tuple[int, int, int] | None = None
+        roi_size: tuple[int, int, int] | None = None
+
+        if (
+            data_config is not None
+            and hasattr(data_config, "crop_size")
+            and data_config.crop_size is not None
+        ):
+            crop_size = tuple(data_config.crop_size)
+        if sliding_window is not None and sliding_window.get("roi_size") is not None:
+            roi_size = tuple(sliding_window["roi_size"])
+
+        effective_num_channels = num_channels
+        if model_config is not None and hasattr(model_config, "num_channels"):
+            effective_num_channels = tuple(model_config.num_channels)
+
+        resolved_num_splits, split_reason = resolve_num_splits(
+            crop_size=crop_size,
+            roi_size=roi_size,
+            num_channels=effective_num_channels,
+            dim_split=dim_split,
+            requested_num_splits=num_splits,
+        )
+
         if model_config is not None:
-            self.vqvae = instantiate(model_config)
+            config_dict = dict(model_config)
+            config_dict["num_splits"] = resolved_num_splits
+            config_dict["dim_split"] = dim_split
+            self.vqvae = instantiate(config_dict)
         else:
             self.vqvae = VQVAE(
                 in_channels=in_channels,
@@ -139,6 +170,8 @@ class VQVAETask(BaseTask):
                 commitment_cost=commitment_cost,
                 quantizer_type=quantizer_type,
                 fsq_levels=fsq_levels,
+                num_splits=resolved_num_splits,
+                dim_split=dim_split,
             )
 
         self.loss_fn = VQPerceptualLoss(
@@ -168,7 +201,7 @@ class VQVAETask(BaseTask):
         self.sliding_window_cfg = sliding_window or {}
         self._sliding_window_inferer: SlidingWindowInferer | None = None
         self._encoder_inferer: SlidingWindowInferer | None = None
-        self._downsampling_factor = 2 ** (len(num_channels) - 1)
+        self._downsampling_factor = 2 ** (len(effective_num_channels) - 1)
 
         self.vqvae.enable_gradient_checkpointing()
 
