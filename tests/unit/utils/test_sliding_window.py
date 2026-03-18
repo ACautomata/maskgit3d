@@ -1,6 +1,5 @@
 """Tests for sliding window utilities."""
 
-import pytest
 import torch
 
 from maskgit3d.utils.sliding_window import (
