@@ -1,7 +1,8 @@
+from importlib import import_module
 from typing import Any
 
 import hydra
-from hydra.utils import get_class, instantiate, to_absolute_path
+from hydra.utils import instantiate, to_absolute_path
 from lightning.pytorch import LightningModule
 from omegaconf import DictConfig, OmegaConf
 
@@ -12,18 +13,14 @@ def _resolve_required_ckpt_path(path: str | None) -> str:
     return to_absolute_path(path)
 
 
+def _build_eval_task(cfg: DictConfig, ckpt_path: str) -> LightningModule:
+    return import_module("src.maskgit3d.runtime.composition").build_eval_task(cfg, ckpt_path)
+
+
 @hydra.main(version_base=None, config_path="conf", config_name="eval")
 def main(cfg: DictConfig) -> None:
     ckpt_path = _resolve_required_ckpt_path(cfg.get("ckpt_path"))
-    task_target = cfg.task.get("_target_")
-    if task_target is None:
-        raise ValueError("cfg.task._target_ must be set for evaluation.")
-
-    task_class: type[LightningModule] = get_class(task_target)
-    task: LightningModule = task_class.load_from_checkpoint(
-        ckpt_path,
-        weights_only=False,
-    )
+    task: LightningModule = _build_eval_task(cfg, ckpt_path)
 
     datamodule = instantiate(cfg.data)
 

@@ -1,3 +1,4 @@
+from importlib import import_module
 from typing import Any
 
 import hydra
@@ -11,10 +12,14 @@ def _resolve_optional_path(path: str | None) -> str | None:
     return to_absolute_path(path)
 
 
+def _build_training_task(cfg: DictConfig):
+    return import_module("src.maskgit3d.runtime.composition").build_training_task(cfg)
+
+
 @hydra.main(version_base=None, config_path="conf", config_name="train")
 def main(cfg: DictConfig) -> None:
     datamodule = instantiate(cfg.data)
-    task = instantiate(cfg.task, _recursive_=False)
+    task = _build_training_task(cfg)
 
     callbacks: Any = instantiate(cfg.callbacks) if cfg.get("callbacks") is not None else None
     logger: Any = instantiate(cfg.logger) if cfg.get("logger") is not None else None

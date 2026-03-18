@@ -42,6 +42,7 @@ def test_train_main_passes_resolved_checkpoint_path(monkeypatch: pytest.MonkeyPa
         raise AssertionError(f"Unexpected target: {target}")
 
     monkeypatch.setattr(train_module, "instantiate", fake_instantiate)
+    monkeypatch.setattr(train_module, "_build_training_task", lambda cfg: task)
     monkeypatch.setattr(train_module, "to_absolute_path", lambda path: f"/abs/{path}")
 
     train_module.main.__wrapped__(cfg)
@@ -106,13 +107,6 @@ def test_eval_main_loads_checkpoint_and_runs_requested_stage(
     trainer = Mock(name="trainer")
     loaded_task = Mock(name="loaded_task")
 
-    class FakeTask:
-        @classmethod
-        def load_from_checkpoint(cls, path: str, *, weights_only: bool = True):
-            assert path == "/abs/checkpoints/best.ckpt"
-            assert weights_only is False
-            return loaded_task
-
     def fake_instantiate(config, **kwargs):
         target = config.get("_target_")
         if target == "tests.DataModule":
@@ -123,7 +117,7 @@ def test_eval_main_loads_checkpoint_and_runs_requested_stage(
         raise AssertionError(f"Unexpected target: {target}")
 
     monkeypatch.setattr(eval_module, "instantiate", fake_instantiate)
-    monkeypatch.setattr(eval_module, "get_class", lambda target: FakeTask)
+    monkeypatch.setattr(eval_module, "_build_eval_task", lambda cfg, ckpt_path: loaded_task)
     monkeypatch.setattr(eval_module, "to_absolute_path", lambda path: f"/abs/{path}")
 
     eval_module.main.__wrapped__(cfg)
