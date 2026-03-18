@@ -55,7 +55,7 @@ class TestCallbackIntegration:
             assert trainer is not None
             assert len(trainer.callbacks) >= 7
 
-    def test_vqvae_returns_val_loss(self):
+    def test_vqvae_logs_validation_metrics(self):
         from maskgit3d.tasks.vqvae_task import VQVAETask
 
         task = VQVAETask(
@@ -78,7 +78,8 @@ class TestCallbackIntegration:
             (__import__("torch").randn(1, 1, 32, 32, 32), __import__("torch").zeros(1)), 0
         )
 
-        assert "val_loss" in logged
+        assert "val_perceptual_loss" in logged
+        assert "val_rec_loss" in logged
 
     def test_maskgit_returns_val_loss(self):
         import torch
@@ -109,10 +110,8 @@ class TestCallbackIntegration:
         with initialize_config_dir(config_dir=config_dir, version_base=None):
             cfg = compose(config_name="train", overrides=["callbacks=default"])
 
-            # Best checkpoint monitors val_loss
-            assert cfg.callbacks.best_checkpoint.monitor == "val_loss"
-            # Early stopping monitors val_loss
-            assert cfg.callbacks.early_stopping.monitor == "val_loss"
+            assert cfg.callbacks.best_checkpoint.monitor == "val_perceptual_loss"
+            assert cfg.callbacks.early_stopping.monitor == "val_perceptual_loss"
 
     def test_train_main_with_default_callbacks(self, monkeypatch):
         """Regression test: train.main works with callbacks=default via Hydra dict conversion."""
