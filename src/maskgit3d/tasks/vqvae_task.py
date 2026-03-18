@@ -388,30 +388,39 @@ class VQVAETask(BaseTask):
         x_real = self._extract_input_tensor(batch)
         original_shape = x_real.shape[2:]
         inferer = self._get_sliding_window_inferer()
+        x_recon: torch.Tensor
 
         if inferer is not None:
+            # Stage 2 style: sliding window on encoder, then on decoder
+            # Step 1: Sliding window on encoder to get latent indices
             x_real_padded = self._pad_to_divisible(x_real)
-            padded_shape = x_real_padded.shape[2:]
 
-            def model_forward(x: torch.Tensor) -> torch.Tensor:
-                recon: torch.Tensor
-                recon, _ = self.vqvae(x)  # type: ignore[misc]
-                return recon
+            def encode_fn(patch: torch.Tensor) -> torch.Tensor:
+                z_q, _, indices = self.vqvae.encode(patch)
+                return indices.float().unsqueeze(1)
 
-            x_recon_padded = inferer(x_real_padded, model_forward)
+            indices_padded = inferer(x_real_padded, encode_fn)
 
-            pad_d = padded_shape[0] - original_shape[0]
-            pad_h = padded_shape[1] - original_shape[1]
-            pad_w = padded_shape[2] - original_shape[2]
-            x_recon = x_recon_padded[  # type: ignore[call-overload]
-                :,
-                :,
-                pad_d // 2 : pad_d // 2 + original_shape[0],
-                pad_h // 2 : pad_h // 2 + original_shape[1],
-                pad_w // 2 : pad_w // 2 + original_shape[2],
-            ]
+            # Crop to latent dimensions
+            latent_d = original_shape[0] // self._downsampling_factor
+            latent_h = original_shape[1] // self._downsampling_factor
+            latent_w = original_shape[2] // self._downsampling_factor
+
+            B = x_real.shape[0]
+            indices = indices_padded[:B, 0, :latent_d, :latent_h, :latent_w].long()  # type: ignore[call-overload]
+
+            # Step 2: Decode indices to z_q
+            z_q = self.vqvae.quantizer.decode_from_indices(indices)
+
+            # Step 3: Sliding window on decoder
+            def decode_fn(patch: torch.Tensor) -> torch.Tensor:
+                return self.vqvae.decode(patch)
+
+            x_recon_raw = inferer(z_q, decode_fn)
+            x_recon = x_recon_raw  # type: ignore[assignment]
         else:
-            x_recon, _ = self.vqvae(x_real)  # type: ignore[misc]
+            recon, _ = self.vqvae(x_real)  # type: ignore[misc]
+            x_recon = recon
 
         perceptual_loss = torch.tensor(0.0, device=x_real.device)
         if self.loss_fn.use_perceptual and self.loss_fn.perceptual_loss is not None:
@@ -480,33 +489,41 @@ class VQVAETask(BaseTask):
         x_real = self._extract_input_tensor(batch)
         original_shape = x_real.shape[2:]
         inferer = self._get_sliding_window_inferer()
+        x_recon: torch.Tensor
 
         if inferer is not None:
-            x_real_padded = self._pad_to_divisible(x_real)
-            padded_shape = x_real_padded.shape[2:]
-
             if torch.cuda.is_available():
                 torch.cuda.reset_peak_memory_stats()
 
-            def model_forward(x: torch.Tensor) -> torch.Tensor:
-                recon: torch.Tensor
-                recon, _ = self.vqvae(x)  # type: ignore[misc]
-                return recon
+            # Step 1: Sliding window on encoder to get latent indices
+            x_real_padded = self._pad_to_divisible(x_real)
 
-            x_recon_padded = inferer(x_real_padded, model_forward)
+            def encode_fn(patch: torch.Tensor) -> torch.Tensor:
+                z_q, _, indices = self.vqvae.encode(patch)
+                return indices.float().unsqueeze(1)
 
-            pad_d = padded_shape[0] - original_shape[0]
-            pad_h = padded_shape[1] - original_shape[1]
-            pad_w = padded_shape[2] - original_shape[2]
-            x_recon = x_recon_padded[  # type: ignore[call-overload]
-                :,
-                :,
-                pad_d // 2 : pad_d // 2 + original_shape[0],
-                pad_h // 2 : pad_h // 2 + original_shape[1],
-                pad_w // 2 : pad_w // 2 + original_shape[2],
-            ]
+            indices_padded = inferer(x_real_padded, encode_fn)
+
+            # Crop to latent dimensions
+            latent_d = original_shape[0] // self._downsampling_factor
+            latent_h = original_shape[1] // self._downsampling_factor
+            latent_w = original_shape[2] // self._downsampling_factor
+
+            B = x_real.shape[0]
+            indices = indices_padded[:B, 0, :latent_d, :latent_h, :latent_w].long()  # type: ignore[call-overload]
+
+            # Step 2: Decode indices to z_q
+            z_q = self.vqvae.quantizer.decode_from_indices(indices)
+
+            # Step 3: Sliding window on decoder
+            def decode_fn(patch: torch.Tensor) -> torch.Tensor:
+                return self.vqvae.decode(patch)
+
+            x_recon_raw = inferer(z_q, decode_fn)
+            x_recon = x_recon_raw  # type: ignore[assignment]
         else:
-            x_recon, _ = self.vqvae(x_real)  # type: ignore[misc]
+            recon, _ = self.vqvae(x_real)  # type: ignore[misc]
+            x_recon = recon
 
         loss = F.l1_loss(x_recon, x_real)
 
