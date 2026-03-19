@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, Callable, cast
+from typing import Any, Callable
 
 import torch
-import torch.nn.functional as F
-from hydra.utils import instantiate
-from omegaconf import DictConfig
 
 from ..inference import VQVAEReconstructor
 from ..tasks.gan_training_strategy import GANTrainingStrategy
@@ -204,39 +201,3 @@ class VQVAETrainingSteps:
         if isinstance(value, torch.Tensor):
             return value
         return torch.tensor(float(value), device=device)
-
-    def create_optimizers(
-        self,
-        lr_g: float,
-        lr_d: float,
-        optimizer_config: DictConfig | None = None,
-        disc_optimizer_config: DictConfig | None = None,
-    ) -> list[torch.optim.Optimizer]:
-        if optimizer_config is not None:
-            param_groups = [
-                {"params": self.vqvae.encoder.parameters(), "lr": lr_g},
-                {"params": self.vqvae.quant_conv.parameters(), "lr": lr_g},
-                {"params": self.vqvae.post_quant_conv.parameters(), "lr": lr_g},
-                {"params": self.vqvae.decoder.parameters(), "lr": lr_g},
-            ]
-            opt_g = instantiate(optimizer_config, _partial_=True)(param_groups, lr=lr_g)
-        else:
-            opt_g = torch.optim.Adam(
-                list(self.vqvae.encoder.parameters())
-                + list(self.vqvae.quant_conv.parameters())
-                + list(self.vqvae.post_quant_conv.parameters())
-                + list(self.vqvae.decoder.parameters()),
-                lr=lr_g,
-            )
-
-        if disc_optimizer_config is not None:
-            opt_d = instantiate(disc_optimizer_config, _partial_=True)(
-                self.loss_fn.discriminator.parameters(), lr=lr_d
-            )
-        else:
-            opt_d = torch.optim.Adam(
-                self.loss_fn.discriminator.parameters(),
-                lr=lr_d,
-            )
-
-        return [opt_g, opt_d]

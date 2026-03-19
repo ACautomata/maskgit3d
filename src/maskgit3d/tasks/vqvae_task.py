@@ -11,6 +11,7 @@ from ..inference import VQVAEReconstructor
 from ..losses.vq_perceptual_loss import VQPerceptualLoss
 from ..models.vqvae import VQVAE
 from ..models.vqvae.splitting import compute_downsampling_factor, resolve_num_splits
+from ..runtime.optimizer_factory import GANOptimizerFactory
 from ..training import VQVAETrainingSteps
 from .base_task import BaseTask
 from .gan_training_strategy import GANTrainingStrategy
@@ -273,12 +274,24 @@ class VQVAETask(BaseTask):
         return self.training_steps.reconstruction_step(batch=batch, split="val")
 
     def configure_optimizers(self) -> list[torch.optim.Optimizer]:
-        return self.training_steps.create_optimizers(
+        if self.optimizer_factory is not None:
+            opt_g, opt_d = self.optimizer_factory.create_optimizers(
+                generator=self.vqvae,
+                discriminator=self.loss_fn.discriminator,
+            )
+            return [opt_g, opt_d]
+
+        factory = GANOptimizerFactory(
             lr_g=self.lr_g,
             lr_d=self.lr_d,
             optimizer_config=self.hparams.get("optimizer_config"),
             disc_optimizer_config=self.hparams.get("disc_optimizer_config"),
         )
+        opt_g, opt_d = factory.create_optimizers(
+            generator=self.vqvae,
+            discriminator=self.loss_fn.discriminator,
+        )
+        return [opt_g, opt_d]
 
     @torch.no_grad()
     def test_step(self, batch: torch.Tensor | Sequence[Any], batch_idx: int) -> dict[str, Any]:
