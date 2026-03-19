@@ -1,15 +1,14 @@
 """MaskGIT training task with automatic optimization."""
 
-from typing import Any
+from typing import Any, cast
 
 import torch
-import torch.nn as nn
-from hydra.utils import instantiate
 from lightning import LightningModule
 from omegaconf import DictConfig
 
 from ..models.maskgit import MaskGIT
 from ..models.vqvae import VQVAE
+from ..training import MaskGITTrainingSteps
 
 
 class MaskGITTask(LightningModule):
@@ -63,28 +62,55 @@ class MaskGITTask(LightningModule):
         self.weight_decay = weight_decay
         self.warmup_steps = warmup_steps
 
-        self.vqvae = VQVAE()
-        if vqvae_ckpt_path is not None:
-            vqvae_state = torch.load(vqvae_ckpt_path, map_location="cpu", weights_only=True)
-            if "state_dict" in vqvae_state:
-                vqvae_state = vqvae_state["state_dict"]
-            self.vqvae.load_state_dict(vqvae_state)
-        self.vqvae.eval()
-        self.vqvae.requires_grad_(False)
+        self.vqvae = self._build_vqvae(vqvae_ckpt_path)
+        self.maskgit = self._build_maskgit(
+            model_config=model_config,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            num_heads=num_heads,
+            mlp_ratio=mlp_ratio,
+            dropout=dropout,
+            gamma_type=gamma_type,
+            sliding_window=sliding_window,
+        )
+        self.training_steps = MaskGITTrainingSteps(maskgit=self.maskgit)
 
-        if model_config is not None:
-            self.maskgit = instantiate(model_config, vqvae=self.vqvae)
+    def _build_vqvae(self, vqvae_ckpt_path: str | None) -> VQVAE:
+        if vqvae_ckpt_path is not None:
+            from ..runtime.checkpoints import VQVAECheckpointLoader
+
+            vqvae = VQVAECheckpointLoader().load(vqvae_ckpt_path)
         else:
-            self.maskgit = MaskGIT(
-                vqvae=self.vqvae,
-                hidden_size=hidden_size,
-                num_layers=num_layers,
-                num_heads=num_heads,
-                mlp_ratio=mlp_ratio,
-                dropout=dropout,
-                gamma_type=gamma_type,
-                sliding_window=sliding_window,
-            )
+            vqvae = VQVAE()
+        vqvae.eval()
+        vqvae.requires_grad_(False)
+        return vqvae
+
+    def _build_maskgit(
+        self,
+        model_config: DictConfig | None,
+        hidden_size: int,
+        num_layers: int,
+        num_heads: int,
+        mlp_ratio: float,
+        dropout: float,
+        gamma_type: str,
+        sliding_window: dict[str, Any] | None,
+    ) -> MaskGIT:
+        if model_config is not None:
+            from ..runtime.model_factory import create_maskgit_model
+
+            return create_maskgit_model(model_config, self.vqvae)
+        return MaskGIT(
+            vqvae=self.vqvae,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            num_heads=num_heads,
+            mlp_ratio=mlp_ratio,
+            dropout=dropout,
+            gamma_type=gamma_type,
+            sliding_window=sliding_window,
+        )
 
     def encode_images_to_tokens(self, x: torch.Tensor) -> torch.Tensor:
         """Encode images to discrete tokens using VQVAE.
@@ -107,111 +133,34 @@ class MaskGITTask(LightningModule):
         self,
         batch: torch.Tensor | tuple[torch.Tensor, ...] | list[torch.Tensor],
     ) -> torch.Tensor:
-        if isinstance(batch, tuple | list):
-            return batch[0]
-        return batch
+        resolved_batch = cast(torch.Tensor | tuple[Any, ...] | list[Any], batch)
+        return self.training_steps.extract_input_tensor(resolved_batch)
 
     def _compute_masked_loss(
         self, tokens: torch.Tensor, mask_ratio: float | None = None
     ) -> tuple[torch.Tensor, dict[str, int | float]]:
-        """Compute masked prediction loss and return raw data for metrics.
+        return self.training_steps.compute_masked_loss(tokens, mask_ratio=mask_ratio)
 
-        Args:
-            tokens: Token indices [B, D, H, W]
-            mask_ratio: Optional mask ratio (sampled if None)
-
-        Returns:
-            Tuple of (loss tensor, raw data dict for metrics computation)
-        """
-        B, D, H, W = tokens.shape
-        tokens_flat = tokens.view(B, -1)
-
-        effective_mask_ratio = (
-            self.maskgit.mask_scheduler.sample_mask_ratio() if mask_ratio is None else mask_ratio
+    def training_step(
+        self, batch: torch.Tensor | tuple[Any, ...] | list[Any], batch_idx: int
+    ) -> dict[str, Any]:
+        del batch_idx
+        resolved_batch = cast(torch.Tensor | tuple[Any, ...] | list[Any], batch)
+        return self.training_steps.training_step(
+            batch=resolved_batch,
+            encode_images_to_tokens_fn=self.encode_images_to_tokens,
         )
 
-        # Use transformer's predict_masked for masking logic
-        masked_logits, masked_targets, mask = self.maskgit.transformer.predict_masked(
-            tokens_flat, mask_ratio=effective_mask_ratio
+    def validation_step(
+        self, batch: torch.Tensor | tuple[Any, ...] | list[Any], batch_idx: int
+    ) -> dict[str, Any]:
+        del batch_idx
+        resolved_batch = cast(torch.Tensor | tuple[Any, ...] | list[Any], batch)
+        return self.training_steps.validation_step(
+            batch=resolved_batch,
+            encode_images_to_tokens_fn=self.encode_images_to_tokens,
+            log_fn=self.log,
         )
-
-        loss = nn.functional.cross_entropy(masked_logits, masked_targets)
-
-        # Compute accuracy in-step to avoid storing large tensors
-        with torch.no_grad():
-            predictions = masked_logits.argmax(dim=-1)
-            correct = (predictions == masked_targets).sum().item()
-            total = masked_targets.numel()
-
-        # Return scalars for metrics (memory efficient)
-        raw_data: dict[str, int | float] = {
-            "correct": correct,
-            "total": total,
-            "mask_ratio": float(effective_mask_ratio),
-        }
-        return loss, raw_data
-
-    def training_step(self, batch: torch.Tensor, batch_idx: int) -> dict[str, Any]:
-        x = self._extract_input_tensor(batch)
-
-        # Encode images to tokens using sliding window if enabled
-        tokens = self.encode_images_to_tokens(x)
-
-        # Compute loss and get raw data for metrics
-        loss, raw_data = self._compute_masked_loss(tokens)
-
-        # Return loss and raw data for callback processing
-        return {
-            "loss": loss,
-            "log_data": raw_data,
-        }
-
-    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> dict[str, Any]:
-        x = self._extract_input_tensor(batch)
-
-        # Encode images to tokens using sliding window if enabled
-        tokens = self.encode_images_to_tokens(x)
-
-        # Compute loss and get raw data for metrics
-        loss, raw_data = self._compute_masked_loss(tokens)
-
-        self.log(
-            "val_loss",
-            loss.detach(),
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            batch_size=x.shape[0],
-        )
-
-        total = raw_data["total"]
-        if total > 0:
-            self.log(
-                "val_mask_acc",
-                raw_data["correct"] / total,
-                on_step=False,
-                on_epoch=True,
-                prog_bar=True,
-                batch_size=x.shape[0],
-            )
-
-        self.log(
-            "val_mask_ratio",
-            raw_data["mask_ratio"],
-            on_step=False,
-            on_epoch=True,
-            prog_bar=False,
-            batch_size=x.shape[0],
-        )
-
-        with torch.no_grad():
-            generated_images = self.maskgit.generate(
-                shape=tokens.shape,
-                temperature=1.0,
-                num_iterations=12,
-            )
-
-        return {"generated_images": generated_images.detach().cpu()}
 
     def _decode_tokens_to_latent(self, tokens: torch.Tensor) -> torch.Tensor:
         """Decode tokens to latent using VQVAE decoder with sliding window support.
@@ -224,52 +173,20 @@ class MaskGITTask(LightningModule):
         """
         return self.maskgit.decode_tokens_to_latent(tokens)
 
-    def test_step(self, batch: torch.Tensor, batch_idx: int) -> dict[str, Any]:
-        x = self._extract_input_tensor(batch)
-
-        with torch.no_grad():
-            tokens_shape = self.encode_images_to_tokens(x).shape
-
-        with torch.no_grad():
-            generated_images = self.maskgit.generate(
-                shape=tokens_shape,
-                temperature=1.0,
-                num_iterations=12,
-            )
-
-        return {
-            "generated_images": generated_images,
-            "input_shape": x.shape,
-            "token_shape": tokens_shape,
-        }
-
-    def configure_optimizers(  # type: ignore[override]
-        self,
+    def test_step(
+        self, batch: torch.Tensor | tuple[Any, ...] | list[Any], batch_idx: int
     ) -> dict[str, Any]:
-        if self.hparams.get("optimizer_config") is not None:
-            optimizer = instantiate(
-                self.hparams["optimizer_config"],
-                params=self.maskgit.parameters(),
-            )
-        else:
-            optimizer = torch.optim.AdamW(
-                self.maskgit.transformer.parameters(),
-                lr=self.lr,
-                weight_decay=self.weight_decay,
-            )
+        del batch_idx
+        resolved_batch = cast(torch.Tensor | tuple[Any, ...] | list[Any], batch)
+        return self.training_steps.test_step(
+            batch=resolved_batch,
+            encode_images_to_tokens_fn=self.encode_images_to_tokens,
+        )
 
-        warmup_steps = self.hparams.get("warmup_steps", self.warmup_steps)
-
-        def lr_lambda(step: int) -> float:
-            if step < warmup_steps:
-                return float(step) / float(max(1, warmup_steps))
-            return 1.0
-
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "step",
-            },
-        }
+    def configure_optimizers(self) -> Any:
+        return self.training_steps.create_optimizers(
+            optimizer_config=self.hparams.get("optimizer_config"),
+            lr=self.lr,
+            weight_decay=self.weight_decay,
+            warmup_steps=self.hparams.get("warmup_steps", self.warmup_steps),
+        )
