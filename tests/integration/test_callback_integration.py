@@ -1,9 +1,14 @@
 """Integration tests for callback configuration and trainer integration."""
 
+from unittest.mock import MagicMock
+
+import torch
 from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
 
+from maskgit3d.callbacks.maskgit_metrics import MaskGITMetricsCallback
+from maskgit3d.callbacks.vqvae_metrics import VQVAEMetricsCallback
 from maskgit3d import train as train_module
 
 
@@ -24,6 +29,8 @@ class TestCallbackIntegration:
             assert "early_stopping" in cfg.callbacks
             assert "lr_monitor" in cfg.callbacks
             assert "nan_detection" in cfg.callbacks
+            assert "vqvae_metrics" in cfg.callbacks
+            assert "maskgit_metrics" in cfg.callbacks
 
     def test_callbacks_convert_to_list(self):
         """Test that callbacks dict converts to list for Trainer."""
@@ -53,9 +60,9 @@ class TestCallbackIntegration:
             # Should not raise
             trainer = instantiate(cfg.trainer, callbacks=callbacks, logger=False)
             assert trainer is not None
-            assert len(trainer.callbacks) >= 7
+            assert len(trainer.callbacks) >= len(callbacks)
 
-    def test_vqvae_logs_validation_metrics(self):
+    def test_vqvae_validation_metrics_are_logged_by_callback(self):
         from maskgit3d.tasks.vqvae_task import VQVAETask
 
         task = VQVAETask(
@@ -73,17 +80,17 @@ class TestCallbackIntegration:
 
         task.log = capture_log  # type: ignore[method-assign]
         task.eval()
+        callback = VQVAEMetricsCallback()
+        batch = (torch.randn(1, 1, 32, 32, 32), torch.zeros(1))
 
-        task.validation_step(
-            (__import__("torch").randn(1, 1, 32, 32, 32), __import__("torch").zeros(1)), 0
-        )
+        outputs = task.validation_step(batch, 0)
 
+        assert logged == {}
+        callback.on_validation_batch_end(MagicMock(), task, outputs, batch, 0)
         assert "val_perceptual_loss" in logged
         assert "val_rec_loss" in logged
 
-    def test_maskgit_returns_val_loss(self):
-        import torch
-
+    def test_maskgit_validation_metrics_are_logged_by_callback(self):
         from maskgit3d.tasks.maskgit_task import MaskGITTask
 
         task = MaskGITTask(hidden_size=128, num_layers=2, num_heads=4, lr=1e-4)
@@ -94,13 +101,19 @@ class TestCallbackIntegration:
 
         task.log = capture_log  # type: ignore[method-assign]
         task.eval()
+        callback = MaskGITMetricsCallback()
+        batch = torch.randn(1, 1, 16, 16, 16)
 
         with torch.no_grad():
-            result = task.validation_step(torch.randn(1, 1, 16, 16, 16), 0)
+            result = task.validation_step(batch, 0)
 
         assert isinstance(result, dict)
         assert "generated_images" in result
+        assert logged == {}
+        callback.on_validation_batch_end(MagicMock(), task, result, batch, 0)
         assert "val_loss" in logged
+        assert "val_mask_acc" in logged
+        assert "val_mask_ratio" in logged
 
     def test_checkpoint_monitor_metric_exists(self):
         """Test that checkpoint config monitors a metric that tasks log."""

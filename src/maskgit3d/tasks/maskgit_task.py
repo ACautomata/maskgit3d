@@ -3,15 +3,15 @@
 from typing import Any, cast
 
 import torch
-from lightning import LightningModule
 from omegaconf import DictConfig
 
 from ..models.maskgit import MaskGIT
 from ..models.vqvae import VQVAE
 from ..training import MaskGITTrainingSteps
+from .base_task import BaseTask
 
 
-class MaskGITTask(LightningModule):
+class MaskGITTask(BaseTask):
     """MaskGIT training task with automatic optimization.
 
     Uses standard automatic optimisation for single-stage training.
@@ -143,13 +143,15 @@ class MaskGITTask(LightningModule):
 
     def training_step(
         self, batch: torch.Tensor | tuple[Any, ...] | list[Any], batch_idx: int
-    ) -> dict[str, Any]:
+    ) -> torch.Tensor:
         del batch_idx
         resolved_batch = cast(torch.Tensor | tuple[Any, ...] | list[Any], batch)
-        return self.training_steps.training_step(
+        loss, callback_payload = self.training_steps.training_step(
             batch=resolved_batch,
             encode_images_to_tokens_fn=self.encode_images_to_tokens,
         )
+        self.save_callback_payload("train", callback_payload)
+        return loss
 
     def validation_step(
         self, batch: torch.Tensor | tuple[Any, ...] | list[Any], batch_idx: int
@@ -159,7 +161,6 @@ class MaskGITTask(LightningModule):
         return self.training_steps.validation_step(
             batch=resolved_batch,
             encode_images_to_tokens_fn=self.encode_images_to_tokens,
-            log_fn=self.log,
         )
 
     def _decode_tokens_to_latent(self, tokens: torch.Tensor) -> torch.Tensor:
@@ -179,6 +180,16 @@ class MaskGITTask(LightningModule):
         del batch_idx
         resolved_batch = cast(torch.Tensor | tuple[Any, ...] | list[Any], batch)
         return self.training_steps.test_step(
+            batch=resolved_batch,
+            encode_images_to_tokens_fn=self.encode_images_to_tokens,
+        )
+
+    def predict_step(
+        self, batch: torch.Tensor | tuple[Any, ...] | list[Any], batch_idx: int
+    ) -> dict[str, Any]:
+        del batch_idx
+        resolved_batch = cast(torch.Tensor | tuple[Any, ...] | list[Any], batch)
+        return self.training_steps.predict_step(
             batch=resolved_batch,
             encode_images_to_tokens_fn=self.encode_images_to_tokens,
         )

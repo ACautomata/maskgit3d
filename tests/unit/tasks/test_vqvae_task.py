@@ -1,5 +1,7 @@
 """Tests for VQVAETask."""
 
+from typing import Any, cast
+
 import pytest
 import torch
 from omegaconf import DictConfig
@@ -198,8 +200,11 @@ def test_vqvae_task_predict_step_direct():
 
     x = torch.randn(1, 1, 32, 32, 32)
     with torch.no_grad():
-        output = task.predict_step(x, 0)
-    assert output.shape == x.shape
+        output = cast(dict[str, Any], task.predict_step(x, 0))
+    assert isinstance(output, dict)
+    assert output["x_real"].shape == x.shape
+    assert output["x_recon"].shape == x.shape
+    assert isinstance(output["vq_loss"], torch.Tensor)
 
 
 class MockLogger:
@@ -233,6 +238,7 @@ def test_vqvae_task_validation_step():
     assert isinstance(outputs, dict)
     assert "x_real" in outputs
     assert "x_recon" in outputs
+    assert "vq_loss" in outputs
     assert isinstance(outputs["x_real"], torch.Tensor)
     assert isinstance(outputs["x_recon"], torch.Tensor)
 
@@ -257,6 +263,7 @@ def test_vqvae_task_validation_step_with_perceptual():
     assert isinstance(outputs, dict)
     assert "x_real" in outputs
     assert "x_recon" in outputs
+    assert "vq_loss" in outputs
 
 
 def test_vqvae_task_test_step_without_sliding_window():
@@ -277,7 +284,7 @@ def test_vqvae_task_test_step_without_sliding_window():
         outputs = task.test_step(x, 0)
 
     assert isinstance(outputs, dict)
-    assert "loss" in outputs
+    assert "vq_loss" in outputs
     assert "inference_time" in outputs
     assert "use_sliding_window" in outputs
     # test_step also returns x_real and x_recon for SampleSavingCallback
@@ -313,7 +320,7 @@ def test_vqvae_task_test_step_with_sliding_window():
         outputs = task.test_step(x, 0)
 
     assert isinstance(outputs, dict)
-    assert "loss" in outputs
+    assert "vq_loss" in outputs
 
 
 def test_vqvae_task_predict_step_without_sliding_window():
@@ -331,11 +338,11 @@ def test_vqvae_task_predict_step_without_sliding_window():
     x = torch.randn(1, 1, 32, 32, 32)
 
     with torch.no_grad():
-        output = task.predict_step(x, 0)
+        output = cast(dict[str, Any], task.predict_step(x, 0))
 
-    assert output.shape == x.shape
-    assert output.shape[0] == 1
-    assert output.shape[1] == 1
+    assert output["x_real"].shape == x.shape
+    assert output["x_recon"].shape == x.shape
+    assert isinstance(output["vq_loss"], torch.Tensor)
 
 
 @pytest.mark.integration
@@ -361,11 +368,11 @@ def test_vqvae_task_predict_step_with_sliding_window():
     x = torch.randn(1, 1, 32, 32, 32)
 
     with torch.no_grad():
-        output = task.predict_step(x, 0)
+        output = cast(dict[str, Any], task.predict_step(x, 0))
 
-    assert output.shape == x.shape
-    assert output.shape[0] == 1
-    assert output.shape[1] == 1
+    assert output["x_real"].shape == x.shape
+    assert output["x_recon"].shape == x.shape
+    assert isinstance(output["vq_loss"], torch.Tensor)
 
 
 def test_vqvae_task_predict_step_returns_correct_values():
@@ -383,10 +390,10 @@ def test_vqvae_task_predict_step_returns_correct_values():
     x = torch.randn(1, 1, 32, 32, 32)
 
     with torch.no_grad():
-        output = task.predict_step(x, 0)
+        output = cast(dict[str, Any], task.predict_step(x, 0))
 
-    assert output.shape == x.shape
-    assert output.isfinite().all(), "Output should contain finite values"
+    assert output["x_recon"].shape == x.shape
+    assert output["x_recon"].isfinite().all(), "Output should contain finite values"
 
 
 def test_vqvae_task_test_step_returns_no_cuda_memory_without_cuda(monkeypatch):
@@ -540,9 +547,13 @@ def test_vqvae_task_training_step_with_optimizers_parameter():
     task.manual_backward = lambda loss: loss.backward()  # type: ignore[assignment]
 
     batch = torch.randn(1, 1, 32, 32, 32)
-    outputs = task.training_step(batch, 0, optimizers=[opt_g, opt_d])
+    loss = task.training_step(batch, 0, optimizers=[opt_g, opt_d])
+    pop_callback_payload = cast(Any, getattr(task, "pop_callback_payload"))
+    payload = cast(dict[str, Any] | None, pop_callback_payload("train"))
 
-    assert outputs is None
+    assert isinstance(loss, torch.Tensor)
+    assert payload is not None
+    assert set(payload) == {"x_real", "x_recon", "vq_loss", "last_layer"}
 
 
 def test_vqvae_task_training_step_accepts_tuple_batch():
@@ -562,9 +573,13 @@ def test_vqvae_task_training_step_accepts_tuple_batch():
 
     image_batch = torch.randn(1, 1, 32, 32, 32)
     target_batch = image_batch.clone()
-    outputs = task.training_step((image_batch, target_batch), 0, optimizers=[opt_g, opt_d])
+    loss = task.training_step((image_batch, target_batch), 0, optimizers=[opt_g, opt_d])
+    pop_callback_payload = cast(Any, getattr(task, "pop_callback_payload"))
+    payload = cast(dict[str, Any] | None, pop_callback_payload("train"))
 
-    assert outputs is None
+    assert isinstance(loss, torch.Tensor)
+    assert payload is not None
+    assert payload["x_real"].shape == image_batch.shape
 
 
 @pytest.mark.parametrize("step_name", ["validation_step", "test_step", "predict_step"])
@@ -587,19 +602,20 @@ def test_vqvae_task_inference_steps_accept_tuple_batch(step_name: str):
         output = getattr(task, step_name)((image_batch, target_batch), 0)
 
     if step_name == "validation_step":
-        # validation_step now returns dict with x_real/x_recon
         assert isinstance(output, dict)
         assert "x_real" in output
         assert "x_recon" in output
+        assert "vq_loss" in output
     elif step_name == "test_step":
-        # test_step returns dict with loss and x_real/x_recon
         assert isinstance(output, dict)
-        assert "loss" in output
+        assert "vq_loss" in output
         assert "x_real" in output
         assert "x_recon" in output
     else:
-        # predict_step returns tensor
-        assert output.shape == image_batch.shape
+        assert isinstance(output, dict)
+        assert output["x_real"].shape == image_batch.shape
+        assert output["x_recon"].shape == image_batch.shape
+        assert "vq_loss" in output
 
 
 def test_vqvae_task_test_step_returns_cuda_memory_with_cuda(monkeypatch):

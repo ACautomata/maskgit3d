@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import torch
 from omegaconf import OmegaConf
@@ -91,15 +91,22 @@ def test_training_step_uses_encode_override_and_returns_callback_payload() -> No
         captured.append(x)
         return torch.randint(0, 16, (1, 2, 2, 2))
 
-    outputs = service.training_step(batch=batch, encode_images_to_tokens_fn=encode_images_to_tokens)
+    loss, callback_payload = service.training_step(
+        batch=batch,
+        encode_images_to_tokens_fn=encode_images_to_tokens,
+    )
+    callback_payload = cast(dict[str, Any], callback_payload)
 
     assert captured[0].shape == (1, 1, 8, 8, 8)
-    assert set(outputs.keys()) == {"loss", "log_data"}
-    assert isinstance(outputs["loss"], torch.Tensor)
-    assert outputs["log_data"]["total"] == 2
+    assert isinstance(loss, torch.Tensor)
+    assert set(callback_payload) == {"tokens", "masked_logits", "masked_targets", "mask_ratio"}
+    assert callback_payload["tokens"].shape == (1, 2, 2, 2)
+    assert callback_payload["masked_logits"].shape == (2, 3)
+    assert callback_payload["masked_targets"].shape == (2,)
+    assert callback_payload["mask_ratio"] == 0.6
 
 
-def test_validation_step_logs_metrics_and_returns_generated_images() -> None:
+def test_validation_step_returns_raw_and_model_outputs_without_logging() -> None:
     logger = RecordingLogger()
     service = MaskGITTrainingSteps(maskgit=RecordingMaskGIT(), log_fn=logger)
 
@@ -108,9 +115,13 @@ def test_validation_step_logs_metrics_and_returns_generated_images() -> None:
         encode_images_to_tokens_fn=lambda x: torch.randint(0, 16, (1, 2, 2, 2)),
     )
 
-    logged_names = {name for name, _, _ in logger.calls}
-    assert {"val_loss", "val_mask_acc", "val_mask_ratio"}.issubset(logged_names)
+    assert logger.calls == []
+    assert outputs["x_real"].shape == (1, 1, 8, 8, 8)
     assert outputs["generated_images"].shape == (1, 2, 2, 2)
+    assert outputs["masked_logits"].shape == (2, 3)
+    assert outputs["masked_targets"].shape == (2,)
+    assert outputs["mask_ratio"] == 0.6
+    assert outputs["token_shape"] == torch.Size([1, 2, 2, 2])
     assert service.maskgit.generate_calls[0]["num_iterations"] == 12
 
 

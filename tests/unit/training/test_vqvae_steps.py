@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import torch
 
@@ -113,9 +113,19 @@ def test_training_step_runs_manual_optimization_and_logs_train_metrics() -> None
     opt_d = RecordingOptimizer()
     batch = (torch.ones(2, 1, 4, 4, 4), torch.zeros(2, 1, 4, 4, 4))
 
-    result = service.training_step(batch, batch_idx=0, optimizers=[opt_g, opt_d], global_step=3)
+    result = cast(
+        tuple[torch.Tensor, dict[str, torch.Tensor | torch.nn.Parameter | None]],
+        service.training_step(
+            batch,
+            batch_idx=0,
+            optimizers=[opt_g, opt_d],
+            global_step=3,
+        ),
+    )
+    loss, callback_payload = result
 
-    assert result is None
+    assert isinstance(loss, torch.Tensor)
+    assert set(callback_payload) == {"x_real", "x_recon", "vq_loss", "last_layer"}
     assert len(backward_calls) == 2
     assert opt_g.zero_grad_calls == 1
     assert opt_d.zero_grad_calls == 1
@@ -126,11 +136,7 @@ def test_training_step_runs_manual_optimization_and_logs_train_metrics() -> None
     assert loss_fn.calls[0]["optimizer_idx"] == 0
     assert loss_fn.calls[1]["optimizer_idx"] == 1
     assert loss_fn.calls[1]["reconstructions"].requires_grad is False
-    logged_names = {name for name, _, _ in logger.calls}
-    assert "train/total_loss" in logged_names
-    assert "train/disc_loss" in logged_names
-    assert "train/x_recon_min" in logged_names
-    assert "train/x_real_max" in logged_names
+    assert logger.calls == []
 
 
 def test_get_decoder_last_layer_returns_final_decoder_weight() -> None:
@@ -149,7 +155,7 @@ def test_get_decoder_last_layer_returns_final_decoder_weight() -> None:
     assert last_layer.shape == torch.Size([1, 1, 1, 1, 1])
 
 
-def test_reconstruction_step_reuses_reconstructor_and_logs_validation_metrics() -> None:
+def test_reconstruction_step_reuses_reconstructor_without_logging_metrics() -> None:
     logger = RecordingLogger()
     reconstructor = RecordingReconstructor(recon_offset=0.25)
     service = VQVAETrainingSteps(
@@ -167,9 +173,8 @@ def test_reconstruction_step_reuses_reconstructor_and_logs_validation_metrics() 
     assert reconstructor.reconstruct_calls
     assert outputs["x_real"].shape == batch.shape
     assert outputs["x_recon"].shape == batch.shape
-    logged_names = {name for name, _, _ in logger.calls}
-    assert "val_perceptual_loss" in logged_names
-    assert "val_rec_loss" in logged_names
+    assert isinstance(outputs["vq_loss"], torch.Tensor)
+    assert logger.calls == []
 
 
 def test_test_reconstruction_step_reports_sliding_window_usage_and_resets_cuda_stats(
@@ -193,5 +198,5 @@ def test_test_reconstruction_step_reports_sliding_window_usage_and_resets_cuda_s
 
     assert outputs["use_sliding_window"] is True
     assert outputs["inference_time"] == 0.0
-    assert isinstance(outputs["loss"], float)
+    assert isinstance(outputs["vq_loss"], torch.Tensor)
     assert reset_calls == ["reset"]

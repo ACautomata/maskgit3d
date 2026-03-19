@@ -7,24 +7,22 @@ class VQVAEStepOutputRequired(TypedDict):
     x_real: torch.Tensor
     x_recon: torch.Tensor
     vq_loss: torch.Tensor
-    last_layer: torch.nn.Parameter | None
 
 
 class VQVAEStepOutput(VQVAEStepOutputRequired, total=False):
+    last_layer: torch.nn.Parameter | None
     inference_time: float
     use_sliding_window: bool
 
 
-class MaskGITLogData(TypedDict, total=False):
-    correct: int
-    total: int
-    mask_ratio: float
-    mask_acc: float
-
-
 class MaskGITStepOutputRequired(TypedDict):
-    loss: torch.Tensor
+    x_real: torch.Tensor
+    generated_images: torch.Tensor
 
 
 class MaskGITStepOutput(MaskGITStepOutputRequired, total=False):
-    log_data: MaskGITLogData
+    masked_logits: torch.Tensor
+    masked_targets: torch.Tensor
+    mask_ratio: float
+    input_shape: torch.Size
+    token_shape: torch.Size

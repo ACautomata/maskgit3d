@@ -24,13 +24,12 @@ def test_vqvae_step_output_contract_keys() -> None:
         "inference_time",
         "use_sliding_window",
     }
-    assert VQVAEStepOutput.__required_keys__ == {
-        "x_real",
-        "x_recon",
-        "vq_loss",
+    assert VQVAEStepOutput.__required_keys__ == {"x_real", "x_recon", "vq_loss"}
+    assert VQVAEStepOutput.__optional_keys__ == {
         "last_layer",
+        "inference_time",
+        "use_sliding_window",
     }
-    assert VQVAEStepOutput.__optional_keys__ == {"inference_time", "use_sliding_window"}
     assert hints["x_real"] is torch.Tensor
     assert hints["x_recon"] is torch.Tensor
     assert hints["vq_loss"] is torch.Tensor
@@ -38,18 +37,23 @@ def test_vqvae_step_output_contract_keys() -> None:
 
 def test_maskgit_step_output_contract_keys() -> None:
     hints = get_type_hints(MaskGITStepOutput)
-    log_data_type = hints["log_data"]
-    log_data_hints = get_type_hints(log_data_type)
 
-    assert set(hints) == {"loss", "log_data"}
-    assert MaskGITStepOutput.__required_keys__ == {"loss"}
-    assert MaskGITStepOutput.__optional_keys__ == {"log_data"}
-    assert hints["loss"] is torch.Tensor
-    assert log_data_type.__required_keys__ == set()
-    assert log_data_type.__optional_keys__ == {"correct", "total", "mask_ratio", "mask_acc"}
-    assert log_data_hints == {
-        "correct": int,
-        "total": int,
-        "mask_ratio": float,
-        "mask_acc": float,
+    assert set(hints) == {
+        "x_real",
+        "generated_images",
+        "masked_logits",
+        "masked_targets",
+        "mask_ratio",
+        "input_shape",
+        "token_shape",
     }
+    assert MaskGITStepOutput.__required_keys__ == {"x_real", "generated_images"}
+    assert MaskGITStepOutput.__optional_keys__ == {
+        "masked_logits",
+        "masked_targets",
+        "mask_ratio",
+        "input_shape",
+        "token_shape",
+    }
+    assert hints["x_real"] is torch.Tensor
+    assert hints["generated_images"] is torch.Tensor

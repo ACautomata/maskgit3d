@@ -1,6 +1,5 @@
-"""Tests for MaskGIT metrics callback."""
-
-from unittest.mock import MagicMock, Mock
+from typing import Any
+from unittest.mock import MagicMock
 
 import torch
 from lightning.pytorch import LightningModule
@@ -8,263 +7,197 @@ from lightning.pytorch import LightningModule
 from maskgit3d.callbacks.maskgit_metrics import MaskGITMetricsCallback
 
 
+class _MaskGITStub:
+    def __init__(self, sliding_window_enabled: bool = False) -> None:
+        self.sliding_window_cfg = {"enabled": sliding_window_enabled}
+
+
 class SimpleModel(LightningModule):
-    """Simple model for testing."""
-
-    def __init__(self):
+    def __init__(self, sliding_window_enabled: bool = False) -> None:
         super().__init__()
+        self.logged_values: list[tuple[str, torch.Tensor]] = []
+        self._callback_payloads: dict[str, dict[str, Any]] = {}
+        self.maskgit = _MaskGITStub(sliding_window_enabled=sliding_window_enabled)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch: object, batch_idx: int) -> dict[str, torch.Tensor]:
         return {}
+
+    def save_callback_payload(self, stage: str, payload: dict[str, Any]) -> None:
+        self._callback_payloads[stage] = payload
+
+    def pop_callback_payload(self, stage: str) -> dict[str, Any] | None:
+        return self._callback_payloads.pop(stage, None)
+
+    def log(
+        self,
+        name: str,
+        value: object,
+        prog_bar: bool = False,
+        logger: bool | None = None,
+        on_step: bool | None = None,
+        on_epoch: bool | None = None,
+        reduce_fx: str | object = "mean",
+        enable_graph: bool = False,
+        sync_dist: bool = False,
+        sync_dist_group: object | None = None,
+        add_dataloader_idx: bool = True,
+        batch_size: int | None = None,
+        metric_attribute: str | None = None,
+        rank_zero_only: bool = False,
+    ) -> None:
+        del (
+            prog_bar,
+            logger,
+            on_step,
+            on_epoch,
+            reduce_fx,
+            enable_graph,
+            sync_dist,
+            sync_dist_group,
+            add_dataloader_idx,
+            batch_size,
+            metric_attribute,
+            rank_zero_only,
+        )
+        if isinstance(value, torch.Tensor):
+            logged_value = value.detach().cpu()
+        elif isinstance(value, bool):
+            logged_value = torch.tensor(float(value))
+        elif isinstance(value, int | float):
+            logged_value = torch.tensor(float(value))
+        else:
+            return
+        self.logged_values.append((name, logged_value))
 
 
 class TestMaskGITMetricsCallback:
-    """Test suite for MaskGITMetricsCallback."""
-
-    def test_callback_initialization_default(self):
-        """Test callback can be initialized with default parameters."""
+    def test_callback_initialization_default(self) -> None:
         callback = MaskGITMetricsCallback()
         assert callback.log_every_n_steps == 1
         assert callback.log_val_every_n_batches == 1
         assert callback._train_step_count == 0
 
-    def test_callback_initialization_custom(self):
-        """Test callback can be initialized with custom parameters."""
+    def test_callback_initialization_custom(self) -> None:
         callback = MaskGITMetricsCallback(log_every_n_steps=10, log_val_every_n_batches=5)
         assert callback.log_every_n_steps == 10
         assert callback.log_val_every_n_batches == 5
 
-    def test_on_train_batch_end_with_none_outputs(self):
-        """Test on_train_batch_end with None outputs."""
+    def test_on_train_batch_end_with_none_outputs(self) -> None:
         callback = MaskGITMetricsCallback()
         trainer = MagicMock()
         model = SimpleModel()
 
-        # Should not raise
         callback.on_train_batch_end(trainer, model, None, None, 0)
         assert callback._train_step_count == 1
+        assert model.logged_values == []
 
-    def test_on_train_batch_end_with_tensor_outputs(self):
-        """Test on_train_batch_end with tensor outputs (just loss)."""
+    def test_on_train_batch_end_uses_cached_payload(self) -> None:
         callback = MaskGITMetricsCallback()
         trainer = MagicMock()
         model = SimpleModel()
-
-        # Create a mock log method that records calls
-        logged_values = []
-
-        def mock_log(name, value, **kwargs):
-            logged_values.append((name, value))
-
-        model.log = mock_log
+        model.save_callback_payload(
+            "train",
+            {
+                "masked_logits": torch.tensor([[0.1, 0.9], [0.7, 0.3]]),
+                "masked_targets": torch.tensor([1, 0]),
+                "mask_ratio": 0.5,
+            },
+        )
 
         loss = torch.tensor(1.5)
         callback.on_train_batch_end(trainer, model, loss, None, 0)
 
-        # Should log loss:train
-        assert ("loss:train", loss) in logged_values or any(
-            "loss:train" in str(v[0]) for v in logged_values
-        )
+        logged = dict(model.logged_values)
+        assert torch.equal(logged["loss:train"], loss)
+        assert torch.isclose(logged["mask_acc:train"], torch.tensor(1.0))
+        assert torch.isclose(logged["mask_ratio:train"], torch.tensor(0.5))
 
-    def test_on_train_batch_end_with_dict_loss_only(self):
-        """Test on_train_batch_end with dict containing loss only."""
+    def test_on_train_batch_end_without_cached_payload_logs_only_loss(self) -> None:
         callback = MaskGITMetricsCallback()
         trainer = MagicMock()
         model = SimpleModel()
 
-        logged_values = []
+        callback.on_train_batch_end(trainer, model, torch.tensor(2.0), None, 0)
 
-        def mock_log(name, value, **kwargs):
-            logged_values.append((name, value))
+        logged_names = [name for name, _ in model.logged_values]
+        assert logged_names == ["loss:train"]
 
-        model.log = mock_log
-
-        outputs = {"loss": torch.tensor(2.0)}
-        callback.on_train_batch_end(trainer, model, outputs, None, 0)
-
-        # Should log loss:train
-        assert any("loss:train" in str(v[0]) for v in logged_values)
-
-    def test_on_train_batch_end_with_log_data(self):
-        """Test on_train_batch_end with log_data containing scalars."""
-        callback = MaskGITMetricsCallback()
-        trainer = MagicMock()
-        model = SimpleModel()
-
-        logged_values = []
-
-        def mock_log(name, value, **kwargs):
-            logged_values.append((name, value))
-
-        model.log = mock_log
-
-        # Use new scalar format
-        log_data = {
-            "correct": 7,
-            "total": 10,
-            "mask_ratio": 0.5,
-        }
-        outputs = {
-            "loss": torch.tensor(1.0),
-            "log_data": log_data,
-        }
-
-        callback.on_train_batch_end(trainer, model, outputs, None, 0)
-
-        # Should log loss:train and mask_acc:train and mask_ratio
-        logged_names = [str(v[0]) for v in logged_values]
-        assert any("loss:train" in name for name in logged_names)
-        assert any("mask_acc:train" in name for name in logged_names)
-        assert any("mask_ratio:train" in name for name in logged_names)
-
-    def test_on_train_batch_end_with_log_data_float_mask_ratio(self):
-        """Test on_train_batch_end with float mask_ratio."""
-        callback = MaskGITMetricsCallback()
-        trainer = MagicMock()
-        model = SimpleModel()
-
-        logged_values = []
-
-        def mock_log(name, value, **kwargs):
-            logged_values.append((name, value))
-
-        model.log = mock_log
-
-        # Use new scalar format
-        log_data = {
-            "correct": 5,
-            "total": 10,
-            "mask_ratio": 0.75,
-        }
-        outputs = {
-            "loss": torch.tensor(1.0),
-            "log_data": log_data,
-        }
-
-        callback.on_train_batch_end(trainer, model, outputs, None, 0)
-
-        # Check mask_ratio was logged (as tensor)
-        assert any("mask_ratio:train" in str(v[0]) for v in logged_values)
-
-    def test_on_train_batch_end_log_every_n_steps(self):
-        """Test on_train_batch_end respects log_every_n_steps."""
+    def test_on_train_batch_end_log_every_n_steps(self) -> None:
         callback = MaskGITMetricsCallback(log_every_n_steps=2)
         trainer = MagicMock()
         model = SimpleModel()
 
-        logged_values = []
-
-        def mock_log(name, value, **kwargs):
-            logged_values.append((name, value))
-
-        model.log = mock_log
-
-        outputs = {"loss": torch.tensor(1.0)}
-
-        # First call - should not log (step 1, not divisible by 2)
-        callback.on_train_batch_end(trainer, model, outputs, None, 0)
+        model.save_callback_payload(
+            "train",
+            {
+                "masked_logits": torch.tensor([[0.1, 0.9]]),
+                "masked_targets": torch.tensor([1]),
+                "mask_ratio": 0.25,
+            },
+        )
+        callback.on_train_batch_end(trainer, model, torch.tensor(1.0), None, 0)
         assert callback._train_step_count == 1
+        assert model.logged_values == []
 
-        # Reset logged values
-        logged_values.clear()
-
-        # Second call - should log (step 2, divisible by 2)
-        callback.on_train_batch_end(trainer, model, outputs, None, 1)
+        model.save_callback_payload(
+            "train",
+            {
+                "masked_logits": torch.tensor([[0.1, 0.9]]),
+                "masked_targets": torch.tensor([1]),
+                "mask_ratio": 0.25,
+            },
+        )
+        callback.on_train_batch_end(trainer, model, torch.tensor(1.0), None, 1)
         assert callback._train_step_count == 2
-        assert len(logged_values) > 0
+        assert len(model.logged_values) == 3
 
-    def test_on_validation_batch_end_with_none_outputs(self):
-        """Test on_validation_batch_end with None outputs."""
+    def test_on_validation_batch_end_logs_from_eval_outputs(self) -> None:
         callback = MaskGITMetricsCallback()
         trainer = MagicMock()
         model = SimpleModel()
-
-        # Should not raise
-        callback.on_validation_batch_end(trainer, model, None, None, 0)
-
-    def test_on_validation_batch_end_with_tensor_outputs(self):
-        """Test on_validation_batch_end with tensor outputs."""
-        callback = MaskGITMetricsCallback()
-        trainer = MagicMock()
-        model = SimpleModel()
-
-        logged_values = []
-
-        def mock_log(name, value, **kwargs):
-            logged_values.append((name, value))
-
-        model.log = mock_log
-
-        loss = torch.tensor(1.5)
-        callback.on_validation_batch_end(trainer, model, loss, None, 0)
-
-        # Should log loss:val
-        assert any("loss:val" in str(v[0]) for v in logged_values)
-
-    def test_on_validation_batch_end_with_dict_loss_only(self):
-        """Test on_validation_batch_end with dict containing loss only."""
-        callback = MaskGITMetricsCallback()
-        trainer = MagicMock()
-        model = SimpleModel()
-
-        # Add maskgit mock to avoid AttributeError
-        model.maskgit = Mock()
-        model.maskgit.generate = Mock(return_value=torch.randn(1, 4, 4, 4, 4))
-
-        logged_values = []
-
-        def mock_log(name, value, **kwargs):
-            logged_values.append((name, value))
-
-        model.log = mock_log
-
-        outputs = {"loss": torch.tensor(2.0)}
-        callback.on_validation_batch_end(trainer, model, outputs, None, 0)
-
-        # Should log loss:val
-        assert any("loss:val" in str(v[0]) for v in logged_values)
-
-    def test_on_validation_batch_end_with_log_data(self):
-        """Test on_validation_batch_end with log_data containing scalars."""
-        callback = MaskGITMetricsCallback()
-        trainer = MagicMock()
-        model = SimpleModel()
-        model.maskgit = Mock()
-        model.maskgit.generate = Mock(return_value=torch.randn(1, 4, 4, 4, 4))
-
-        logged_values = []
-
-        def mock_log(name, value, **kwargs):
-            logged_values.append((name, value))
-
-        model.log = mock_log
-
-        # Use new scalar format
-        log_data = {
-            "correct": 7,
-            "total": 10,
-        }
         outputs = {
-            "loss": torch.tensor(1.0),
-            "log_data": log_data,
+            "x_real": torch.randn(1, 1, 8, 8, 8),
+            "generated_images": torch.randn(1, 1, 8, 8, 8),
+            "masked_logits": torch.tensor([[0.1, 0.9], [0.7, 0.3]]),
+            "masked_targets": torch.tensor([1, 0]),
+            "mask_ratio": 0.5,
         }
 
         callback.on_validation_batch_end(trainer, model, outputs, None, 0)
 
-        # Should log loss:val and mask_acc:val
-        logged_names = [str(v[0]) for v in logged_values]
-        assert any("loss:val" in name for name in logged_names)
-        assert any("mask_acc:val" in name for name in logged_names)
+        logged = dict(model.logged_values)
+        assert "val_loss" in logged
+        assert torch.isclose(logged["val_mask_acc"], torch.tensor(1.0))
+        assert torch.isclose(logged["val_mask_ratio"], torch.tensor(0.5))
+        assert torch.isclose(logged["sample_shape:val"], torch.tensor(1.0))
 
-    def test_on_train_epoch_start_resets_counter(self):
-        """Test that on_train_epoch_start resets step counter."""
+    def test_on_test_batch_end_logs_from_eval_outputs(self) -> None:
+        callback = MaskGITMetricsCallback()
+        trainer = MagicMock()
+        model = SimpleModel(sliding_window_enabled=True)
+        outputs = {
+            "x_real": torch.randn(1, 1, 8, 8, 8),
+            "generated_images": torch.randn(1, 1, 8, 8, 8),
+            "masked_logits": torch.tensor([[0.1, 0.9], [0.7, 0.3]]),
+            "masked_targets": torch.tensor([1, 0]),
+            "mask_ratio": 0.5,
+        }
+
+        callback.on_test_batch_end(trainer, model, outputs, None, 0)
+
+        logged = dict(model.logged_values)
+        assert "loss:test" in logged
+        assert torch.isclose(logged["mask_acc:test"], torch.tensor(1.0))
+        assert torch.isclose(logged["sliding_window_enabled:test"], torch.tensor(1.0))
+
+    def test_on_train_epoch_start_resets_counter(self) -> None:
         callback = MaskGITMetricsCallback()
         callback._train_step_count = 50
 
         model = SimpleModel()
-        callback.on_train_epoch_start(None, model)
+        callback.on_train_epoch_start(MagicMock(), model)
 
         assert callback._train_step_count == 0

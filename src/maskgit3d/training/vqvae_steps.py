@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 import torch
 import torch.nn.functional as F
@@ -94,13 +94,11 @@ class VQVAETrainingSteps:
         batch_idx: int,
         optimizers: Sequence[Any],
         global_step: int,
-        log_fn: Callable[..., None] | None = None,
         manual_backward_fn: Callable[[torch.Tensor], None] | None = None,
-    ) -> None:
-        logger = log_fn or self.log_fn
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor | torch.nn.Parameter | None]]:
         backward = manual_backward_fn or self.manual_backward_fn
-        if logger is None or backward is None:
-            raise ValueError("training_step requires log_fn and manual_backward_fn.")
+        if backward is None:
+            raise ValueError("training_step requires manual_backward_fn.")
 
         opt_g, opt_d = optimizers
         x_real = self.extract_input_tensor(batch)
@@ -115,14 +113,21 @@ class VQVAETrainingSteps:
             last_layer=last_layer,
             split="train",
         )
-        self._log_generator_metrics(logger, log_g, x_real, x_recon)
 
         opt_g.zero_grad()
         backward(loss_g)
         self.gan_strategy.step_generator(opt_g, loss_g, self.vqvae)
 
+        callback_payload: dict[str, torch.Tensor | torch.nn.Parameter | None] = {
+            "x_real": x_real.detach(),
+            "x_recon": x_recon.detach(),
+            "vq_loss": vq_loss.detach(),
+            "last_layer": last_layer,
+        }
+
         x_recon_detached = x_recon.detach()
-        del loss_g, log_g, x_recon
+        returned_loss = loss_g.detach()
+        del log_g, x_recon
 
         loss_d, log_d = self.shared_step_discriminator(
             x_real=x_real,
@@ -131,25 +136,19 @@ class VQVAETrainingSteps:
             split="train",
             global_step=global_step,
         )
-        self._log_discriminator_metrics(logger, log_d, x_real.shape[0])
 
         opt_d.zero_grad()
         backward(loss_d)
         self.gan_strategy.step_discriminator(opt_d, loss_d)
 
-        del x_real, x_recon_detached, loss_d, log_d, vq_loss, batch_idx
-        return None
+        del x_real, x_recon_detached, loss_d, log_d, vq_loss, batch_idx, loss_g
+        return returned_loss, callback_payload
 
     def reconstruction_step(
         self,
         batch: torch.Tensor | Sequence[Any],
         split: str,
-        log_fn: Callable[..., None] | None = None,
     ) -> dict[str, Any]:
-        logger = log_fn or self.log_fn
-        if logger is None:
-            raise ValueError("reconstruction_step requires log_fn.")
-
         x_real = self.extract_input_tensor(batch)
         inferer = self.get_sliding_window_inferer()
 
@@ -157,94 +156,54 @@ class VQVAETrainingSteps:
             torch.cuda.reset_peak_memory_stats()
 
         x_recon = self.reconstructor.reconstruct(self.vqvae, x_real)
-        batch_size = x_real.shape[0]
+        vq_loss = self._extract_vq_loss(x_real)
+        vq_loss_tensor = self._ensure_tensor(vq_loss, x_real.device)
 
         if split == "val":
-            perceptual_loss = torch.tensor(0.0, device=x_real.device)
-            if self.loss_fn.use_perceptual and self.loss_fn.perceptual_loss is not None:
-                perceptual_loss = self.loss_fn.perceptual_loss(x_recon, x_real)
-            logger(
-                "val_perceptual_loss",
-                perceptual_loss.item(),
-                on_step=False,
-                on_epoch=True,
-                prog_bar=True,
-                batch_size=batch_size,
-            )
-            rec_loss = F.l1_loss(x_recon, x_real)
-            logger(
-                "val_rec_loss",
-                rec_loss.item(),
-                on_step=False,
-                on_epoch=True,
-                prog_bar=True,
-                batch_size=batch_size,
-            )
             return {
                 "x_real": x_real.detach().cpu(),
                 "x_recon": x_recon.detach().cpu(),
+                "vq_loss": vq_loss_tensor.detach().cpu(),
             }
 
-        loss = F.l1_loss(x_recon, x_real)
         return {
-            "loss": loss.item(),
-            "inference_time": 0.0,
-            "use_sliding_window": inferer is not None,
             "x_real": x_real.detach().cpu(),
             "x_recon": x_recon.detach().cpu(),
+            "vq_loss": vq_loss_tensor.detach().cpu(),
+            "inference_time": 0.0,
+            "use_sliding_window": inferer is not None,
         }
 
-    def predict_step(self, batch: torch.Tensor | Sequence[Any]) -> torch.Tensor:
+    def predict_step(self, batch: torch.Tensor | Sequence[Any]) -> dict[str, torch.Tensor]:
         x_real = self.extract_input_tensor(batch)
-        x_recon, _ = self.vqvae(x_real)
-        return x_recon
+        x_recon = self.reconstructor.reconstruct(self.vqvae, x_real)
+        vq_loss = self._extract_vq_loss(x_real)
+        vq_loss_tensor = self._ensure_tensor(vq_loss, x_real.device)
+        return {
+            "x_real": x_real.detach().cpu(),
+            "x_recon": x_recon.detach().cpu(),
+            "vq_loss": vq_loss_tensor.detach().cpu(),
+        }
 
-    def _log_generator_metrics(
-        self,
-        logger: Callable[..., None],
-        metrics: dict[str, torch.Tensor],
-        x_real: torch.Tensor,
-        x_recon: torch.Tensor,
-    ) -> None:
-        prog_bar_keys = {"total_loss", "vq_loss", "g_loss"}
-        batch_size = x_real.shape[0]
-        for key, value in metrics.items():
-            if isinstance(value, torch.Tensor):
-                metric_name = key.split("/")[-1]
-                logger(
-                    key,
-                    value.item(),
-                    on_step=True,
-                    on_epoch=False,
-                    prog_bar=metric_name in prog_bar_keys,
-                    batch_size=batch_size,
-                )
+    def _extract_vq_loss(self, x_real: torch.Tensor) -> Any:
+        encode = getattr(self.vqvae, "encode", None)
+        if callable(encode):
+            with torch.no_grad():
+                encoded = encode(x_real)
+            if isinstance(encoded, tuple) and len(encoded) >= 2:
+                return encoded[1]
 
-        for name, value in {
-            "train/x_recon_min": x_recon.min().item(),
-            "train/x_recon_max": x_recon.max().item(),
-            "train/x_recon_abs_mean": x_recon.abs().mean().item(),
-            "train/x_real_min": x_real.min().item(),
-            "train/x_real_max": x_real.max().item(),
-        }.items():
-            logger(name, value, on_step=True, on_epoch=False, prog_bar=False, batch_size=batch_size)
+        with torch.no_grad():
+            forward_output = self.vqvae(x_real)
+        if isinstance(forward_output, tuple) and len(forward_output) >= 2:
+            return forward_output[1]
 
-    def _log_discriminator_metrics(
-        self,
-        logger: Callable[..., None],
-        metrics: dict[str, torch.Tensor],
-        batch_size: int,
-    ) -> None:
-        for key, value in metrics.items():
-            if isinstance(value, torch.Tensor):
-                logger(
-                    key,
-                    value.item(),
-                    on_step=True,
-                    on_epoch=False,
-                    prog_bar=key.split("/")[-1] == "disc_loss",
-                    batch_size=batch_size,
-                )
+        raise ValueError("Unable to extract vq_loss from VQVAE model output.")
+
+    def _ensure_tensor(self, value: Any, device: torch.device) -> torch.Tensor:
+        if isinstance(value, torch.Tensor):
+            return value
+        return torch.tensor(float(value), device=device)
 
     def create_optimizers(
         self,

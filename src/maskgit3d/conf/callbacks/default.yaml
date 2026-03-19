@@ -2,6 +2,8 @@
 # Includes essential callbacks for checkpointing, early stopping, and monitoring
 
 defaults:
+  - vqvae_metrics
+  - maskgit_metrics
   - model_checkpoint
   - early_stopping
   - lr_monitor

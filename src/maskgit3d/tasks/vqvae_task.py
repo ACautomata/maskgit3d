@@ -198,26 +198,27 @@ class VQVAETask(BaseTask):
         batch: torch.Tensor | Sequence[Any],
         batch_idx: int,
         optimizers: list[torch.optim.Optimizer] | None = None,
-    ) -> None:
+    ) -> torch.Tensor:
         resolved_optimizers = (
             cast(list[torch.optim.Optimizer], self.optimizers())
             if optimizers is None
             else optimizers
         )
-        return self.training_steps.training_step(
+        loss, callback_payload = self.training_steps.training_step(
             batch=batch,
             batch_idx=batch_idx,
             optimizers=resolved_optimizers,
             global_step=self.global_step,
-            log_fn=self.log,
             manual_backward_fn=self.manual_backward,
         )
+        self.save_callback_payload("train", callback_payload)
+        return loss
 
     def validation_step(
         self, batch: torch.Tensor | Sequence[Any], batch_idx: int
     ) -> dict[str, Any]:
         del batch_idx
-        return self.training_steps.reconstruction_step(batch=batch, split="val", log_fn=self.log)
+        return self.training_steps.reconstruction_step(batch=batch, split="val")
 
     def configure_optimizers(self) -> list[torch.optim.Optimizer]:
         return self.training_steps.create_optimizers(
@@ -230,8 +231,10 @@ class VQVAETask(BaseTask):
     @torch.no_grad()
     def test_step(self, batch: torch.Tensor | Sequence[Any], batch_idx: int) -> dict[str, Any]:
         del batch_idx
-        return self.training_steps.reconstruction_step(batch=batch, split="test", log_fn=self.log)
+        return self.training_steps.reconstruction_step(batch=batch, split="test")
 
-    def predict_step(self, batch: torch.Tensor | Sequence[Any], batch_idx: int) -> torch.Tensor:
+    def predict_step(
+        self, batch: torch.Tensor | Sequence[Any], batch_idx: int
+    ) -> dict[str, torch.Tensor]:
         del batch_idx
         return self.training_steps.predict_step(batch)
