@@ -5,7 +5,9 @@ defaults:
   - vqvae_metrics
   - maskgit_metrics
   - model_checkpoint
+  - model_checkpoint_maskgit
   - early_stopping
+  - early_stopping_maskgit
   - lr_monitor
   - nan_detection
   - training_time

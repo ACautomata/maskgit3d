@@ -1,0 +1,5 @@
+defaults:
+  - sample_saving
+  - vqvae_metrics
+  - maskgit_metrics
+  - _self_

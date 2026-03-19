@@ -4,7 +4,7 @@ defaults:
   - task: vqvae
   - data: medmnist3d
   - trainer: default
-  - optional callbacks: sample_saving
+  - optional callbacks: eval_default
 
 ckpt_path: null
 mode: validate  # or "test"
