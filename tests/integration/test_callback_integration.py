@@ -114,7 +114,7 @@ class TestCallbackIntegration:
             assert cfg.callbacks.early_stopping.monitor == "val_perceptual_loss"
 
     def test_train_main_with_default_callbacks(self, monkeypatch):
-        """Regression test: train.main works with callbacks=default via Hydra dict conversion."""
+        """Test that train.main converts callbacks dict to list for Trainer."""
         cfg = OmegaConf.create(
             {
                 "data": {"_target_": "tests.DummyDataModule"},
@@ -154,7 +154,6 @@ class TestCallbackIntegration:
             pass
 
         def fake_instantiate(config, **kwargs):
-            # Handle DictConfig from Hydra
             target = config.get("_target_") if hasattr(config, "get") else None
 
             if target == "tests.DummyDataModule":
@@ -164,22 +163,23 @@ class TestCallbackIntegration:
             if target == "tests.DummyCallback":
                 return DummyCallback()
             if target == "tests.DummyTrainer":
-                # Verify callbacks was passed as a list, not dict
                 assert "callbacks" in kwargs
                 callbacks = kwargs["callbacks"]
                 assert isinstance(callbacks, list), f"Expected list, got {type(callbacks)}"
                 assert len(callbacks) == 2
                 return DummyTrainer(**kwargs)
-            # Handle callbacks dict - return DictConfig to simulate Hydra behavior
             if target is None and hasattr(config, "keys") and "cb1" in config:
-                return config  # Return as-is (DictConfig)
+                return config
             raise AssertionError(f"Unexpected target: {target}, config: {config}")
 
+        def fake_build_training_task(cfg):
+            return DummyTask()
+
         monkeypatch.setattr(train_module, "instantiate", fake_instantiate)
+        monkeypatch.setattr(train_module, "_build_training_task", fake_build_training_task)
         monkeypatch.setattr(train_module, "to_absolute_path", lambda path: path)
 
         train_module.main.__wrapped__(cfg)
 
-        # Verify Trainer was called with callbacks as list
         init_call = [c for c in calls if c[0] == "Trainer.__init__"][0]
         assert isinstance(init_call[1]["callbacks"], list)
