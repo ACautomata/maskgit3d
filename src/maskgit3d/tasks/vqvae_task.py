@@ -6,35 +6,14 @@ from typing import Any, Literal
 import torch
 import torch.nn.functional as F
 from hydra.utils import instantiate
-from monai.inferers.inferer import SlidingWindowInferer
 from omegaconf import DictConfig
 
+from ..inference import VQVAEReconstructor
 from ..losses.vq_perceptual_loss import VQPerceptualLoss
 from ..models.vqvae import VQVAE
-from ..models.vqvae.splitting import resolve_num_splits
-from ..utils.sliding_window import create_sliding_window_inferer, pad_to_divisible
+from ..models.vqvae.splitting import compute_downsampling_factor, resolve_num_splits
 from .base_task import BaseTask
 from .gan_training_strategy import GANTrainingStrategy
-
-
-def compute_downsampling_factor(
-    channel_multipliers: tuple[int, ...] = (1, 1, 2, 2, 4),
-) -> int:
-    """Compute the downsampling factor from VQVAE channel multipliers.
-
-    The downsampling factor is 2^n where n is the number of downsampling
-    layers (len(channel_multipliers) - 1).
-
-    Args:
-        channel_multipliers: Channel multipliers for encoder/decoder.
-            Default is (1, 1, 2, 2, 4) which gives 4 downsampling layers.
-
-    Returns:
-        Downsampling factor (e.g., 16 for 4 downsampling layers)
-    """
-    num_down_layers = len(channel_multipliers) - 1
-    result: int = 2**num_down_layers
-    return result
 
 
 def validate_crop_size(
@@ -199,32 +178,24 @@ class VQVAETask(BaseTask):
         self.gan_strategy = GANTrainingStrategy(gradient_clip_val, gradient_clip_enabled)
 
         self.sliding_window_cfg = sliding_window or {}
-        self._sliding_window_inferer: SlidingWindowInferer | None = None
-        self._encoder_inferer: SlidingWindowInferer | None = None
-        self._downsampling_factor = 2 ** (len(effective_num_channels) - 1)
+        self._downsampling_factor = compute_downsampling_factor(list(effective_num_channels))
+        self.reconstructor = VQVAEReconstructor(
+            sliding_window=self.sliding_window_cfg,
+            downsampling_factor=self._downsampling_factor,
+        )
 
         self.vqvae.enable_gradient_checkpointing()
 
         self.save_hyperparameters()
 
     def _extract_input_tensor(self, batch: torch.Tensor | Sequence[Any]) -> torch.Tensor:
-        if isinstance(batch, torch.Tensor):
-            return batch
+        return self.reconstructor.extract_input_tensor(batch)
 
-        if isinstance(batch, Sequence) and batch:
-            image = batch[0]
-            if isinstance(image, torch.Tensor):
-                return image
-
-        raise TypeError("Expected batch to be a tensor or a sequence whose first item is a tensor.")
-
-    def _get_sliding_window_inferer(self) -> SlidingWindowInferer | None:
-        if self._sliding_window_inferer is None:
-            self._sliding_window_inferer = create_sliding_window_inferer(self.sliding_window_cfg)
-        return self._sliding_window_inferer
+    def _get_sliding_window_inferer(self):
+        return self.reconstructor.get_sliding_window_inferer()
 
     def _pad_to_divisible(self, x: torch.Tensor) -> torch.Tensor:
-        return pad_to_divisible(x, self._downsampling_factor)
+        return self.reconstructor.pad_to_divisible(x)
 
     def _get_decoder_last_layer(self) -> torch.nn.Parameter | None:
         """Get the last layer weight of the decoder for adaptive weight calculation.
@@ -420,56 +391,8 @@ class VQVAETask(BaseTask):
         self, batch: torch.Tensor | Sequence[Any], batch_idx: int
     ) -> dict[str, Any]:
         x_real = self._extract_input_tensor(batch)
-        original_shape = x_real.shape[2:]
         inferer = self._get_sliding_window_inferer()
-        x_recon: torch.Tensor
-
-        if inferer is not None:
-            x_real_padded = self._pad_to_divisible(x_real)
-
-            def encode_fn(patch: torch.Tensor) -> torch.Tensor:
-                z_q, _, indices = self.vqvae.encode(patch)
-                return indices.float().unsqueeze(1)
-
-            indices_padded = inferer(x_real_padded, encode_fn)
-
-            latent_d = original_shape[0] // self._downsampling_factor
-            latent_h = original_shape[1] // self._downsampling_factor
-            latent_w = original_shape[2] // self._downsampling_factor
-
-            B = x_real.shape[0]
-            indices = indices_padded[:B, 0, :latent_d, :latent_h, :latent_w].long()  # type: ignore[call-overload]
-
-            z_q = self.vqvae.quantizer.decode_from_indices(indices)
-
-            latent_roi_size = tuple(
-                s // self._downsampling_factor
-                for s in self.sliding_window_cfg.get("roi_size", [32, 32, 32])
-            )
-            latent_needs_sw = any(
-                s > r for s, r in zip(z_q.shape[2:], latent_roi_size, strict=False)
-            )
-
-            if latent_needs_sw:
-                latent_inferer = SlidingWindowInferer(
-                    roi_size=latent_roi_size,
-                    sw_batch_size=self.sliding_window_cfg.get("sw_batch_size", 1),
-                    overlap=self.sliding_window_cfg.get("overlap", 0.25),
-                    mode=self.sliding_window_cfg.get("mode", "gaussian"),
-                    sigma_scale=self.sliding_window_cfg.get("sigma_scale", 0.125),
-                    padding_mode="constant",
-                    cval=0.0,
-                )
-
-                def decode_fn(latent_patch: torch.Tensor) -> torch.Tensor:
-                    return self.vqvae.decode(latent_patch)
-
-                x_recon = latent_inferer(z_q, decode_fn)  # type: ignore[assignment]
-            else:
-                x_recon = self.vqvae.decode(z_q)
-        else:
-            recon, _ = self.vqvae(x_real)  # type: ignore[misc]
-            x_recon = recon
+        x_recon = self.reconstructor.reconstruct(self.vqvae, x_real)
 
         perceptual_loss = torch.tensor(0.0, device=x_real.device)
         if self.loss_fn.use_perceptual and self.loss_fn.perceptual_loss is not None:
@@ -536,59 +459,13 @@ class VQVAETask(BaseTask):
     @torch.no_grad()
     def test_step(self, batch: torch.Tensor | Sequence[Any], batch_idx: int) -> dict[str, Any]:
         x_real = self._extract_input_tensor(batch)
-        original_shape = x_real.shape[2:]
         inferer = self._get_sliding_window_inferer()
-        x_recon: torch.Tensor
 
         if inferer is not None:
             if torch.cuda.is_available():
                 torch.cuda.reset_peak_memory_stats()
 
-            x_real_padded = self._pad_to_divisible(x_real)
-
-            def encode_fn(patch: torch.Tensor) -> torch.Tensor:
-                z_q, _, indices = self.vqvae.encode(patch)
-                return indices.float().unsqueeze(1)
-
-            indices_padded = inferer(x_real_padded, encode_fn)
-
-            latent_d = original_shape[0] // self._downsampling_factor
-            latent_h = original_shape[1] // self._downsampling_factor
-            latent_w = original_shape[2] // self._downsampling_factor
-
-            B = x_real.shape[0]
-            indices = indices_padded[:B, 0, :latent_d, :latent_h, :latent_w].long()  # type: ignore[call-overload]
-
-            z_q = self.vqvae.quantizer.decode_from_indices(indices)
-
-            latent_roi_size = tuple(
-                s // self._downsampling_factor
-                for s in self.sliding_window_cfg.get("roi_size", [32, 32, 32])
-            )
-            latent_needs_sw = any(
-                s > r for s, r in zip(z_q.shape[2:], latent_roi_size, strict=False)
-            )
-
-            if latent_needs_sw:
-                latent_inferer = SlidingWindowInferer(
-                    roi_size=latent_roi_size,
-                    sw_batch_size=self.sliding_window_cfg.get("sw_batch_size", 1),
-                    overlap=self.sliding_window_cfg.get("overlap", 0.25),
-                    mode=self.sliding_window_cfg.get("mode", "gaussian"),
-                    sigma_scale=self.sliding_window_cfg.get("sigma_scale", 0.125),
-                    padding_mode="constant",
-                    cval=0.0,
-                )
-
-                def decode_fn(latent_patch: torch.Tensor) -> torch.Tensor:
-                    return self.vqvae.decode(latent_patch)
-
-                x_recon = latent_inferer(z_q, decode_fn)  # type: ignore[assignment]
-            else:
-                x_recon = self.vqvae.decode(z_q)
-        else:
-            recon, _ = self.vqvae(x_real)  # type: ignore[misc]
-            x_recon = recon
+        x_recon = self.reconstructor.reconstruct(self.vqvae, x_real)
 
         loss = F.l1_loss(x_recon, x_real)
 

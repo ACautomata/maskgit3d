@@ -11,12 +11,13 @@ import torch
 import torch.nn as nn
 from monai.inferers.inferer import SlidingWindowInferer
 
-from maskgit3d.utils.sliding_window import (
+from ...utils.sliding_window import (
     create_sliding_window_inferer,
     pad_to_divisible,
 )
 
 from ..vqvae import VQVAE
+from ..vqvae.splitting import compute_downsampling_factor
 from .sampling import MaskGITSampler
 from .scheduling import TrainingMaskScheduler
 from .transformer import MaskGITTransformer
@@ -89,16 +90,16 @@ class MaskGIT(nn.Module):
         # Sliding window configuration
         self.sliding_window_cfg = sliding_window or {}
         self._sliding_window_inferer: SlidingWindowInferer | None = None
-        self._downsampling_factor = self._compute_downsampling_factor()
+        self._downsampling_factor = self._resolve_downsampling_factor()
 
-    def _compute_downsampling_factor(self) -> int:
+    def _resolve_downsampling_factor(self) -> int:
         encoder = self.vqvae.encoder
         if hasattr(encoder, "encoder"):
             inner_encoder = encoder.encoder
             if hasattr(inner_encoder, "num_channels"):
                 num_channels = inner_encoder.num_channels
                 if isinstance(num_channels, list | tuple):
-                    return 2 ** (len(num_channels) - 1)
+                    return compute_downsampling_factor(list(num_channels))
         return 8
 
     @property
