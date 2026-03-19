@@ -4,6 +4,8 @@ from hydra.utils import get_class, instantiate
 from lightning import LightningModule
 from omegaconf import DictConfig
 
+from .checkpoints import load_vqvae_from_checkpoint
+from .model_factory import create_maskgit_model, create_vqvae_model
 from ..tasks.maskgit_task import MaskGITTask
 from ..tasks.vqvae_task import VQVAETask
 
@@ -33,6 +35,20 @@ def build_training_task(cfg: DictConfig) -> VQVAETask | MaskGITTask:
     task = instantiate(cfg.task, **task_kwargs)
     if not isinstance(task, VQVAETask | MaskGITTask):
         raise TypeError("build_training_task only supports VQVAETask and MaskGITTask.")
+
+    if isinstance(task, VQVAETask) and cfg.get("model") is not None:
+        task.vqvae = create_vqvae_model(cfg.model)
+        task.vqvae.enable_gradient_checkpointing()
+
+    if isinstance(task, MaskGITTask) and cfg.get("model") is not None:
+        vqvae_ckpt_path = cfg.task.get("vqvae_ckpt_path")
+        if vqvae_ckpt_path is not None:
+            vqvae = load_vqvae_from_checkpoint(str(vqvae_ckpt_path))
+        else:
+            vqvae = task.vqvae
+        task.vqvae = vqvae
+        task.maskgit = create_maskgit_model(cfg.model, vqvae)
+
     return task
 
 
