@@ -1,6 +1,7 @@
 """MaskGIT training task with automatic optimization."""
 
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+import warnings
 
 import torch
 from omegaconf import DictConfig
@@ -9,6 +10,9 @@ from ..models.maskgit import MaskGIT
 from ..models.vqvae import VQVAE
 from ..training import MaskGITTrainingSteps
 from .base_task import BaseTask
+
+if TYPE_CHECKING:
+    from ..runtime.optimizer_factory import TransformerOptimizerFactory
 
 
 class MaskGITTask(BaseTask):
@@ -19,6 +23,10 @@ class MaskGITTask(BaseTask):
     Supports sliding window inference for large images (handled by MaskGIT model).
 
     Args:
+        model: Injected MaskGIT model (if provided, uses injected path)
+        vqvae: Injected VQVAE model (if provided, uses injected path)
+        training_steps: Injected MaskGITTrainingSteps (if provided, uses injected path)
+        optimizer_factory: Injected TransformerOptimizerFactory (if provided, uses injected path)
         vqvae_ckpt_path: Path to pretrained VQVAE checkpoint
         hidden_size: Transformer hidden dimension (default: 768)
         num_layers: Number of transformer layers (default: 12)
@@ -41,6 +49,10 @@ class MaskGITTask(BaseTask):
 
     def __init__(
         self,
+        model: MaskGIT | None = None,
+        vqvae: VQVAE | None = None,
+        training_steps: MaskGITTrainingSteps | None = None,
+        optimizer_factory: "TransformerOptimizerFactory | None" = None,
         model_config: DictConfig | None = None,
         optimizer_config: DictConfig | None = None,
         vqvae_ckpt_path: str | None = None,
@@ -56,7 +68,35 @@ class MaskGITTask(BaseTask):
         sliding_window: dict[str, Any] | None = None,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["vqvae_ckpt_path"])
+
+        uses_injected_components = all(
+            component is not None for component in (model, vqvae, training_steps, optimizer_factory)
+        )
+
+        if uses_injected_components:
+            injected_model = cast(MaskGIT, model)
+            injected_vqvae = cast(VQVAE, vqvae)
+            injected_training_steps = cast(MaskGITTrainingSteps, training_steps)
+            injected_optimizer = cast("TransformerOptimizerFactory", optimizer_factory)
+
+            self.vqvae = injected_vqvae
+            self.maskgit = injected_model
+            self.training_steps = injected_training_steps
+            self.lr = injected_optimizer.lr
+            self.weight_decay = injected_optimizer.weight_decay
+            self.warmup_steps = injected_optimizer.warmup_steps
+            self.optimizer_factory = injected_optimizer
+            self.save_hyperparameters(
+                ignore=["model", "vqvae", "training_steps", "optimizer_factory"]
+            )
+            return
+
+        warnings.warn(
+            "Passing legacy scalar/config constructor arguments to MaskGITTask is deprecated; "
+            "inject model, vqvae, training_steps, and optimizer_factory instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
         self.lr = lr
         self.weight_decay = weight_decay
@@ -74,6 +114,7 @@ class MaskGITTask(BaseTask):
             sliding_window=sliding_window,
         )
         self.training_steps = MaskGITTrainingSteps(maskgit=self.maskgit)
+        self.save_hyperparameters(ignore=["vqvae_ckpt_path"])
 
     def _build_vqvae(self, vqvae_ckpt_path: str | None) -> VQVAE:
         if vqvae_ckpt_path is not None:

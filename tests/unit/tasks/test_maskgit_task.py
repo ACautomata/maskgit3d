@@ -1,5 +1,6 @@
 """Tests for MaskGITTask."""
 
+import warnings
 from pathlib import Path
 from typing import Any, cast
 
@@ -17,6 +18,80 @@ def vqvae_checkpoint(tmp_path: Path) -> str:
     ckpt_path = str(tmp_path / "vqvae.ckpt")
     torch.save({"state_dict": vqvae.state_dict()}, ckpt_path)
     return ckpt_path
+
+
+@pytest.fixture
+def maskgit_with_components(vqvae_checkpoint: str):
+    """Fixture providing fully constructed MaskGIT components for injection path."""
+    from src.maskgit3d.models.maskgit import MaskGIT
+    from src.maskgit3d.runtime.optimizer_factory import TransformerOptimizerFactory
+    from src.maskgit3d.training import MaskGITTrainingSteps
+
+    vqvae = VQVAE()
+    vqvae.eval()
+    vqvae.requires_grad_(False)
+
+    maskgit = MaskGIT(
+        vqvae=vqvae,
+        hidden_size=128,
+        num_layers=2,
+        num_heads=4,
+        mlp_ratio=4.0,
+        dropout=0.0,
+        gamma_type="cosine",
+    )
+
+    training_steps = MaskGITTrainingSteps(maskgit=maskgit)
+
+    optimizer_factory = TransformerOptimizerFactory(
+        lr=1e-4,
+        weight_decay=0.05,
+        warmup_steps=1000,
+    )
+
+    return maskgit, vqvae, training_steps, optimizer_factory
+
+
+def test_maskgit_task_accepts_injected_components(maskgit_with_components):
+    """MaskGITTask accepts injected model, vqvae, training_steps, and optimizer_factory."""
+    maskgit, vqvae, training_steps, optimizer_factory = maskgit_with_components
+
+    task = MaskGITTask(
+        model=maskgit,
+        vqvae=vqvae,
+        training_steps=training_steps,
+        optimizer_factory=optimizer_factory,
+    )
+
+    assert task.maskgit is maskgit
+    assert task.vqvae is vqvae
+    assert task.training_steps is training_steps
+    assert task.optimizer_factory is optimizer_factory
+    assert task.lr == 1e-4
+    assert task.weight_decay == 0.05
+    assert task.warmup_steps == 1000
+    assert not any(p.requires_grad for p in task.vqvae.parameters())
+
+
+def test_maskgit_task_legacy_path_emits_deprecation(vqvae_checkpoint):
+    """Legacy constructor path emits DeprecationWarning."""
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always")
+        task = MaskGITTask(
+            vqvae_ckpt_path=vqvae_checkpoint,
+            hidden_size=128,
+            num_layers=2,
+            num_heads=4,
+            lr=1e-4,
+        )
+        assert task.maskgit is not None
+        assert task.vqvae is not None
+
+    deprecation_warnings = [
+        w for w in caught_warnings if issubclass(w.category, DeprecationWarning)
+    ]
+    assert len(deprecation_warnings) == 1
+    assert "legacy" in str(deprecation_warnings[0].message).lower()
 
 
 def test_maskgit_task_init(vqvae_checkpoint: str):
