@@ -1,0 +1,11 @@
+defaults:
+  - vqvae_metrics
+  - model_checkpoint
+  - early_stopping
+  - lr_monitor
+  - nan_detection
+  - training_time
+  - gradient_norm
+  - training_stability
+  - cuda_memory
+  - _self_

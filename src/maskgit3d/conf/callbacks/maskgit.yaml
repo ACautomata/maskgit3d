@@ -1,0 +1,11 @@
+defaults:
+  - maskgit_metrics
+  - model_checkpoint_maskgit
+  - early_stopping_maskgit
+  - lr_monitor
+  - nan_detection
+  - training_time
+  - gradient_norm
+  - training_stability
+  - cuda_memory
+  - _self_
