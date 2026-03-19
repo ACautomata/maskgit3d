@@ -1,14 +1,95 @@
 """Tests for VQVAETask."""
 
 from typing import Any, cast
+import warnings
 
 import pytest
 import torch
 from omegaconf import DictConfig
 
+from src.maskgit3d.inference import VQVAEReconstructor
+from src.maskgit3d.losses.vq_perceptual_loss import VQPerceptualLoss
+from src.maskgit3d.models.vqvae import VQVAE
 from src.maskgit3d.models.vqvae.splitting import compute_downsampling_factor
+from src.maskgit3d.runtime.optimizer_factory import GANOptimizerFactory
+from src.maskgit3d.tasks.gan_training_strategy import GANTrainingStrategy
 from src.maskgit3d.tasks.vqvae_task import VQVAETask
+from src.maskgit3d.training import VQVAETrainingSteps
 from src.maskgit3d.utils import compute_padded_size, validate_crop_size
+
+
+def _build_injected_vqvae_components() -> tuple[
+    VQVAE,
+    VQPerceptualLoss,
+    VQVAETrainingSteps,
+    GANOptimizerFactory,
+]:
+    model = VQVAE(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+    )
+    loss_fn = VQPerceptualLoss(
+        disc_in_channels=1,
+        disc_num_layers=3,
+        disc_ndf=64,
+        disc_norm="instance",
+        disc_loss="hinge",
+        lambda_l1=1.0,
+        lambda_vq=1.0,
+        lambda_perceptual=0.1,
+        discriminator_weight=0.1,
+        disc_start=0,
+        disc_factor=1.0,
+        use_adaptive_weight=True,
+        adaptive_weight_max=100.0,
+        perceptual_network="alex",
+        use_perceptual=False,
+    )
+    training_steps = VQVAETrainingSteps(
+        vqvae=model,
+        loss_fn=loss_fn,
+        gan_strategy=GANTrainingStrategy(gradient_clip_val=1.0, gradient_clip_enabled=True),
+        reconstructor=VQVAEReconstructor(sliding_window={}, downsampling_factor=4),
+    )
+    optimizer_factory = GANOptimizerFactory(lr_g=1e-4, lr_d=2e-4)
+    return model, loss_fn, training_steps, optimizer_factory
+
+
+def test_vqvae_task_accepts_injected_components():
+    model, loss_fn, training_steps, optimizer_factory = _build_injected_vqvae_components()
+
+    task = VQVAETask(
+        model=model,
+        loss_fn=loss_fn,
+        training_steps=training_steps,
+        optimizer_factory=optimizer_factory,
+    )
+
+    assert task.vqvae is model
+    assert task.loss_fn is loss_fn
+    assert task.training_steps is training_steps
+    assert task.optimizer_factory is optimizer_factory
+    assert task.training_steps.vqvae is task.vqvae
+    assert task.training_steps.loss_fn is task.loss_fn
+
+
+def test_vqvae_task_legacy_path_emits_deprecation():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", DeprecationWarning)
+        task = VQVAETask(
+            in_channels=1,
+            out_channels=1,
+            latent_channels=64,
+            num_embeddings=100,
+            embedding_dim=64,
+            use_perceptual=False,
+        )
+
+    assert isinstance(task, VQVAETask)
+    assert any(item.category is DeprecationWarning for item in caught)
 
 
 def test_compute_downsampling_factor():
@@ -690,8 +771,8 @@ class TestVQVAETaskModelConfig:
         """VQVAETask can be constructed with model_config DictConfig."""
         from omegaconf import DictConfig
 
-        from maskgit3d.models.vqvae import VQVAE
-        from maskgit3d.tasks.vqvae_task import VQVAETask
+        from src.maskgit3d.models.vqvae import VQVAE
+        from src.maskgit3d.tasks.vqvae_task import VQVAETask
 
         model_cfg = DictConfig(
             {
@@ -715,7 +796,7 @@ class TestVQVAETaskModelConfig:
         """When model_config is provided, scalar model params are ignored."""
         from omegaconf import DictConfig
 
-        from maskgit3d.tasks.vqvae_task import VQVAETask
+        from src.maskgit3d.tasks.vqvae_task import VQVAETask
 
         model_cfg = DictConfig(
             {
@@ -741,8 +822,8 @@ class TestVQVAETaskModelConfig:
 
     def test_scalar_params_still_work(self):
         """Backward compat: scalar params still construct VQVAE when no model_config."""
-        from maskgit3d.models.vqvae import VQVAE
-        from maskgit3d.tasks.vqvae_task import VQVAETask
+        from src.maskgit3d.models.vqvae import VQVAE
+        from src.maskgit3d.tasks.vqvae_task import VQVAETask
 
         task = VQVAETask(
             in_channels=1,
@@ -762,7 +843,7 @@ class TestVQVAETaskModelConfig:
         """model_config should be serializable via save_hyperparameters."""
         from omegaconf import DictConfig
 
-        from maskgit3d.tasks.vqvae_task import VQVAETask
+        from src.maskgit3d.tasks.vqvae_task import VQVAETask
 
         model_cfg = DictConfig(
             {
@@ -784,8 +865,8 @@ class TestVQVAETaskModelConfig:
         """VQVAETask works with FSQ model variant via model_config."""
         from omegaconf import DictConfig
 
-        from maskgit3d.models.vqvae import VQVAE
-        from maskgit3d.tasks.vqvae_task import VQVAETask
+        from src.maskgit3d.models.vqvae import VQVAE
+        from src.maskgit3d.tasks.vqvae_task import VQVAETask
 
         model_cfg = DictConfig(
             {

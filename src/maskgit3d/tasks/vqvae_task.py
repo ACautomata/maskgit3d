@@ -1,7 +1,8 @@
 """VQVAE training task with GAN-based manual optimization and adaptive weighting."""
 
 from collections.abc import Sequence
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
+import warnings
 
 import torch
 from omegaconf import DictConfig, OmegaConf
@@ -14,10 +15,17 @@ from ..training import VQVAETrainingSteps
 from .base_task import BaseTask
 from .gan_training_strategy import GANTrainingStrategy
 
+if TYPE_CHECKING:
+    from ..runtime.optimizer_factory import GANOptimizerFactory
+
 
 class VQVAETask(BaseTask):
     def __init__(
         self,
+        model: VQVAE | None = None,
+        loss_fn: VQPerceptualLoss | None = None,
+        training_steps: VQVAETrainingSteps | None = None,
+        optimizer_factory: "GANOptimizerFactory | None" = None,
         model_config: DictConfig | None = None,
         optimizer_config: DictConfig | None = None,
         disc_optimizer_config: DictConfig | None = None,
@@ -54,6 +62,48 @@ class VQVAETask(BaseTask):
     ):
         super().__init__()
         self.automatic_optimization = False
+        self.optimizer_factory = optimizer_factory
+
+        uses_injected_components = all(
+            component is not None
+            for component in (model, loss_fn, training_steps, optimizer_factory)
+        )
+
+        if uses_injected_components:
+            injected_model = cast(VQVAE, model)
+            injected_loss_fn = cast(VQPerceptualLoss, loss_fn)
+            injected_training_steps = cast(VQVAETrainingSteps, training_steps)
+            injected_optimizer_factory = cast("GANOptimizerFactory", optimizer_factory)
+
+            self.vqvae = injected_model
+            self.loss_fn = injected_loss_fn
+            self.training_steps = injected_training_steps
+            self.gan_strategy = injected_training_steps.gan_strategy
+            self.reconstructor = injected_training_steps.reconstructor
+            self.sliding_window_cfg = self.reconstructor.sliding_window_cfg
+            self._downsampling_factor = self.reconstructor.downsampling_factor
+            self.lr_g = injected_optimizer_factory.lr_g
+            self.lr_d = injected_optimizer_factory.lr_d
+            self.gradient_clip_val = getattr(
+                self.gan_strategy, "gradient_clip_val", gradient_clip_val
+            )
+            self.gradient_clip_enabled = getattr(
+                self.gan_strategy,
+                "gradient_clip_enabled",
+                gradient_clip_enabled,
+            )
+            self.vqvae.enable_gradient_checkpointing()
+            self.save_hyperparameters(
+                ignore=["model", "loss_fn", "training_steps", "optimizer_factory"]
+            )
+            return
+
+        warnings.warn(
+            "Passing legacy scalar/config constructor arguments to VQVAETask is deprecated; "
+            "inject model, loss_fn, training_steps, and optimizer_factory instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
         crop_size: tuple[int, int, int] | None = None
         roi_size: tuple[int, int, int] | None = None
@@ -146,7 +196,9 @@ class VQVAETask(BaseTask):
 
         self.vqvae.enable_gradient_checkpointing()
 
-        self.save_hyperparameters()
+        self.save_hyperparameters(
+            ignore=["model", "loss_fn", "training_steps", "optimizer_factory"]
+        )
 
     def _extract_input_tensor(self, batch: torch.Tensor | Sequence[Any]) -> torch.Tensor:
         return self.training_steps.extract_input_tensor(batch)
