@@ -9,6 +9,7 @@ from omegaconf import OmegaConf
 
 from maskgit3d.callbacks.maskgit_metrics import MaskGITMetricsCallback
 from maskgit3d.callbacks.vqvae_metrics import VQVAEMetricsCallback
+from maskgit3d.runtime.callback_selection import select_callback_config
 from maskgit3d import train as train_module
 
 
@@ -31,6 +32,30 @@ class TestCallbackIntegration:
             assert "nan_detection" in cfg.callbacks
             assert "vqvae_metrics" in cfg.callbacks
             assert "maskgit_metrics" in cfg.callbacks
+            assert "best_checkpoint_maskgit" in cfg.callbacks
+            assert "early_stopping_maskgit" in cfg.callbacks
+
+    def test_maskgit_callbacks_instantiation(self):
+        from pathlib import Path
+
+        config_dir = str(Path(__file__).parent.parent.parent / "src/maskgit3d/conf")
+        with initialize_config_dir(config_dir=config_dir, version_base=None):
+            cfg = compose(
+                config_name="train",
+                overrides=["task=maskgit", "model=maskgit", "callbacks=default"],
+            )
+
+            selected = select_callback_config(
+                cfg.callbacks,
+                type("MaskGITTask", (), {})(),
+                stage="train",
+            )
+
+            assert selected is not None
+            assert "maskgit_metrics" in selected
+            assert "vqvae_metrics" not in selected
+            assert selected.best_checkpoint_maskgit.monitor == "val_loss"
+            assert selected.early_stopping_maskgit.monitor == "val_loss"
 
     def test_callbacks_convert_to_list(self):
         """Test that callbacks dict converts to list for Trainer."""
@@ -40,7 +65,12 @@ class TestCallbackIntegration:
         with initialize_config_dir(config_dir=config_dir, version_base=None):
             cfg = compose(config_name="train", overrides=["callbacks=default"])
 
-            callbacks_dict = instantiate(cfg.callbacks)
+            selected = select_callback_config(
+                cfg.callbacks,
+                type("VQVAETask", (), {})(),
+                stage="train",
+            )
+            callbacks_dict = instantiate(selected)
             callbacks_list = list(callbacks_dict.values())
 
             assert len(callbacks_list) == len(callbacks_dict)
@@ -54,7 +84,12 @@ class TestCallbackIntegration:
         with initialize_config_dir(config_dir=config_dir, version_base=None):
             cfg = compose(config_name="train", overrides=["callbacks=default"])
 
-            callbacks_dict = instantiate(cfg.callbacks)
+            selected = select_callback_config(
+                cfg.callbacks,
+                type("VQVAETask", (), {})(),
+                stage="train",
+            )
+            callbacks_dict = instantiate(selected)
             callbacks = list(callbacks_dict.values())
 
             # Should not raise
@@ -125,6 +160,20 @@ class TestCallbackIntegration:
 
             assert cfg.callbacks.best_checkpoint.monitor == "val_perceptual_loss"
             assert cfg.callbacks.early_stopping.monitor == "val_perceptual_loss"
+            assert cfg.callbacks.best_checkpoint_maskgit.monitor == "val_loss"
+            assert cfg.callbacks.early_stopping_maskgit.monitor == "val_loss"
+
+    def test_eval_default_callbacks_include_metrics(self):
+        from pathlib import Path
+
+        config_dir = str(Path(__file__).parent.parent.parent / "src/maskgit3d/conf")
+        with initialize_config_dir(config_dir=config_dir, version_base=None):
+            cfg = compose(config_name="eval")
+
+            assert cfg.callbacks is not None
+            assert "sample_saving" in cfg.callbacks
+            assert "vqvae_metrics" in cfg.callbacks
+            assert "maskgit_metrics" in cfg.callbacks
 
     def test_train_main_with_default_callbacks(self, monkeypatch):
         """Test that train.main converts callbacks dict to list for Trainer."""

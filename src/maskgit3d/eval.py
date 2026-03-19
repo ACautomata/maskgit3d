@@ -6,6 +6,8 @@ from hydra.utils import instantiate, to_absolute_path
 from lightning.pytorch import LightningModule
 from omegaconf import DictConfig, OmegaConf
 
+from maskgit3d.runtime.callback_selection import select_callback_config
+
 
 def _resolve_required_ckpt_path(path: str | None) -> str:
     if path is None:
@@ -24,7 +26,8 @@ def main(cfg: DictConfig) -> None:
 
     datamodule = instantiate(cfg.data)
 
-    callbacks: Any = instantiate(cfg.callbacks) if cfg.get("callbacks") is not None else None
+    callback_cfg = select_callback_config(cfg.get("callbacks"), task, stage="eval")
+    callbacks: Any = instantiate(callback_cfg) if callback_cfg is not None else None
     logger: Any = instantiate(cfg.logger) if cfg.get("logger") is not None else None
 
     trainer_kwargs: dict[str, Any] = {}
