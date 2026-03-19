@@ -4,12 +4,9 @@ import pytest
 import torch
 from omegaconf import DictConfig
 
-from src.maskgit3d.tasks.vqvae_task import (
-    VQVAETask,
-    compute_downsampling_factor,
-    compute_padded_size,
-    validate_crop_size,
-)
+from src.maskgit3d.models.vqvae.splitting import compute_downsampling_factor
+from src.maskgit3d.tasks.vqvae_task import VQVAETask
+from src.maskgit3d.utils import compute_padded_size, validate_crop_size
 
 
 def test_compute_downsampling_factor():

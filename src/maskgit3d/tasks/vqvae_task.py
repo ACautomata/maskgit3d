@@ -1,10 +1,9 @@
 """VQVAE training task with GAN-based manual optimization and adaptive weighting."""
 
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import torch
-import torch.nn.functional as F
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 
@@ -12,59 +11,9 @@ from ..inference import VQVAEReconstructor
 from ..losses.vq_perceptual_loss import VQPerceptualLoss
 from ..models.vqvae import VQVAE
 from ..models.vqvae.splitting import compute_downsampling_factor, resolve_num_splits
+from ..training import VQVAETrainingSteps
 from .base_task import BaseTask
 from .gan_training_strategy import GANTrainingStrategy
-
-
-def validate_crop_size(
-    crop_size: tuple[int, int, int],
-    downsampling_factor: int = 16,
-) -> tuple[int, int, int]:
-    """Validate and adjust crop size to be divisible by downsampling factor.
-
-    Args:
-        crop_size: Original crop size (D, H, W)
-        downsampling_factor: VQVAE downsampling factor (default 16)
-
-    Returns:
-        Validated crop size divisible by downsampling factor
-
-    Raises:
-        ValueError: If crop size would need significant adjustment
-    """
-    for dim, val in zip(("D", "H", "W"), crop_size, strict=True):
-        if val % downsampling_factor != 0:
-            raise ValueError(
-                f"Crop size {crop_size} has {dim}={val} not divisible by {downsampling_factor}. "
-                f"Use a size divisible by {downsampling_factor}."
-            )
-
-    return crop_size
-
-
-def compute_padded_size(
-    input_size: tuple[int, int, int],
-    downsampling_factor: int = 16,
-) -> tuple[int, int, int]:
-    """Compute the minimum padded size divisible by downsampling factor.
-
-    Args:
-        input_size: Input spatial size (D, H, W)
-        downsampling_factor: VQVAE downsampling factor (default 16)
-
-    Returns:
-        Padded size where each dimension is divisible by downsampling factor
-    """
-    d, h, w = input_size
-
-    def ceil_div(x: int, divisor: int) -> int:
-        return (x + divisor - 1) // divisor * divisor
-
-    return (
-        ceil_div(d, downsampling_factor),
-        ceil_div(h, downsampling_factor),
-        ceil_div(w, downsampling_factor),
-    )
 
 
 class VQVAETask(BaseTask):
@@ -183,37 +132,28 @@ class VQVAETask(BaseTask):
             sliding_window=self.sliding_window_cfg,
             downsampling_factor=self._downsampling_factor,
         )
+        self.training_steps = VQVAETrainingSteps(
+            vqvae=self.vqvae,
+            loss_fn=self.loss_fn,
+            gan_strategy=self.gan_strategy,
+            reconstructor=self.reconstructor,
+        )
 
         self.vqvae.enable_gradient_checkpointing()
 
         self.save_hyperparameters()
 
     def _extract_input_tensor(self, batch: torch.Tensor | Sequence[Any]) -> torch.Tensor:
-        return self.reconstructor.extract_input_tensor(batch)
+        return self.training_steps.extract_input_tensor(batch)
 
     def _get_sliding_window_inferer(self):
-        return self.reconstructor.get_sliding_window_inferer()
+        return self.training_steps.get_sliding_window_inferer()
 
     def _pad_to_divisible(self, x: torch.Tensor) -> torch.Tensor:
-        return self.reconstructor.pad_to_divisible(x)
+        return self.training_steps.pad_to_divisible(x)
 
     def _get_decoder_last_layer(self) -> torch.nn.Parameter | None:
-        """Get the last layer weight of the decoder for adaptive weight calculation.
-
-        Returns the weight parameter of the final convolution layer in the decoder.
-        Used for computing gradient norms in adaptive GAN loss weighting.
-
-        Returns:
-            The last layer parameter (weight, dim >= 2), or None if not found.
-        """
-        try:
-            decoder = self.vqvae.decoder.decoder
-            params = [p for p in decoder.parameters() if p.ndim >= 2]
-            if params:
-                return params[-1]
-            return None
-        except (AttributeError, IndexError):
-            return None
+        return self.training_steps.get_decoder_last_layer()
 
     def _shared_step_generator(
         self,
@@ -222,34 +162,13 @@ class VQVAETask(BaseTask):
         split: str,
         last_layer: torch.nn.Parameter | None = None,
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        """Compute generator loss for a batch.
-
-        Args:
-            x_real: Input tensor.
-            batch_idx: Batch index.
-            split: Split name (train/val/test).
-            last_layer: Last layer parameter for adaptive weight calculation.
-                If None, will be obtained from decoder.
-
-        Returns:
-            Tuple of (loss_g, log_g) where loss_g is the generator loss
-            and log_g is a dict of logging values.
-        """
-        if last_layer is None:
-            last_layer = self._get_decoder_last_layer()
-
-        x_recon, vq_loss = self.vqvae(x_real)
-
-        loss_g, log_g = self.loss_fn(
-            inputs=x_real,
-            reconstructions=x_recon,
-            vq_loss=vq_loss,
-            optimizer_idx=0,
+        return self.training_steps.shared_step_generator(
+            x_real=x_real,
+            batch_idx=batch_idx,
+            split=split,
             global_step=self.global_step,
             last_layer=last_layer,
-            split=split,
         )
-        return loss_g, log_g
 
     def _shared_step_discriminator(
         self,
@@ -258,27 +177,13 @@ class VQVAETask(BaseTask):
         vq_loss: torch.Tensor,
         split: str,
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        """Compute discriminator loss for a batch.
-
-        Args:
-            x_real: Input tensor.
-            x_recon: Reconstructed tensor from VQVAE.
-            vq_loss: VQ loss from the quantization step.
-            split: Split name (train/val/test).
-
-        Returns:
-            Tuple of (loss_d, log_d) where loss_d is the discriminator loss
-            and log_d is a dict of logging values.
-        """
-        loss_d, log_d = self.loss_fn(
-            inputs=x_real,
-            reconstructions=x_recon,
+        return self.training_steps.shared_step_discriminator(
+            x_real=x_real,
+            x_recon=x_recon,
             vq_loss=vq_loss,
-            optimizer_idx=1,
-            global_step=self.global_step,
             split=split,
+            global_step=self.global_step,
         )
-        return loss_d, log_d
 
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:  # type: ignore[override]
         return self.vqvae(x)  # type: ignore[no-any-return]
@@ -289,196 +194,39 @@ class VQVAETask(BaseTask):
         batch_idx: int,
         optimizers: list[torch.optim.Optimizer] | None = None,
     ) -> None:
-        if optimizers is None:
-            optimizers = self.optimizers()  # type: ignore[assignment]
-
-        opt_g, opt_d = optimizers  # type: ignore[misc]
-
-        x_real = self._extract_input_tensor(batch)
-        last_layer = self._get_decoder_last_layer()
-
-        x_recon, vq_loss = self.vqvae(x_real)
-
-        loss_g, log_g = self.loss_fn(
-            inputs=x_real,
-            reconstructions=x_recon,
-            vq_loss=vq_loss,
-            optimizer_idx=0,
+        resolved_optimizers = (
+            cast(list[torch.optim.Optimizer], self.optimizers())
+            if optimizers is None
+            else optimizers
+        )
+        return self.training_steps.training_step(
+            batch=batch,
+            batch_idx=batch_idx,
+            optimizers=resolved_optimizers,
             global_step=self.global_step,
-            last_layer=last_layer,
-            split="train",
+            log_fn=self.log,
+            manual_backward_fn=self.manual_backward,
         )
-
-        prog_bar_keys = {"total_loss", "vq_loss", "g_loss"}
-        for key, value in log_g.items():
-            if isinstance(value, torch.Tensor):
-                metric_name = key.split("/")[-1]
-                self.log(
-                    key,
-                    value.item(),
-                    on_step=True,
-                    on_epoch=False,
-                    prog_bar=metric_name in prog_bar_keys,
-                    batch_size=x_real.shape[0],
-                )
-
-        self.log(
-            "train/x_recon_min", x_recon.min().item(), on_step=True, on_epoch=False, prog_bar=False
-        )
-        self.log(
-            "train/x_recon_max", x_recon.max().item(), on_step=True, on_epoch=False, prog_bar=False
-        )
-        self.log(
-            "train/x_recon_abs_mean",
-            x_recon.abs().mean().item(),
-            on_step=True,
-            on_epoch=False,
-            prog_bar=False,
-        )
-        self.log(
-            "train/x_real_min", x_real.min().item(), on_step=True, on_epoch=False, prog_bar=False
-        )
-        self.log(
-            "train/x_real_max", x_real.max().item(), on_step=True, on_epoch=False, prog_bar=False
-        )
-
-        opt_g.zero_grad()
-        self.manual_backward(loss_g)
-        self.gan_strategy.step_generator(opt_g, loss_g, self.vqvae)
-
-        # Detach reconstructions before discriminator step to free the generator
-        # computation graph. The disc loss_fn already detaches internally for its
-        # logits, but keeping x_recon attached here prevents the gen graph from
-        # being freed until after disc backward — a major memory leak on 3D volumes.
-        x_recon_detached = x_recon.detach()
-
-        # Explicitly delete generator graph tensors now that backward is done
-        del loss_g, log_g, x_recon
-
-        loss_d, log_d = self.loss_fn(
-            inputs=x_real,
-            reconstructions=x_recon_detached,
-            vq_loss=vq_loss,
-            optimizer_idx=1,
-            global_step=self.global_step,
-            split="train",
-        )
-
-        for key, value in log_d.items():
-            if isinstance(value, torch.Tensor):
-                metric_name = key.split("/")[-1]
-                self.log(
-                    key,
-                    value.item(),
-                    on_step=True,
-                    on_epoch=False,
-                    prog_bar=metric_name == "disc_loss",
-                    batch_size=x_real.shape[0],
-                )
-
-        opt_d.zero_grad()
-        self.manual_backward(loss_d)
-        self.gan_strategy.step_discriminator(opt_d, loss_d)
-
-        # Explicitly delete all remaining large tensors to help CUDA free memory
-        del x_real, x_recon_detached, loss_d, log_d, vq_loss
-
-        # Return None — manual optimization doesn't need return values.
-        # Returning a dict causes Lightning to accumulate results across the
-        # epoch, holding references to CUDA tensors and preventing memory reuse.
 
     def validation_step(
         self, batch: torch.Tensor | Sequence[Any], batch_idx: int
     ) -> dict[str, Any]:
-        x_real = self._extract_input_tensor(batch)
-        inferer = self._get_sliding_window_inferer()
-        x_recon = self.reconstructor.reconstruct(self.vqvae, x_real)
-
-        perceptual_loss = torch.tensor(0.0, device=x_real.device)
-        if self.loss_fn.use_perceptual and self.loss_fn.perceptual_loss is not None:
-            perceptual_loss = self.loss_fn.perceptual_loss(x_recon, x_real)
-
-        self.log(
-            "val_perceptual_loss",
-            perceptual_loss.item(),
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            batch_size=x_real.shape[0],
-        )
-
-        rec_loss = F.l1_loss(x_recon, x_real)
-        self.log(
-            "val_rec_loss",
-            rec_loss.item(),
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            batch_size=x_real.shape[0],
-        )
-
-        return {
-            "x_real": x_real.detach().cpu(),
-            "x_recon": x_recon.detach().cpu(),
-        }
+        del batch_idx
+        return self.training_steps.reconstruction_step(batch=batch, split="val", log_fn=self.log)
 
     def configure_optimizers(self) -> list[torch.optim.Optimizer]:
-        if self.hparams.get("optimizer_config") is not None:
-            # Override lr from optimizer config with lr_g for generator
-            param_groups = [
-                {"params": self.vqvae.encoder.parameters(), "lr": self.lr_g},
-                {"params": self.vqvae.quant_conv.parameters(), "lr": self.lr_g},
-                {"params": self.vqvae.post_quant_conv.parameters(), "lr": self.lr_g},
-                {"params": self.vqvae.decoder.parameters(), "lr": self.lr_g},
-            ]
-            opt_g = instantiate(self.hparams["optimizer_config"], _partial_=True)(
-                param_groups, lr=self.lr_g
-            )
-        else:
-            opt_g = torch.optim.Adam(
-                list(self.vqvae.encoder.parameters())
-                + list(self.vqvae.quant_conv.parameters())
-                + list(self.vqvae.post_quant_conv.parameters())
-                + list(self.vqvae.decoder.parameters()),
-                lr=self.lr_g,
-            )
-
-        if self.hparams.get("disc_optimizer_config") is not None:
-            # Override lr from optimizer config with lr_d for discriminator
-            opt_d = instantiate(self.hparams["disc_optimizer_config"], _partial_=True)(
-                self.loss_fn.discriminator.parameters(), lr=self.lr_d
-            )
-        else:
-            opt_d = torch.optim.Adam(
-                self.loss_fn.discriminator.parameters(),
-                lr=self.lr_d,
-            )
-
-        return [opt_g, opt_d]
+        return self.training_steps.create_optimizers(
+            lr_g=self.lr_g,
+            lr_d=self.lr_d,
+            optimizer_config=self.hparams.get("optimizer_config"),
+            disc_optimizer_config=self.hparams.get("disc_optimizer_config"),
+        )
 
     @torch.no_grad()
     def test_step(self, batch: torch.Tensor | Sequence[Any], batch_idx: int) -> dict[str, Any]:
-        x_real = self._extract_input_tensor(batch)
-        inferer = self._get_sliding_window_inferer()
-
-        if inferer is not None:
-            if torch.cuda.is_available():
-                torch.cuda.reset_peak_memory_stats()
-
-        x_recon = self.reconstructor.reconstruct(self.vqvae, x_real)
-
-        loss = F.l1_loss(x_recon, x_real)
-
-        return {
-            "loss": loss.item(),
-            "inference_time": 0.0,
-            "use_sliding_window": inferer is not None,
-            "x_real": x_real.detach().cpu(),
-            "x_recon": x_recon.detach().cpu(),
-        }
+        del batch_idx
+        return self.training_steps.reconstruction_step(batch=batch, split="test", log_fn=self.log)
 
     def predict_step(self, batch: torch.Tensor | Sequence[Any], batch_idx: int) -> torch.Tensor:
-        x_real = self._extract_input_tensor(batch)
-        x_recon: torch.Tensor
-        x_recon, _ = self.vqvae(x_real)  # type: ignore[misc]
-        return x_recon
+        del batch_idx
+        return self.training_steps.predict_step(batch)
