@@ -59,7 +59,7 @@ class MaskGITMetricsCallback(Callback):
         if loss is not None:
             pl_module.log("loss:train", loss, prog_bar=True)
 
-        callback_payload = self._pop_callback_payload(pl_module, "train")
+        callback_payload = self._get_callback_payload(pl_module, "train")
         if callback_payload is None:
             return
 
@@ -143,11 +143,17 @@ class MaskGITMetricsCallback(Callback):
             if sliding_window_cfg and sliding_window_cfg.get("enabled", False):
                 pl_module.log("sliding_window_enabled:test", torch.tensor(1.0), prog_bar=False)
 
-    def _pop_callback_payload(
+    def _get_callback_payload(
         self,
         pl_module: LightningModule,
         stage: str,
     ) -> dict[str, Any] | None:
+        get_payload = getattr(pl_module, "get_callback_payload", None)
+        if callable(get_payload):
+            payload = get_payload(stage)
+            if isinstance(payload, dict):
+                return payload
+
         pop_payload = getattr(pl_module, "pop_callback_payload", None)
         if callable(pop_payload):
             payload = pop_payload(stage)

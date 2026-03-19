@@ -28,5 +28,11 @@ class BaseTask(LightningModule):
     def save_callback_payload(self, stage: str, payload: Mapping[str, Any]) -> None:
         self._callback_payloads[stage] = dict(payload)
 
+    def get_callback_payload(self, stage: str) -> dict[str, Any] | None:
+        payload = self._callback_payloads.get(stage)
+        if payload is None:
+            return None
+        return dict(payload)
+
     def pop_callback_payload(self, stage: str) -> dict[str, Any] | None:
         return self._callback_payloads.pop(stage, None)
