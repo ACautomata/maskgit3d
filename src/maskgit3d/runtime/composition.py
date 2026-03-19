@@ -24,7 +24,6 @@ def build_training_task(cfg: DictConfig) -> VQVAETask | MaskGITTask:
         "_recursive_": False,
     }
     if cfg.get("model") is not None:
-        instantiate(cfg.model)
         task_kwargs["model_config"] = cfg.model
     if cfg.get("optimizer") is not None:
         task_kwargs["optimizer_config"] = cfg.optimizer
@@ -35,19 +34,6 @@ def build_training_task(cfg: DictConfig) -> VQVAETask | MaskGITTask:
     task = instantiate(cfg.task, **task_kwargs)
     if not isinstance(task, VQVAETask | MaskGITTask):
         raise TypeError("build_training_task only supports VQVAETask and MaskGITTask.")
-
-    if isinstance(task, VQVAETask) and cfg.get("model") is not None:
-        task.vqvae = create_vqvae_model(cfg.model)
-        task.vqvae.enable_gradient_checkpointing()
-
-    if isinstance(task, MaskGITTask) and cfg.get("model") is not None:
-        vqvae_ckpt_path = cfg.task.get("vqvae_ckpt_path")
-        if vqvae_ckpt_path is not None:
-            vqvae = load_vqvae_from_checkpoint(str(vqvae_ckpt_path))
-        else:
-            vqvae = task.vqvae
-        task.vqvae = vqvae
-        task.maskgit = create_maskgit_model(cfg.model, vqvae)
 
     return task
 
