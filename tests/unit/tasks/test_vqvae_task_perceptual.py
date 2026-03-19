@@ -86,23 +86,25 @@ class TestVQVAETaskPerceptualTraining:
 
         return task, [opt_g, opt_d]
 
-    def test_training_step_returns_none_with_perceptual(self) -> None:
+    def test_training_step_returns_loss_tensor_with_perceptual(self) -> None:
+        """Training step returns loss tensor for manual optimization."""
         task, optimizers = self._make_task_and_optimizers(use_perceptual=True)
 
         batch = torch.randn(2, 1, 32, 32, 32)
 
         outputs = task.training_step(batch, batch_idx=0, optimizers=optimizers)
 
-        assert outputs is None
+        assert isinstance(outputs, torch.Tensor)
 
-    def test_training_step_returns_none_without_perceptual(self) -> None:
+    def test_training_step_returns_loss_tensor_without_perceptual(self) -> None:
+        """Training step returns loss tensor without perceptual loss."""
         task, optimizers = self._make_task_and_optimizers(use_perceptual=False)
 
         batch = torch.randn(2, 1, 32, 32, 32)
 
         outputs = task.training_step(batch, batch_idx=0, optimizers=optimizers)
 
-        assert outputs is None
+        assert isinstance(outputs, torch.Tensor)
 
     def test_perceptual_task_has_perceptual_loss(self) -> None:
         """Task with use_perceptual=True has perceptual loss component."""
@@ -154,7 +156,7 @@ class TestVQVAETaskAdaptiveWeight:
 
         assert task.loss_fn.disc_start == 50001
 
-    def test_training_step_returns_none_with_adaptive_weight(self) -> None:
+    def test_training_step_returns_loss_tensor_with_adaptive_weight(self) -> None:
         task = VQVAETask(
             in_channels=1,
             out_channels=1,
@@ -171,4 +173,4 @@ class TestVQVAETaskAdaptiveWeight:
         batch = torch.randn(2, 1, 32, 32, 32)
         outputs = task.training_step(batch, batch_idx=0, optimizers=[opt_g, opt_d])
 
-        assert outputs is None
+        assert isinstance(outputs, torch.Tensor)

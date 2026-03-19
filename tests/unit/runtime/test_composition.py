@@ -7,7 +7,8 @@ from src.maskgit3d.tasks.maskgit_task import MaskGITTask
 from src.maskgit3d.tasks.vqvae_task import VQVAETask
 
 
-def test_build_training_task_returns_vqvae_task(monkeypatch) -> None:
+def test_build_training_task_returns_task_via_instantiate(monkeypatch) -> None:
+    """Test that build_training_task uses Hydra instantiate for simple task creation."""
     composition_module = import_module("src.maskgit3d.runtime.composition")
     cfg = OmegaConf.create(
         {
@@ -27,12 +28,9 @@ def test_build_training_task_returns_vqvae_task(monkeypatch) -> None:
     )
 
     fake_task = Mock(spec=VQVAETask)
-    fake_vqvae = Mock()
 
     def fake_instantiate(config, **kwargs):
         target = config.get("_target_")
-        if target == "tests.ModelConfig":
-            return config
         if target == "maskgit3d.tasks.vqvae_task.VQVAETask":
             assert kwargs["model_config"].get("_target_") == "tests.ModelConfig"
             assert kwargs["optimizer_config"].get("_target_") == "tests.OptimizerConfig"
@@ -43,16 +41,14 @@ def test_build_training_task_returns_vqvae_task(monkeypatch) -> None:
         return config
 
     monkeypatch.setattr(composition_module, "instantiate", fake_instantiate)
-    monkeypatch.setattr(composition_module, "create_vqvae_model", Mock(return_value=fake_vqvae))
 
     task = composition_module.build_training_task(cfg)
 
     assert task is fake_task
-    composition_module.create_vqvae_model.assert_called_once_with(cfg.model)
-    assert fake_task.vqvae is fake_vqvae
 
 
-def test_build_training_task_replaces_maskgit_models_with_runtime_factories(monkeypatch) -> None:
+def test_build_training_task_returns_maskgit_task_via_instantiate(monkeypatch) -> None:
+    """Test that build_training_task uses Hydra instantiate for MaskGIT task."""
     composition_module = import_module("src.maskgit3d.runtime.composition")
     cfg = OmegaConf.create(
         {
@@ -68,8 +64,6 @@ def test_build_training_task_replaces_maskgit_models_with_runtime_factories(monk
     )
 
     fake_task = Mock(spec=MaskGITTask)
-    fake_vqvae = object()
-    fake_maskgit = object()
 
     def fake_instantiate(config, **kwargs):
         target = config.get("_target_")
@@ -80,17 +74,8 @@ def test_build_training_task_replaces_maskgit_models_with_runtime_factories(monk
             return fake_task
         return config
 
-    loader_mock = Mock(return_value=fake_vqvae)
-    maskgit_factory_mock = Mock(return_value=fake_maskgit)
-
     monkeypatch.setattr(composition_module, "instantiate", fake_instantiate)
-    monkeypatch.setattr(composition_module, "load_vqvae_from_checkpoint", loader_mock)
-    monkeypatch.setattr(composition_module, "create_maskgit_model", maskgit_factory_mock)
 
     task = composition_module.build_training_task(cfg)
 
     assert task is fake_task
-    loader_mock.assert_called_once_with("/tmp/vqvae.ckpt")
-    maskgit_factory_mock.assert_called_once_with(cfg.model, fake_vqvae)
-    assert fake_task.vqvae is fake_vqvae
-    assert fake_task.maskgit is fake_maskgit
