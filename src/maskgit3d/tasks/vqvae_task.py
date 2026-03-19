@@ -4,8 +4,7 @@ from collections.abc import Sequence
 from typing import Any, Literal, cast
 
 import torch
-from hydra.utils import instantiate
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from ..inference import VQVAEReconstructor
 from ..losses.vq_perceptual_loss import VQPerceptualLoss
@@ -81,10 +80,16 @@ class VQVAETask(BaseTask):
         )
 
         if model_config is not None:
-            config_dict = dict(model_config)
-            config_dict["num_splits"] = resolved_num_splits
-            config_dict["dim_split"] = dim_split
-            self.vqvae = instantiate(config_dict)
+            from ..runtime.model_factory import create_vqvae_model
+
+            resolved_model_config = cast(
+                DictConfig,
+                OmegaConf.merge(
+                    model_config,
+                    {"num_splits": resolved_num_splits, "dim_split": dim_split},
+                ),
+            )
+            self.vqvae = create_vqvae_model(resolved_model_config)
         else:
             self.vqvae = VQVAE(
                 in_channels=in_channels,
