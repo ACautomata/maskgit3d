@@ -1,3 +1,7 @@
+# DEPRECATION NOTICE (v2.0)
+# Direct task instantiation with these parameters is deprecated.
+# Use build_maskgit_task() from runtime.composition instead.
+# See docs/migration/v2.0.md for migration guide.
 _target_: maskgit3d.tasks.maskgit_task.MaskGITTask
 model_config: ${model}
 optimizer_config: ${optimizer}

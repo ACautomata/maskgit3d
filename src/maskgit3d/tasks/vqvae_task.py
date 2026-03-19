@@ -11,7 +11,6 @@ from ..inference import VQVAEReconstructor
 from ..losses.vq_perceptual_loss import VQPerceptualLoss
 from ..models.vqvae import VQVAE
 from ..models.vqvae.splitting import compute_downsampling_factor, resolve_num_splits
-from ..runtime.optimizer_factory import GANOptimizerFactory
 from ..training import VQVAETrainingSteps
 from .base_task import BaseTask
 from .gan_training_strategy import GANTrainingStrategy
@@ -280,6 +279,8 @@ class VQVAETask(BaseTask):
                 discriminator=self.loss_fn.discriminator,
             )
             return [opt_g, opt_d]
+
+        from ..runtime.optimizer_factory import GANOptimizerFactory
 
         factory = GANOptimizerFactory(
             lr_g=self.lr_g,

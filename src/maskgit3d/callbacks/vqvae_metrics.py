@@ -4,6 +4,8 @@ import torch
 import torch.nn.functional as F
 from lightning.pytorch import Callback, LightningModule, Trainer
 
+from maskgit3d.tasks.output_contracts import VQVAETrainingOutput, VQVAEValidationOutput
+
 if TYPE_CHECKING:
     pass
 
@@ -54,10 +56,15 @@ class VQVAEMetricsCallback(Callback):
         if callback_payload is None:
             return
 
-        x_real = callback_payload.get("x_real")
-        x_recon = callback_payload.get("x_recon")
-        vq_loss = callback_payload.get("vq_loss")
-        last_layer = callback_payload.get("last_layer")
+        try:
+            output = VQVAETrainingOutput(**callback_payload)
+        except (TypeError, KeyError):
+            return
+
+        x_real = output.x_real
+        x_recon = output.x_recon
+        vq_loss = output.vq_loss
+        last_layer = output.last_layer
 
         if x_real is None or x_recon is None or vq_loss is None:
             return
@@ -107,9 +114,14 @@ class VQVAEMetricsCallback(Callback):
         if outputs is None or not isinstance(outputs, dict):
             return
 
-        x_real = outputs.get("x_real")
-        x_recon = outputs.get("x_recon")
-        vq_loss = outputs.get("vq_loss")
+        try:
+            output = VQVAEValidationOutput(**outputs)
+        except (TypeError, KeyError):
+            return
+
+        x_real = output.x_real
+        x_recon = output.x_recon
+        vq_loss = output.vq_loss
 
         if x_real is None or x_recon is None or vq_loss is None:
             return
@@ -137,11 +149,16 @@ class VQVAEMetricsCallback(Callback):
         if outputs is None or not isinstance(outputs, dict):
             return
 
-        x_real = outputs.get("x_real")
-        x_recon = outputs.get("x_recon")
-        vq_loss = outputs.get("vq_loss")
-        inference_time = outputs.get("inference_time")
-        use_sliding_window = outputs.get("use_sliding_window")
+        try:
+            output = VQVAEValidationOutput(**outputs)
+        except (TypeError, KeyError):
+            return
+
+        x_real = output.x_real
+        x_recon = output.x_recon
+        vq_loss = output.vq_loss
+        inference_time = output.inference_time
+        use_sliding_window = output.use_sliding_window
 
         if x_real is None or x_recon is None or vq_loss is None:
             return
