@@ -161,15 +161,15 @@ class VQVAETrainingSteps:
 
         if split == "val":
             return {
-                "x_real": x_real.detach().cpu(),
-                "x_recon": x_recon.detach().cpu(),
-                "vq_loss": vq_loss_tensor.detach().cpu(),
+                "x_real": x_real.detach(),
+                "x_recon": x_recon.detach(),
+                "vq_loss": vq_loss_tensor.detach(),
             }
 
         return {
-            "x_real": x_real.detach().cpu(),
-            "x_recon": x_recon.detach().cpu(),
-            "vq_loss": vq_loss_tensor.detach().cpu(),
+            "x_real": x_real.detach(),
+            "x_recon": x_recon.detach(),
+            "vq_loss": vq_loss_tensor.detach(),
             "inference_time": 0.0,
             "use_sliding_window": inferer is not None,
         }
@@ -180,9 +180,9 @@ class VQVAETrainingSteps:
         vq_loss = self._extract_vq_loss(x_real)
         vq_loss_tensor = self._ensure_tensor(vq_loss, x_real.device)
         return {
-            "x_real": x_real.detach().cpu(),
-            "x_recon": x_recon.detach().cpu(),
-            "vq_loss": vq_loss_tensor.detach().cpu(),
+            "x_real": x_real.detach(),
+            "x_recon": x_recon.detach(),
+            "vq_loss": vq_loss_tensor.detach(),
         }
 
     def _extract_vq_loss(self, x_real: torch.Tensor) -> Any:
