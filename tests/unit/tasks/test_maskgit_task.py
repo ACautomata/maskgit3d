@@ -73,6 +73,28 @@ def test_maskgit_task_accepts_injected_components(maskgit_with_components):
     assert not any(p.requires_grad for p in task.vqvae.parameters())
 
 
+def test_maskgit_task_configure_optimizers_uses_injected_factory(maskgit_with_components):
+    """MaskGITTask.configure_optimizers uses injected optimizer_factory when available."""
+    maskgit, vqvae, training_steps, optimizer_factory = maskgit_with_components
+
+    task = MaskGITTask(
+        model=maskgit,
+        vqvae=vqvae,
+        training_steps=training_steps,
+        optimizer_factory=optimizer_factory,
+    )
+
+    result = task.configure_optimizers()
+
+    assert isinstance(result, dict)
+    assert "optimizer" in result
+    assert "lr_scheduler" in result
+    optimizer = result["optimizer"]
+    assert isinstance(optimizer, torch.optim.AdamW)
+    scheduler = result["lr_scheduler"]["scheduler"]
+    assert scheduler is not None
+
+
 def test_maskgit_task_legacy_path_emits_deprecation(vqvae_checkpoint):
     """Legacy constructor path emits DeprecationWarning."""
     with warnings.catch_warnings(record=True) as caught_warnings:

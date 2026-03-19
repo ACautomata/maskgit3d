@@ -123,20 +123,3 @@ def test_validation_step_returns_raw_and_model_outputs_without_logging() -> None
     assert outputs["mask_ratio"] == 0.6
     assert outputs["token_shape"] == torch.Size([1, 2, 2, 2])
     assert service.maskgit.generate_calls[0]["num_iterations"] == 12
-
-
-def test_create_optimizers_uses_runtime_factories() -> None:
-    service = MaskGITTrainingSteps(maskgit=RecordingMaskGIT())
-    optimizer_config = OmegaConf.create({"_target_": "torch.optim.Adam", "lr": 3e-4})
-
-    result = service.create_optimizers(
-        optimizer_config=optimizer_config,
-        lr=1e-4,
-        weight_decay=0.05,
-        warmup_steps=7,
-    )
-
-    assert isinstance(result["optimizer"], torch.optim.Adam)
-    scheduler = result["lr_scheduler"]["scheduler"]
-    assert isinstance(scheduler, torch.optim.lr_scheduler.LambdaLR)
-    assert result["lr_scheduler"]["interval"] == "step"

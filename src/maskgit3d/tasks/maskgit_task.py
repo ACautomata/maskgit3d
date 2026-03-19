@@ -101,6 +101,7 @@ class MaskGITTask(BaseTask):
         self.lr = lr
         self.weight_decay = weight_decay
         self.warmup_steps = warmup_steps
+        self.optimizer_factory = None
 
         self.vqvae = self._build_vqvae(vqvae_ckpt_path)
         self.maskgit = self._build_maskgit(
@@ -236,9 +237,31 @@ class MaskGITTask(BaseTask):
         )
 
     def configure_optimizers(self) -> Any:
-        return self.training_steps.create_optimizers(
-            optimizer_config=self.hparams.get("optimizer_config"),
-            lr=self.lr,
-            weight_decay=self.weight_decay,
-            warmup_steps=self.hparams.get("warmup_steps", self.warmup_steps),
-        )
+        if self.optimizer_factory is not None:
+            return self.optimizer_factory.create_optimizer_and_scheduler(
+                model=self.maskgit,
+            )
+        # Legacy fallback (deprecated path)
+        from ..runtime.optimizer_factory import create_optimizer
+        from ..runtime.scheduler_factory import create_scheduler
+        from omegaconf import OmegaConf
+
+        optimizer_config = self.hparams.get("optimizer_config")
+        if optimizer_config is not None:
+            optimizer = create_optimizer(self.maskgit.parameters(), optimizer_config)
+        else:
+            optimizer = torch.optim.AdamW(
+                self.maskgit.transformer.parameters(),
+                lr=self.lr,
+                weight_decay=self.weight_decay,
+            )
+
+        scheduler_config = OmegaConf.create({"warmup_steps": self.warmup_steps})
+        scheduler = create_scheduler(optimizer, scheduler_config)
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+            },
+        }

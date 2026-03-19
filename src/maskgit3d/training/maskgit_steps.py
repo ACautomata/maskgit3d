@@ -138,32 +138,3 @@ class MaskGITTrainingSteps:
             "input_shape": x.shape,
             "token_shape": tokens.shape,
         }
-
-    def create_optimizers(
-        self,
-        lr: float,
-        weight_decay: float,
-        warmup_steps: int,
-        optimizer_config: Any = None,
-    ) -> dict[str, Any]:
-        from ..runtime.optimizer_factory import create_optimizer
-        from ..runtime.scheduler_factory import create_scheduler
-
-        if optimizer_config is not None:
-            optimizer = create_optimizer(self.maskgit.parameters(), optimizer_config)
-        else:
-            optimizer = torch.optim.AdamW(
-                self.maskgit.transformer.parameters(),
-                lr=lr,
-                weight_decay=weight_decay,
-            )
-
-        scheduler_config = OmegaConf.create({"warmup_steps": warmup_steps})
-        scheduler = create_scheduler(optimizer, scheduler_config)
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "step",
-            },
-        }
