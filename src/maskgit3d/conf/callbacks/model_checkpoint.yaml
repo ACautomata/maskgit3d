@@ -5,8 +5,8 @@
 best_checkpoint:
   _target_: lightning.pytorch.callbacks.ModelCheckpoint
   dirpath: "checkpoints/${now:%Y-%m-%d}/${now:%H-%M-%S}"
-  filename: "{epoch:03d}-{val_perceptual_loss:.4f}"
-  monitor: "val_perceptual_loss"
+  filename: "{epoch:03d}-{val_rec_loss:.4f}"
+  monitor: "val_rec_loss"
   mode: min
   save_top_k: 3
   save_last: false
