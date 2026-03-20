@@ -494,6 +494,7 @@ def test_maskgit_task_encode_images_to_tokens_with_sliding_window(vqvae_checkpoi
         torch.zeros((patch.shape[0], 256, 1, 1, 1)),
         torch.tensor(0.0),
         torch.zeros((patch.shape[0], 1, 1, 1), dtype=torch.long),
+        torch.zeros((patch.shape[0], 256, 1, 1, 1)),
     )
 
     x = torch.randn(1, 1, 32, 32, 32)

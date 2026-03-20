@@ -138,11 +138,13 @@ class VQVAE(nn.Module):
         self.encoder.use_gradient_checkpointing = False
         self.decoder.use_gradient_checkpointing = False
 
-    def encode(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def encode(
+        self, x: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         h = self.encoder(x)
-        h = self.quant_conv(h)
-        z_q, vq_loss, indices = self.quantizer(h)
-        return z_q, vq_loss, indices
+        z_e = self.quant_conv(h)
+        z_q, vq_loss, indices = self.quantizer(z_e)
+        return z_q, vq_loss, indices, z_e
 
     def decode(self, z_q: torch.Tensor) -> torch.Tensor:
         z_q = self.post_quant_conv(z_q)
@@ -154,6 +156,6 @@ class VQVAE(nn.Module):
         return self.decode(z_q)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        z_q, vq_loss, _ = self.encode(x)
+        z_q, vq_loss, _, _ = self.encode(x)
         x_recon = self.decode(z_q)
         return x_recon, vq_loss

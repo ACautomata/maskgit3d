@@ -5,7 +5,7 @@ Complete MaskGIT model combining:
 - Bidirectional Transformer for masked token prediction
 """
 
-from typing import Any
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -148,7 +148,7 @@ class MaskGIT(nn.Module):
         Returns:
             Token indices [B, D', H', W']
         """
-        _, _, indices = self.vqvae.encode(x)
+        _, _, indices, _ = self.vqvae.encode(x)
         return self._to_transformer_tokens(indices)
 
     def decode_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
@@ -180,19 +180,19 @@ class MaskGIT(nn.Module):
         x_padded = self._pad_to_divisible(x)
 
         def encode_fn(patch: torch.Tensor) -> torch.Tensor:
-            z_q, _, indices = self.vqvae.encode(patch)
-            return indices.float().unsqueeze(1)
+            _, _, _, z_e = self.vqvae.encode(patch)
+            return z_e
 
-        indices_padded = inferer(x_padded, encode_fn)
+        z_e_padded = cast(torch.Tensor, inferer(x_padded, encode_fn))
 
         latent_d = original_shape[0] // self._downsampling_factor
         latent_h = original_shape[1] // self._downsampling_factor
         latent_w = original_shape[2] // self._downsampling_factor
 
         B = x.shape[0]
-        indices = indices_padded[:B, 0, :latent_d, :latent_h, :latent_w]  # type: ignore[call-overload]
+        z_e = z_e_padded[:B, :, :latent_d, :latent_h, :latent_w]
 
-        indices = indices.long()
+        _, _, indices = self.vqvae.quantizer(z_e)
         return self._to_transformer_tokens(indices)
 
     def decode_tokens_to_latent(self, tokens: torch.Tensor) -> torch.Tensor:

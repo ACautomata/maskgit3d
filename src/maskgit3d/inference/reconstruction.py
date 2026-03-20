@@ -55,16 +55,14 @@ class VQVAEReconstructor:
         x_real_padded = self.pad_to_divisible(x_real)
 
         def encode_fn(patch: torch.Tensor) -> torch.Tensor:
-            _, _, indices = vqvae.encode(patch)
-            return indices.float().unsqueeze(1)
+            _, _, _, z_e = vqvae.encode(patch)
+            return z_e
 
-        indices_padded = cast(torch.Tensor, inferer(x_real_padded, encode_fn))
+        z_e_padded = cast(torch.Tensor, inferer(x_real_padded, encode_fn))
         latent_shape = tuple(size // self.downsampling_factor for size in original_shape)
         batch_size = x_real.shape[0]
-        indices = indices_padded[:batch_size, 0]
-        indices = indices[:, : latent_shape[0], : latent_shape[1], : latent_shape[2]].long()
-
-        z_q = vqvae.quantizer.decode_from_indices(indices)
+        z_e = z_e_padded[:batch_size, :, : latent_shape[0], : latent_shape[1], : latent_shape[2]]
+        z_q, _, _ = vqvae.quantizer(z_e)
         latent_roi_size = tuple(
             size // self.downsampling_factor
             for size in self.sliding_window_cfg.get("roi_size", [32, 32, 32])

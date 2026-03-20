@@ -39,10 +39,11 @@ def test_vqvae_encode_decode():
     )
 
     x = torch.randn(1, 1, 16, 16, 16)
-    z_q, vq_loss, indices = vqvae.encode(x)
+    z_q, vq_loss, indices, z_e = vqvae.encode(x)
     x_recon = vqvae.decode(z_q)
 
     assert z_q.shape[1] == 16
+    assert z_e.shape[1] == 16
     assert indices.shape[0] == 1
     assert x_recon.shape == x.shape
 

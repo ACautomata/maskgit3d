@@ -174,3 +174,40 @@ class TestMaskGITForward:
 
         assert tokens.dim() == 4
         assert decoded.shape[2:] == x.shape[2:]
+
+
+class TestMaskGITSlidingWindowEncoding:
+    """Tests for sliding window encoding - must operate on latent space, not indices."""
+
+    def test_encode_images_to_tokens_sliding_window_uses_latent_not_indices(
+        self, small_maskgit, small_vqvae
+    ) -> None:
+        """Sliding window encoding must average in continuous latent space, not discrete indices."""
+        from unittest.mock import patch
+
+        x = torch.randn(1, 1, 16, 16, 16)
+        small_maskgit.sliding_window_cfg = {
+            "enabled": True,
+            "roi_size": [8, 8, 8],
+            "sw_batch_size": 1,
+        }
+
+        encode_fn_outputs: list[torch.Tensor] = []
+
+        def mock_inferer(x_tensor, fn):
+            result = fn(x_tensor)
+            encode_fn_outputs.append(result.clone())
+            return result
+
+        with patch.object(small_maskgit, "_get_sliding_window_inferer", return_value=mock_inferer):
+            with torch.no_grad():
+                _ = small_maskgit.encode_images_to_tokens(x)
+
+        embedding_dim = small_vqvae.quantizer.embedding_dim
+        for output in encode_fn_outputs:
+            assert output.dim() == 5, f"Expected 5D tensor, got {output.dim()}D"
+            assert output.shape[1] == embedding_dim, (
+                f"encode_fn returned shape {output.shape} with C={output.shape[1]}. "
+                f"Expected C={embedding_dim} (embedding dimension) for latent space averaging. "
+                f"C=1 would indicate indices being averaged, which is semantically incorrect."
+            )
