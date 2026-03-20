@@ -135,9 +135,13 @@ class VQVAEMetricsCallback(Callback):
         loss_l1 = F.l1_loss(x_recon, x_real)
         pl_module.log("val_rec_loss", loss_l1, prog_bar=False)
 
-        # Compute FID metric
+        # Accumulate features for FID (compute at epoch end)
         if self.use_fid and self.fid_metric is not None:
             self.fid_metric.update(x_recon, x_real)
+
+    def on_validation_epoch_end(self, trainer: Trainer, pl_module: LightningModule) -> None:
+        """Compute and log FID once per validation epoch."""
+        if self.use_fid and self.fid_metric is not None:
             fid_score = self.fid_metric.compute()
             pl_module.log("val_fid", fid_score["fid"], prog_bar=True)
             self.fid_metric.reset()
@@ -176,9 +180,6 @@ class VQVAEMetricsCallback(Callback):
 
         if self.use_fid and self.fid_metric is not None:
             self.fid_metric.update(x_recon, x_real)
-            fid_score = self.fid_metric.compute()
-            pl_module.log("fid:test", fid_score["fid"], prog_bar=True)
-            self.fid_metric.reset()
 
         if inference_time is not None:
             pl_module.log("inference_time:test", inference_time, prog_bar=True)

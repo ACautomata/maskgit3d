@@ -9,8 +9,8 @@ optimizer_config: ${optimizer}
 disc_optimizer_config: ${optimizer}
 data_config: ${data}
 
-lr_g: 4.0e-4
-lr_d: 8.0e-4
+lr_g: 5.0e-5
+lr_d: 1.0e-4
 
 lambda_l1: 1.0
 lambda_vq: 1.0
@@ -38,6 +38,6 @@ sliding_window:
   overlap: 0.25
   mode: gaussian
   sigma_scale: 0.125
-  sw_batch_size: 16
+  sw_batch_size: 4
   sw_device: null
   device: null
