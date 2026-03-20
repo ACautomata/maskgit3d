@@ -113,6 +113,10 @@ class SlidingWindowConfig(ConfigSchema):
     mode: str = "gaussian"
     sigma_scale: float = 0.125
     sw_batch_size: int = 1
+    sw_device: str | None = None  # Device for window processing, None = input tensor's device
+    device: str | None = (
+        None  # Device for output aggregation, None = input tensor's device (safe for metrics)
+    )
 
     def __post_init__(self) -> None:
         self.roi_size = cast(tuple[int, int, int], _as_three_int_tuple(self.roi_size))

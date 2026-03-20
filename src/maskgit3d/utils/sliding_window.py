@@ -18,6 +18,8 @@ def create_sliding_window_inferer(cfg: dict[str, Any]) -> SlidingWindowInferer |
             - mode: Inference mode, "gaussian" or "constant" (default: "gaussian")
             - sigma_scale: Scale factor for Gaussian sigma (default: 0.125)
             - sw_batch_size: Batch size for sliding window (default: 1)
+            - sw_device: Device for window processing, None = input tensor's device (default: None)
+            - device: Device for output aggregation (default: "cpu")
 
     Returns:
         SlidingWindowInferer instance if enabled, None otherwise.
@@ -30,6 +32,8 @@ def create_sliding_window_inferer(cfg: dict[str, Any]) -> SlidingWindowInferer |
     mode = cfg.get("mode", "gaussian")
     sigma_scale = cfg.get("sigma_scale", 0.125)
     sw_batch_size = cfg.get("sw_batch_size", 1)
+    sw_device = cfg.get("sw_device", None)
+    device = cfg.get("device", None)
 
     return SlidingWindowInferer(
         roi_size=roi_size,
@@ -39,6 +43,8 @@ def create_sliding_window_inferer(cfg: dict[str, Any]) -> SlidingWindowInferer |
         sigma_scale=sigma_scale,
         padding_mode="constant",
         cval=0.0,
+        sw_device=sw_device,
+        device=device,
     )
 
 

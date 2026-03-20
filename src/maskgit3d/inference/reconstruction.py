@@ -82,6 +82,8 @@ class VQVAEReconstructor:
             sigma_scale=self.sliding_window_cfg.get("sigma_scale", 0.125),
             padding_mode="constant",
             cval=0.0,
+            sw_device=self.sliding_window_cfg.get("sw_device"),
+            device=self.sliding_window_cfg.get("device"),
         )
 
         def decode_fn(latent_patch: torch.Tensor) -> torch.Tensor:

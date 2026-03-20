@@ -91,6 +91,37 @@ class TestCreateSlidingWindowInferer:
         assert result is not None
         assert result.sw_batch_size == 4
 
+    def test_custom_sw_device(self) -> None:
+        """Test that custom sw_device is used."""
+        cfg = {
+            "enabled": True,
+            "sw_device": "cuda:0",
+        }
+        result = create_sliding_window_inferer(cfg)
+
+        assert result is not None
+        assert result.sw_device == "cuda:0"
+
+    def test_custom_device(self) -> None:
+        """Test that custom device is used."""
+        cfg = {
+            "enabled": True,
+            "device": "cpu",
+        }
+        result = create_sliding_window_inferer(cfg)
+
+        assert result is not None
+        assert result.device == "cpu"
+
+    def test_default_devices_are_none(self) -> None:
+        """Test that default sw_device and device are None (auto-detect from input)."""
+        cfg = {"enabled": True}
+        result = create_sliding_window_inferer(cfg)
+
+        assert result is not None
+        assert result.sw_device is None
+        assert result.device is None
+
 
 class TestPadToDivisible:
     """Tests for pad_to_divisible function."""
