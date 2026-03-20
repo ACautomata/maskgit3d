@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 import torch
+from torch import nn
+from torchvision.models import inception_v3, Inception_V3_Weights
 
 
 class LightningMetricProtocol(Protocol):
@@ -15,49 +17,152 @@ class LightningMetricProtocol(Protocol):
     def reset(self) -> None: ...
 
 
-class FIDMetric:
-    """FID metric with a Lightning-style API.
+class InceptionV3FeatureExtractor(nn.Module):
+    """InceptionV3 feature extractor for FID with 2.5D support for 3D inputs.
 
-    FID (Fréchet Inception Distance) measures the similarity between two distributions
-    of images by computing the distance between feature vectors extracted from a
-    pretrained network.
-
-    This implementation accumulates features across batches and computes FID at the end.
+    For 3D inputs, uses a 2.5D approach similar to MONAI's PerceptualLoss:
+    extracts random slices from all three axes, processes them as a batch.
 
     Args:
-        feature_extractor: Pretrained network for feature extraction.
-            If None, uses global average pooling as simple feature extraction.
-        spatial_dims: Spatial dimensions of input images (2 or 3).
-        input_min: Minimum value of input data (for normalization).
-        input_max: Maximum value of input data (for normalization).
-
-    Example:
-        >>> fid_metric = FIDMetric(spatial_dims=3)
-        >>> for batch in dataloader:
-        ...     fid_metric.update(generated_images, real_images)
-        >>> result = fid_metric.compute()
-        >>> print(result["fid"])
+        input_channels: Number of input channels (default: 1).
+        device: Device to run the model on.
+        slice_ratio: Ratio of slices to sample per axis for 3D inputs (default: 0.3).
     """
 
     def __init__(
         self,
-        feature_extractor: torch.nn.Module | None = None,
+        input_channels: int = 1,
+        device: torch.device | None = None,
+        slice_ratio: float = 0.3,
+    ) -> None:
+        super().__init__()
+        self.input_channels = input_channels
+        self.slice_ratio = slice_ratio
+
+        self.inception = inception_v3(weights=Inception_V3_Weights.IMAGENET1K_V1)
+        self.inception.eval()
+        self.inception.fc = nn.Identity()  # type: ignore
+        self.inception.dropout = nn.Identity()  # type: ignore
+
+        for param in self.inception.parameters():
+            param.requires_grad = False
+
+        self.device = device or torch.device("cpu")
+        self.inception.to(self.device)
+
+    def _batchify_axis(self, x: torch.Tensor, spatial_axis: int) -> torch.Tensor:
+        """Transform slices from one spatial axis into batch dimension.
+
+        Args:
+            x: 5D tensor (B, C, D, H, W).
+            spatial_axis: Axis to extract slices from (2, 3, or 4).
+
+        Returns:
+            4D tensor with slices as batch dimension.
+        """
+        preserved = [2, 3, 4]
+        preserved.remove(spatial_axis)
+        perm = (0, spatial_axis, 1) + tuple(preserved)
+        slices = x.permute(perm).contiguous()
+        slices = slices.view(-1, x.shape[1], x.shape[preserved[0]], x.shape[preserved[1]])
+        return slices
+
+    def _extract_axis_features(self, volume: torch.Tensor, spatial_axis: int) -> torch.Tensor:
+        """Extract features from slices along one axis.
+
+        Args:
+            volume: 5D tensor (B, C, D, H, W).
+            spatial_axis: Axis to extract slices from.
+
+        Returns:
+            2D feature tensor (N, 2048) where N is sampled slices.
+        """
+        slices = self._batchify_axis(volume, spatial_axis)
+
+        n_samples = max(1, int(slices.shape[0] * self.slice_ratio))
+        indices = torch.randperm(slices.shape[0], device=slices.device)[:n_samples]
+        slices = torch.index_select(slices, dim=0, index=indices)
+
+        features = self._extract_2d_features(slices)
+        return features
+
+    def _extract_2d_features(self, images: torch.Tensor) -> torch.Tensor:
+        """Extract features from 2D images using InceptionV3."""
+        images = images.to(self.device)
+
+        if images.shape[-2:] != (299, 299):
+            images = nn.functional.interpolate(
+                images, size=(299, 299), mode="bilinear", align_corners=False
+            )
+
+        if images.shape[1] == 1:
+            images = images.repeat(1, 3, 1, 1)
+
+        with torch.no_grad():
+            features = self.inception(images)
+            features = torch.flatten(features, 1)
+
+        return features
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        """Extract features from images.
+
+        Args:
+            images: (B, C, H, W) for 2D or (B, C, D, H, W) for 3D.
+
+        Returns:
+            (N, 2048) feature tensor where N depends on slice_ratio for 3D.
+        """
+        if images.dim() == 4:
+            return self._extract_2d_features(images)
+
+        if images.dim() == 5:
+            feat_d = self._extract_axis_features(images, 2)
+            feat_h = self._extract_axis_features(images, 3)
+            feat_w = self._extract_axis_features(images, 4)
+            return torch.cat([feat_d, feat_h, feat_w], dim=0)
+
+        raise ValueError(f"Expected 4D or 5D input, got {images.dim()}D")
+
+
+class FIDMetric:
+    """FID metric with a Lightning-style API.
+
+    FID (Fréchet Inception Distance) measures the similarity between two distributions
+    of images using InceptionV3 features. For 3D inputs, uses 2.5D approach with
+    random slice sampling.
+
+    Args:
+        spatial_dims: Spatial dimensions (2 or 3).
+        input_min: Minimum value of input data.
+        input_max: Maximum value of input data.
+        slice_ratio: Ratio of slices to sample for 3D inputs (default: 0.3).
+        device: Device to run the feature extractor on.
+    """
+
+    def __init__(
+        self,
         spatial_dims: int = 3,
         input_min: float = -1.0,
         input_max: float = 1.0,
+        slice_ratio: float = 0.3,
+        device: torch.device | None = None,
     ) -> None:
         from monai.metrics.fid import get_fid_score
 
         if input_max <= input_min:
-            raise ValueError(
-                f"input_max must be greater than input_min, got {input_max} <= {input_min}"
-            )
+            raise ValueError(f"input_max must be > input_min, got {input_max} <= {input_min}")
 
         self.spatial_dims = spatial_dims
         self.input_min = input_min
         self.input_max = input_max
-        self.feature_extractor = feature_extractor
         self._get_fid_score = get_fid_score
+
+        self.feature_extractor = InceptionV3FeatureExtractor(
+            input_channels=1,
+            device=device,
+            slice_ratio=slice_ratio,
+        )
 
         self._pred_features: list[torch.Tensor] = []
         self._target_features: list[torch.Tensor] = []
@@ -65,27 +170,15 @@ class FIDMetric:
     def _normalize_to_0_1(self, tensor: torch.Tensor) -> torch.Tensor:
         return (tensor - self.input_min) / (self.input_max - self.input_min)
 
-    def _extract_features(self, images: torch.Tensor) -> torch.Tensor:
-        if self.feature_extractor is not None:
-            with torch.no_grad():
-                return self.feature_extractor(images)
-
-        spatial_dims = list(range(2, 2 + self.spatial_dims))
-        features = torch.mean(images, dim=spatial_dims)
-        return features
-
     def update(self, predictions: Any, targets: Any) -> None:
         pred = self._to_tensor(predictions)
         target = self._to_tensor(targets)
 
-        if pred.device != target.device:
-            pred = pred.to(target.device)
-
         pred_normalized = self._normalize_to_0_1(pred)
         target_normalized = self._normalize_to_0_1(target)
 
-        pred_features = self._extract_features(pred_normalized)
-        target_features = self._extract_features(target_normalized)
+        pred_features = self.feature_extractor(pred_normalized)
+        target_features = self.feature_extractor(target_normalized)
 
         self._pred_features.append(pred_features.detach().cpu())
         self._target_features.append(target_features.detach().cpu())
@@ -105,7 +198,6 @@ class FIDMetric:
             return {"fid": 0.0}
 
         fid_score = self._get_fid_score(pred_features, target_features)
-
         return {"fid": float(fid_score.item())}
 
     def reset(self) -> None:
@@ -126,9 +218,6 @@ class FIDMetric:
             elif "x_real" in value:
                 value = value["x_real"]
             else:
-                raise ValueError(
-                    f"Unsupported metric input keys: {list(value.keys())}. "
-                    "Expected 'images', 'volumes', 'x_recon', or 'x_real'."
-                )
+                raise ValueError(f"Unsupported keys: {list(value.keys())}")
 
         return torch.as_tensor(value)
