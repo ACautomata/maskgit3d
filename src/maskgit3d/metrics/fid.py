@@ -48,7 +48,7 @@ class InceptionV3FeatureExtractor(nn.Module):
             param.requires_grad = False
 
         self.device = device or torch.device("cpu")
-        self.inception.to(self.device)
+        self.inception.to(device=self.device, dtype=torch.float32)
 
     def _batchify_axis(self, x: torch.Tensor, spatial_axis: int) -> torch.Tensor:
         """Transform slices from one spatial axis into batch dimension.
@@ -88,7 +88,7 @@ class InceptionV3FeatureExtractor(nn.Module):
 
     def _extract_2d_features(self, images: torch.Tensor) -> torch.Tensor:
         """Extract features from 2D images using InceptionV3."""
-        images = images.to(self.device)
+        images = images.to(self.device).float()
 
         if images.shape[-2:] != (299, 299):
             images = nn.functional.interpolate(

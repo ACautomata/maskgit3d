@@ -244,8 +244,9 @@ class VQPerceptualLoss(nn.Module):
             # =====================
             # Discriminator update (early return — skip rec/perceptual computation)
             # =====================
-            logits_real = self.discriminator(inputs.contiguous().detach())[0][0]
-            logits_fake = self.discriminator(reconstructions.contiguous().detach())[0][0]
+            with torch.autocast(device_type=inputs.device.type, dtype=torch.bfloat16):
+                logits_real = self.discriminator(inputs.contiguous().detach())[0][0]
+                logits_fake = self.discriminator(reconstructions.contiguous().detach())[0][0]
 
             d_loss = disc_factor * self._disc_loss(logits_real, logits_fake)
 
@@ -277,7 +278,8 @@ class VQPerceptualLoss(nn.Module):
 
             if disc_factor > 0:
                 # GAN is active — run discriminator forward + adaptive weight
-                logits_fake = self.discriminator(reconstructions.contiguous())[0][0]
+                with torch.autocast(device_type=reconstructions.device.type, dtype=torch.bfloat16):
+                    logits_fake = self.discriminator(reconstructions.contiguous())[0][0]
                 g_loss = self._gen_loss(logits_fake)
 
                 # Calculate adaptive weight

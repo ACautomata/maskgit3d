@@ -58,6 +58,19 @@ class PatchDiscriminator3D(nn.Module):
         )
 
         self.model = nn.Sequential(*layers)
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        for m in self.modules():
+            if isinstance(m, nn.Conv3d):
+                nn.init.normal_(m.weight, 0.0, 0.02)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, (nn.BatchNorm3d, nn.InstanceNorm3d)):
+                if m.weight is not None:
+                    nn.init.normal_(m.weight, 1.0, 0.02)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
 
     def _get_norm_layer(self, num_features: int, norm_type: str) -> nn.Module:
         if norm_type == "instance":
