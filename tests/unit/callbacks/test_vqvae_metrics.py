@@ -174,7 +174,7 @@ class TestVQVAEMetricsCallback:
         assert callback._train_step_count == 2
         assert len(model.logged_values) == 3
 
-    def test_on_validation_batch_end_logs_rec_and_perceptual_metrics(self) -> None:
+    def test_on_validation_batch_end_logs_rec_and_fid_metrics(self) -> None:
         callback = VQVAEMetricsCallback()
         trainer = MagicMock()
         model = SimpleModel()
@@ -191,10 +191,9 @@ class TestVQVAEMetricsCallback:
 
         logged = dict(model.logged_values)
         assert "val_rec_loss" in logged
-        assert "val_perceptual_loss" in logged
-        assert torch.isclose(logged["val_perceptual_loss"], torch.tensor(0.0))
+        assert "val_fid" in logged
 
-    def test_on_validation_batch_end_with_perceptual_loss(self) -> None:
+    def test_on_validation_batch_end_with_fid(self) -> None:
         callback = VQVAEMetricsCallback()
         trainer = MagicMock()
         model = SimpleModel(use_perceptual=True)
@@ -208,7 +207,7 @@ class TestVQVAEMetricsCallback:
         callback.on_validation_batch_end(trainer, model, outputs, None, 0)
 
         logged = dict(model.logged_values)
-        assert torch.isclose(logged["val_perceptual_loss"], torch.tensor(0.1))
+        assert "val_fid" in logged
 
     def test_on_test_batch_end_logs_metrics_from_outputs(self) -> None:
         callback = VQVAEMetricsCallback()
@@ -227,6 +226,7 @@ class TestVQVAEMetricsCallback:
         logged_names = [name for name, _ in model.logged_values]
         assert "loss_l1:test" in logged_names
         assert "loss_vq:test" in logged_names
+        assert "fid:test" in logged_names
         assert "inference_time:test" in logged_names
         assert "sliding_window_enabled:test" in logged_names
 

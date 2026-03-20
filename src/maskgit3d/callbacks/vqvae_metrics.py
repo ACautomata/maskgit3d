@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 from lightning.pytorch import Callback, LightningModule, Trainer
 
+from maskgit3d.metrics.fid import FIDMetric
 from maskgit3d.tasks.output_contracts import VQVAETrainingOutput, VQVAEValidationOutput
 
 if TYPE_CHECKING:
@@ -29,11 +30,14 @@ class VQVAEMetricsCallback(Callback):
         self,
         log_every_n_steps: int = 1,
         log_val_every_n_batches: int = 1,
+        use_fid: bool = True,
     ) -> None:
         super().__init__()
         self.log_every_n_steps = log_every_n_steps
         self.log_val_every_n_batches = log_val_every_n_batches
         self._train_step_count = 0
+        self.use_fid = use_fid
+        self.fid_metric = FIDMetric(spatial_dims=3) if use_fid else None
 
     def on_train_batch_end(
         self,
@@ -95,7 +99,9 @@ class VQVAEMetricsCallback(Callback):
 
         for name, value in {**log_g, **log_d}.items():
             if isinstance(value, torch.Tensor):
-                pl_module.log(name, value, prog_bar=True)
+                # Only show total_loss on progress bar, detailed losses are logged but not shown
+                is_total_loss = name.endswith("/total_loss")
+                pl_module.log(name, value, prog_bar=is_total_loss)
 
     def on_train_epoch_start(self, trainer: Trainer, pl_module: LightningModule) -> None:
         """Reset step counter at epoch start."""
@@ -127,14 +133,14 @@ class VQVAEMetricsCallback(Callback):
             return
 
         loss_l1 = F.l1_loss(x_recon, x_real)
-        pl_module.log("val_rec_loss", loss_l1, prog_bar=True)
+        pl_module.log("val_rec_loss", loss_l1, prog_bar=False)
 
-        loss_fn = pl_module.loss_fn  # type: ignore[attr-defined]
-        perceptual_loss = torch.tensor(0.0, device=x_real.device)
-        if loss_fn.use_perceptual and loss_fn.perceptual_loss is not None:  # type: ignore[attr-defined,union-attr]
-            with torch.no_grad():
-                perceptual_loss = loss_fn.perceptual_loss(x_recon, x_real)  # type: ignore[attr-defined,union-attr,operator]
-        pl_module.log("val_perceptual_loss", perceptual_loss, prog_bar=True)
+        # Compute FID metric
+        if self.use_fid and self.fid_metric is not None:
+            self.fid_metric.update(x_recon, x_real)
+            fid_score = self.fid_metric.compute()
+            pl_module.log("val_fid", fid_score["fid"], prog_bar=True)
+            self.fid_metric.reset()
 
     def on_test_batch_end(
         self,
@@ -165,8 +171,14 @@ class VQVAEMetricsCallback(Callback):
 
         loss_l1 = F.l1_loss(x_recon, x_real)
 
-        pl_module.log("loss_l1:test", loss_l1, prog_bar=True)
-        pl_module.log("loss_vq:test", vq_loss, prog_bar=True)
+        pl_module.log("loss_l1:test", loss_l1, prog_bar=False)
+        pl_module.log("loss_vq:test", vq_loss, prog_bar=False)
+
+        if self.use_fid and self.fid_metric is not None:
+            self.fid_metric.update(x_recon, x_real)
+            fid_score = self.fid_metric.compute()
+            pl_module.log("fid:test", fid_score["fid"], prog_bar=True)
+            self.fid_metric.reset()
 
         if inference_time is not None:
             pl_module.log("inference_time:test", inference_time, prog_bar=True)
