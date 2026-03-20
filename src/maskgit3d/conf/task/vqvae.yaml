@@ -38,4 +38,6 @@ sliding_window:
   overlap: 0.25
   mode: gaussian
   sigma_scale: 0.125
-  sw_batch_size: 1
+  sw_batch_size: 4
+  sw_device: null
+  device: null
