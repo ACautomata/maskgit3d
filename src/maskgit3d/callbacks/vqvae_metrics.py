@@ -192,6 +192,13 @@ class VQVAEMetricsCallback(Callback):
             peak_memory = torch.cuda.max_memory_allocated() / 1024**2
             pl_module.log("peak_memory_mb:test", torch.tensor(peak_memory), prog_bar=True)
 
+    def on_test_epoch_end(self, trainer: Trainer, pl_module: LightningModule) -> None:
+        """Compute and log FID once per test epoch."""
+        if self.use_fid and self.fid_metric is not None:
+            fid_score = self.fid_metric.compute()
+            pl_module.log("fid:test", fid_score["fid"], prog_bar=True)
+            self.fid_metric.reset()
+
     def _get_callback_payload(
         self,
         pl_module: LightningModule,
