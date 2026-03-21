@@ -12,6 +12,12 @@ data_config: ${data}
 lr_g: 1.0e-4
 lr_d: 1.0e-4
 
+weight_decay_g: 1.0e-4
+weight_decay_d: 0.0
+
+warmup_steps: 20
+min_lr_ratio: 0.1
+
 lambda_l1: 1.0
 lambda_vq: 1.0
 lambda_gan: 0.1

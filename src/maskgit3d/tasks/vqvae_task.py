@@ -39,6 +39,10 @@ class VQVAETask(BaseTask):
         attention_levels: Sequence[bool] = (False, False, False),
         lr_g: float = 4.5e-06,
         lr_d: float = 1e-04,
+        weight_decay_g: float = 1e-04,
+        weight_decay_d: float = 0.0,
+        warmup_steps: int = 20,
+        min_lr_ratio: float = 0.1,
         lambda_l1: float = 1.0,
         lambda_vq: float = 1.0,
         lambda_gan: float = 0.1,
@@ -84,6 +88,10 @@ class VQVAETask(BaseTask):
             self._downsampling_factor = self.reconstructor.downsampling_factor
             self.lr_g = injected_optimizer_factory.lr_g
             self.lr_d = injected_optimizer_factory.lr_d
+            self.weight_decay_g = injected_optimizer_factory.weight_decay_g
+            self.weight_decay_d = injected_optimizer_factory.weight_decay_d
+            self.warmup_steps = injected_optimizer_factory.warmup_steps
+            self.min_lr_ratio = injected_optimizer_factory.min_lr_ratio
             self.gradient_clip_val = getattr(
                 self.gan_strategy, "gradient_clip_val", gradient_clip_val
             )
@@ -177,6 +185,10 @@ class VQVAETask(BaseTask):
 
         self.lr_g = lr_g
         self.lr_d = lr_d
+        self.weight_decay_g = weight_decay_g
+        self.weight_decay_d = weight_decay_d
+        self.warmup_steps = warmup_steps
+        self.min_lr_ratio = min_lr_ratio
         self.gradient_clip_val = gradient_clip_val
         self.gradient_clip_enabled = gradient_clip_enabled
         self.gan_strategy = GANTrainingStrategy(gradient_clip_val, gradient_clip_enabled)
@@ -289,6 +301,10 @@ class VQVAETask(BaseTask):
         factory = GANOptimizerFactory(
             lr_g=self.lr_g,
             lr_d=self.lr_d,
+            weight_decay_g=self.weight_decay_g,
+            weight_decay_d=self.weight_decay_d,
+            warmup_steps=self.warmup_steps,
+            min_lr_ratio=self.min_lr_ratio,
             optimizer_config=self.hparams.get("optimizer_config"),
             disc_optimizer_config=self.hparams.get("disc_optimizer_config"),
         )

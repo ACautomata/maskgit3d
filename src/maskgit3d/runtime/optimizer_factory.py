@@ -49,6 +49,8 @@ class GANOptimizerFactory:
         self,
         lr_g: float = 1e-4,
         lr_d: float = 1e-4,
+        weight_decay_g: float = 1e-4,
+        weight_decay_d: float = 0.0,
         optimizer_config: DictConfig | None = None,
         disc_optimizer_config: DictConfig | None = None,
         warmup_steps: int = 20,
@@ -58,6 +60,8 @@ class GANOptimizerFactory:
     ) -> None:
         self.lr_g = lr_g
         self.lr_d = lr_d
+        self.weight_decay_g = weight_decay_g
+        self.weight_decay_d = weight_decay_d
         self.optimizer_config = optimizer_config
         self.disc_optimizer_config = disc_optimizer_config
         self.warmup_steps = warmup_steps
@@ -80,8 +84,10 @@ class GANOptimizerFactory:
         if self.optimizer_config is not None:
             opt_g = instantiate(self.optimizer_config, _partial_=True)(param_groups, lr=self.lr_g)
         else:
-            # Default to AdamW with betas=(0.9, 0.9) for stable GAN training
-            opt_g = torch.optim.AdamW(param_groups, lr=self.lr_g, betas=(0.9, 0.9))
+            # Default to AdamW with betas=(0.9, 0.9) and weight_decay for stable GAN training
+            opt_g = torch.optim.AdamW(
+                param_groups, lr=self.lr_g, betas=(0.9, 0.9), weight_decay=self.weight_decay_g
+            )
 
         if self.disc_optimizer_config is not None:
             opt_d = instantiate(self.disc_optimizer_config, _partial_=True)(
@@ -89,10 +95,12 @@ class GANOptimizerFactory:
             )
         else:
             # Default to AdamW with betas=(0.9, 0.9) for stable GAN training
+            # weight_decay=0.0 for discriminator as per GAN best practices
             opt_d = torch.optim.AdamW(
                 discriminator.parameters(),
                 lr=self.lr_d,
                 betas=(0.9, 0.9),
+                weight_decay=self.weight_decay_d,
             )
 
         return opt_g, opt_d

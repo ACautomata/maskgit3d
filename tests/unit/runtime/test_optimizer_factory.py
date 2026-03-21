@@ -191,3 +191,30 @@ def test_gan_optimizer_factory_schedulers_warmup_and_decay() -> None:
         sched_g.step()
     expected_min_lr = 1e-4 * 0.5
     assert abs(sched_g.get_last_lr()[0] - expected_min_lr) < 1e-10
+
+
+def test_gan_optimizer_factory_weight_decay_defaults() -> None:
+    model = DummyGANModel()
+    loss_fn = DummyDiscriminatorLoss()
+    factory = GANOptimizerFactory()
+
+    opt_g, opt_d = factory.create_optimizers(generator=model, discriminator=loss_fn.discriminator)
+
+    assert opt_g.defaults["weight_decay"] == 1e-4
+    assert opt_d.defaults["weight_decay"] == 0.0
+
+
+def test_gan_optimizer_factory_custom_weight_decay() -> None:
+    model = DummyGANModel()
+    loss_fn = DummyDiscriminatorLoss()
+    factory = GANOptimizerFactory(
+        lr_g=1e-4,
+        lr_d=1e-4,
+        weight_decay_g=0.05,
+        weight_decay_d=0.01,
+    )
+
+    opt_g, opt_d = factory.create_optimizers(generator=model, discriminator=loss_fn.discriminator)
+
+    assert opt_g.defaults["weight_decay"] == 0.05
+    assert opt_d.defaults["weight_decay"] == 0.01
