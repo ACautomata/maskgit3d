@@ -146,12 +146,14 @@ def test_vqvae_task_configure_optimizers():
         lr_d=1e-4,
     )
 
-    optimizers = task.configure_optimizers()
+    optimizers, schedulers = task.configure_optimizers()
 
     assert isinstance(optimizers, list)
     assert len(optimizers) == 2
     assert isinstance(optimizers[0], torch.optim.Adam)
     assert isinstance(optimizers[1], torch.optim.Adam)
+    assert isinstance(schedulers, list)
+    assert len(schedulers) == 2
 
 
 def test_vqvae_task_has_vqvae_and_discriminator():
@@ -915,11 +917,12 @@ class TestVQVAETaskOptimizerConfig:
             lr_g=1e-4,
             lr_d=1e-4,
         )
-        optimizers = task.configure_optimizers()
+        optimizers, schedulers = task.configure_optimizers()
         # Generator optimizer should be AdamW (from config)
         assert isinstance(optimizers[0], torch.optim.AdamW)
         # Discriminator optimizer should still be Adam (default)
         assert isinstance(optimizers[1], torch.optim.Adam)
+        assert len(schedulers) == 2
 
     def test_accepts_disc_optimizer_config(self):
         """VQVAETask uses disc_optimizer_config for discriminator optimizer."""
@@ -948,8 +951,9 @@ class TestVQVAETaskOptimizerConfig:
             lr_g=1e-4,
             lr_d=1e-4,
         )
-        optimizers = task.configure_optimizers()
+        optimizers, schedulers = task.configure_optimizers()
         assert isinstance(optimizers[1], torch.optim.SGD)
+        assert len(schedulers) == 2
 
     def test_optimizer_config_fallback_to_scalar(self):
         """Without optimizer_config, uses hardcoded Adam with lr_g/lr_d."""
@@ -970,9 +974,10 @@ class TestVQVAETaskOptimizerConfig:
             lr_g=1e-4,
             lr_d=1e-4,
         )
-        optimizers = task.configure_optimizers()
+        optimizers, schedulers = task.configure_optimizers()
         assert isinstance(optimizers[0], torch.optim.Adam)
         assert isinstance(optimizers[1], torch.optim.Adam)
+        assert len(schedulers) == 2
 
     def test_both_optimizer_configs(self):
         """Both generator and discriminator optimizers can be configured."""
@@ -1007,6 +1012,7 @@ class TestVQVAETaskOptimizerConfig:
             optimizer_config=gen_opt_cfg,
             disc_optimizer_config=disc_opt_cfg,
         )
-        optimizers = task.configure_optimizers()
+        optimizers, schedulers = task.configure_optimizers()
         assert isinstance(optimizers[0], torch.optim.AdamW)
         assert isinstance(optimizers[1], torch.optim.AdamW)
+        assert len(schedulers) == 2

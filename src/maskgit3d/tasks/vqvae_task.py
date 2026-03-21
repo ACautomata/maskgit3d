@@ -272,13 +272,17 @@ class VQVAETask(BaseTask):
         del batch_idx
         return self.training_steps.reconstruction_step(batch=batch, split="val")
 
-    def configure_optimizers(self) -> list[torch.optim.Optimizer]:
+    def configure_optimizers(self) -> Any:
         if self.optimizer_factory is not None:
             opt_g, opt_d = self.optimizer_factory.create_optimizers(
                 generator=self.vqvae,
                 discriminator=self.loss_fn.discriminator,
             )
-            return [opt_g, opt_d]
+            total_steps = self._get_total_steps()
+            sched_g, sched_d = self.optimizer_factory.create_schedulers(
+                opt_g, opt_d, total_steps=total_steps
+            )
+            return [opt_g, opt_d], [sched_g, sched_d]
 
         from ..runtime.optimizer_factory import GANOptimizerFactory
 
@@ -292,7 +296,17 @@ class VQVAETask(BaseTask):
             generator=self.vqvae,
             discriminator=self.loss_fn.discriminator,
         )
-        return [opt_g, opt_d]
+        total_steps = self._get_total_steps()
+        sched_g, sched_d = factory.create_schedulers(opt_g, opt_d, total_steps=total_steps)
+        return [opt_g, opt_d], [sched_g, sched_d]
+
+    def _get_total_steps(self) -> int | None:
+        try:
+            if self.trainer is not None:
+                return int(self.trainer.estimated_stepping_batches)
+        except RuntimeError:
+            pass
+        return None
 
     @torch.no_grad()
     def test_step(self, batch: torch.Tensor | Sequence[Any], batch_idx: int) -> dict[str, Any]:

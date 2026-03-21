@@ -84,6 +84,12 @@ def test_maskgit_task_configure_optimizers_uses_injected_factory(maskgit_with_co
         optimizer_factory=optimizer_factory,
     )
 
+    # Mock the trainer to provide estimated_stepping_batches
+    class MockTrainer:
+        estimated_stepping_batches = 1000
+
+    task._trainer = MockTrainer()  # type: ignore[attr-defined]
+
     result = task.configure_optimizers()
 
     assert isinstance(result, dict)
@@ -129,6 +135,13 @@ def test_maskgit_task_configure_optimizers(vqvae_checkpoint: str):
     task = MaskGITTask(
         vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
     )
+
+    # Mock the trainer to provide estimated_stepping_batches
+    class MockTrainer:
+        estimated_stepping_batches = 1000
+
+    task._trainer = MockTrainer()  # type: ignore[attr-defined]
+
     result = task.configure_optimizers()
     assert isinstance(result, dict)
     assert "optimizer" in result
@@ -341,6 +354,12 @@ def test_maskgit_task_warmup_scheduler(vqvae_checkpoint: str):
         lr=1e-4,
         warmup_steps=10,
     )
+
+    # Mock the trainer to provide estimated_stepping_batches
+    class MockTrainer:
+        estimated_stepping_batches = 1000
+
+    task._trainer = MockTrainer()  # type: ignore[attr-defined]
 
     result = task.configure_optimizers()
     assert isinstance(result, dict)
@@ -588,6 +607,12 @@ def test_maskgit_task_warmup_scheduler_after_warmup(vqvae_checkpoint: str):
         warmup_steps=5,
     )
 
+    # Mock the trainer to provide estimated_stepping_batches
+    class MockTrainer:
+        estimated_stepping_batches = 100
+
+    task._trainer = MockTrainer()  # type: ignore[attr-defined]
+
     result = task.configure_optimizers()
     assert isinstance(result, dict)
     optimizer = result["optimizer"]
@@ -597,7 +622,9 @@ def test_maskgit_task_warmup_scheduler_after_warmup(vqvae_checkpoint: str):
         optimizer.step()
         scheduler.step()
 
-    assert scheduler.get_last_lr()[0] == 1e-4
+    # After warmup + 5 more steps with cosine decay, LR is slightly below max
+    # due to cosine decay factor (total_steps=100, progress after step 10 is ~5%)
+    assert scheduler.get_last_lr()[0] == pytest.approx(9.93e-5, rel=0.01)
 
 
 class TestMaskGITTaskModelConfig:
@@ -705,6 +732,13 @@ class TestMaskGITTaskOptimizerConfig:
             vqvae_ckpt_path=str(vqvae_checkpoint),
             optimizer_config=opt_cfg,
         )
+
+        # Mock the trainer to provide estimated_stepping_batches
+        class MockTrainer:
+            estimated_stepping_batches = 1000
+
+        task._trainer = MockTrainer()  # type: ignore[attr-defined]
+
         result = task.configure_optimizers()
         optimizer = result["optimizer"]
         assert isinstance(optimizer, torch.optim.Adam)
@@ -730,6 +764,13 @@ class TestMaskGITTaskOptimizerConfig:
             optimizer_config=opt_cfg,
             warmup_steps=100,
         )
+
+        # Mock the trainer to provide estimated_stepping_batches
+        class MockTrainer:
+            estimated_stepping_batches = 1000
+
+        task._trainer = MockTrainer()  # type: ignore[attr-defined]
+
         result = task.configure_optimizers()
         assert "optimizer" in result
         assert "lr_scheduler" in result
@@ -749,6 +790,13 @@ class TestMaskGITTaskOptimizerConfig:
             lr=1e-4,
             weight_decay=0.01,
         )
+
+        # Mock the trainer to provide estimated_stepping_batches
+        class MockTrainer:
+            estimated_stepping_batches = 1000
+
+        task._trainer = MockTrainer()  # type: ignore[attr-defined]
+
         result = task.configure_optimizers()
         optimizer = result["optimizer"]
         assert isinstance(optimizer, torch.optim.AdamW)

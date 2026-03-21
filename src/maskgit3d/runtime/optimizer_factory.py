@@ -101,16 +101,27 @@ class GANOptimizerFactory:
         self,
         opt_g: torch.optim.Optimizer,
         opt_d: torch.optim.Optimizer,
+        total_steps: int | None = None,
     ) -> tuple[torch.optim.lr_scheduler.LambdaLR, torch.optim.lr_scheduler.LambdaLR]:
-        """Create schedulers for generator and discriminator optimizers."""
+        """Create schedulers for generator and discriminator optimizers.
+
+        Args:
+            opt_g: Generator optimizer
+            opt_d: Discriminator optimizer
+            total_steps: Optional total training steps. If None, calculated from
+                         max_epochs * steps_per_epoch. Prefer using Lightning's
+                         trainer.estimated_stepping_batches when available.
+        """
         from .scheduler_factory import create_scheduler
 
-        total_steps = self.max_epochs * self.steps_per_epoch
+        effective_total_steps = (
+            total_steps if total_steps is not None else self.max_epochs * self.steps_per_epoch
+        )
         scheduler_config = OmegaConf.create(
             {
                 "warmup_steps": self.warmup_steps,
                 "min_lr_ratio": self.min_lr_ratio,
-                "total_steps": total_steps,
+                "total_steps": effective_total_steps,
             }
         )
 
@@ -139,7 +150,9 @@ class TransformerOptimizerFactory:
         self.steps_per_epoch = steps_per_epoch
         self.min_lr_ratio = min_lr_ratio
 
-    def create_optimizer_and_scheduler(self, model: Any) -> dict[str, Any]:
+    def create_optimizer_and_scheduler(
+        self, model: Any, total_steps: int | None = None
+    ) -> dict[str, Any]:
         from .scheduler_factory import create_scheduler
 
         if self.optimizer_config is not None:
@@ -151,12 +164,14 @@ class TransformerOptimizerFactory:
                 weight_decay=self.weight_decay,
             )
 
-        total_steps = self.max_epochs * self.steps_per_epoch
+        effective_total_steps = (
+            total_steps if total_steps is not None else self.max_epochs * self.steps_per_epoch
+        )
         scheduler_config = OmegaConf.create(
             {
                 "warmup_steps": self.warmup_steps,
                 "min_lr_ratio": self.min_lr_ratio,
-                "total_steps": total_steps,
+                "total_steps": effective_total_steps,
             }
         )
         scheduler = create_scheduler(optimizer, scheduler_config)

@@ -237,9 +237,11 @@ class MaskGITTask(BaseTask):
         )
 
     def configure_optimizers(self) -> Any:
+        total_steps = self._get_total_steps()
         if self.optimizer_factory is not None:
             return self.optimizer_factory.create_optimizer_and_scheduler(
                 model=self.maskgit,
+                total_steps=total_steps,
             )
         # Legacy fallback (deprecated path)
         from ..runtime.optimizer_factory import create_optimizer
@@ -256,7 +258,9 @@ class MaskGITTask(BaseTask):
                 weight_decay=self.weight_decay,
             )
 
-        scheduler_config = OmegaConf.create({"warmup_steps": self.warmup_steps})
+        scheduler_config = OmegaConf.create(
+            {"warmup_steps": self.warmup_steps, "total_steps": total_steps}
+        )
         scheduler = create_scheduler(optimizer, scheduler_config)
         return {
             "optimizer": optimizer,
@@ -265,3 +269,11 @@ class MaskGITTask(BaseTask):
                 "interval": "step",
             },
         }
+
+    def _get_total_steps(self) -> int | None:
+        try:
+            if self.trainer is not None:
+                return int(self.trainer.estimated_stepping_batches)
+        except RuntimeError:
+            pass
+        return None
