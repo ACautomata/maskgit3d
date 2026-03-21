@@ -1,5 +1,4 @@
-# Cosine warmup scheduler config for MaskGIT
-# Note: The actual LambdaLR is constructed in the task since it needs
-# access to warmup_steps for the lr_lambda function.
-# This config provides the parameters, not a _target_.
-warmup_steps: 1000
+# Scheduler config for linear warmup + cosine decay
+# Warmup steps calculated from formula: 2/(1-β2) = 2/(1-0.9) = 20
+warmup_steps: 20
+min_lr_ratio: 0.1
