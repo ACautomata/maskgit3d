@@ -51,11 +51,19 @@ class GANOptimizerFactory:
         lr_d: float = 1e-4,
         optimizer_config: DictConfig | None = None,
         disc_optimizer_config: DictConfig | None = None,
+        warmup_steps: int = 20,
+        max_epochs: int = 100,
+        steps_per_epoch: int = 1000,
+        min_lr_ratio: float = 0.1,
     ) -> None:
         self.lr_g = lr_g
         self.lr_d = lr_d
         self.optimizer_config = optimizer_config
         self.disc_optimizer_config = disc_optimizer_config
+        self.warmup_steps = warmup_steps
+        self.max_epochs = max_epochs
+        self.steps_per_epoch = steps_per_epoch
+        self.min_lr_ratio = min_lr_ratio
 
     def create_optimizers(
         self,
@@ -72,19 +80,44 @@ class GANOptimizerFactory:
         if self.optimizer_config is not None:
             opt_g = instantiate(self.optimizer_config, _partial_=True)(param_groups, lr=self.lr_g)
         else:
-            opt_g = torch.optim.Adam(param_groups, lr=self.lr_g)
+            # Default to AdamW with betas=(0.9, 0.9) for stable GAN training
+            opt_g = torch.optim.AdamW(param_groups, lr=self.lr_g, betas=(0.9, 0.9))
 
         if self.disc_optimizer_config is not None:
             opt_d = instantiate(self.disc_optimizer_config, _partial_=True)(
                 discriminator.parameters(), lr=self.lr_d
             )
         else:
-            opt_d = torch.optim.Adam(
+            # Default to AdamW with betas=(0.9, 0.9) for stable GAN training
+            opt_d = torch.optim.AdamW(
                 discriminator.parameters(),
                 lr=self.lr_d,
+                betas=(0.9, 0.9),
             )
 
         return opt_g, opt_d
+
+    def create_schedulers(
+        self,
+        opt_g: torch.optim.Optimizer,
+        opt_d: torch.optim.Optimizer,
+    ) -> tuple[torch.optim.lr_scheduler.LambdaLR, torch.optim.lr_scheduler.LambdaLR]:
+        """Create schedulers for generator and discriminator optimizers."""
+        from .scheduler_factory import create_scheduler
+
+        total_steps = self.max_epochs * self.steps_per_epoch
+        scheduler_config = OmegaConf.create(
+            {
+                "warmup_steps": self.warmup_steps,
+                "min_lr_ratio": self.min_lr_ratio,
+                "total_steps": total_steps,
+            }
+        )
+
+        scheduler_g = create_scheduler(opt_g, scheduler_config)
+        scheduler_d = create_scheduler(opt_d, scheduler_config)
+
+        return scheduler_g, scheduler_d
 
 
 class TransformerOptimizerFactory:
@@ -94,11 +127,17 @@ class TransformerOptimizerFactory:
         weight_decay: float,
         warmup_steps: int,
         optimizer_config: DictConfig | None = None,
+        max_epochs: int = 100,
+        steps_per_epoch: int = 1000,
+        min_lr_ratio: float = 0.1,
     ) -> None:
         self.lr = lr
         self.weight_decay = weight_decay
         self.warmup_steps = warmup_steps
         self.optimizer_config = optimizer_config
+        self.max_epochs = max_epochs
+        self.steps_per_epoch = steps_per_epoch
+        self.min_lr_ratio = min_lr_ratio
 
     def create_optimizer_and_scheduler(self, model: Any) -> dict[str, Any]:
         from .scheduler_factory import create_scheduler
@@ -112,7 +151,14 @@ class TransformerOptimizerFactory:
                 weight_decay=self.weight_decay,
             )
 
-        scheduler_config = OmegaConf.create({"warmup_steps": self.warmup_steps})
+        total_steps = self.max_epochs * self.steps_per_epoch
+        scheduler_config = OmegaConf.create(
+            {
+                "warmup_steps": self.warmup_steps,
+                "min_lr_ratio": self.min_lr_ratio,
+                "total_steps": total_steps,
+            }
+        )
         scheduler = create_scheduler(optimizer, scheduler_config)
         return {
             "optimizer": optimizer,

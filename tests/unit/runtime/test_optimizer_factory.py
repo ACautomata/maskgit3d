@@ -61,8 +61,11 @@ def test_gan_optimizer_factory_creates_generator_and_discriminator_optimizers() 
 
     opt_g, opt_d = factory.create_optimizers(generator=model, discriminator=loss_fn.discriminator)
 
-    assert isinstance(opt_g, torch.optim.Adam)
-    assert isinstance(opt_d, torch.optim.Adam)
+    # Default optimizer changed to AdamW with betas=(0.9, 0.9)
+    assert isinstance(opt_g, torch.optim.AdamW)
+    assert isinstance(opt_d, torch.optim.AdamW)
+    assert opt_g.defaults["betas"] == (0.9, 0.9)
+    assert opt_d.defaults["betas"] == (0.9, 0.9)
 
 
 def test_gan_optimizer_factory_keeps_legacy_generator_param_groups() -> None:
@@ -108,3 +111,83 @@ def test_transformer_optimizer_factory_uses_transformer_params_and_warmup_schedu
     assert list(optimizer.param_groups[0]["params"]) == list(model.transformer.parameters())
     assert isinstance(scheduler, torch.optim.lr_scheduler.LambdaLR)
     assert scheduler.base_lrs == [3e-4]
+
+
+def test_transformer_optimizer_factory_calculates_total_steps() -> None:
+    model = DummyTransformerModel()
+    factory = TransformerOptimizerFactory(
+        lr=3e-4,
+        weight_decay=0.1,
+        warmup_steps=10,
+        max_epochs=50,
+        steps_per_epoch=100,
+        min_lr_ratio=0.01,
+    )
+
+    result = factory.create_optimizer_and_scheduler(model)
+    scheduler = result["lr_scheduler"]["scheduler"]
+
+    # At step 0 (warmup start), lr should be 0
+    assert scheduler.get_last_lr()[0] == 0.0
+
+    # After warmup (step 10), lr should be at peak
+    for _ in range(10):
+        scheduler.step()
+    assert abs(scheduler.get_last_lr()[0] - 3e-4) < 1e-10
+
+    # At end of training (total_steps = 50 * 100 = 5000), lr should decay to min_lr_ratio
+    for _ in range(4990):
+        scheduler.step()
+    expected_min_lr = 3e-4 * 0.01
+    assert abs(scheduler.get_last_lr()[0] - expected_min_lr) < 1e-10
+
+
+def test_gan_optimizer_factory_creates_schedulers() -> None:
+    model = DummyGANModel()
+    loss_fn = DummyDiscriminatorLoss()
+    factory = GANOptimizerFactory(
+        lr_g=1e-4,
+        lr_d=2e-4,
+        warmup_steps=5,
+        max_epochs=10,
+        steps_per_epoch=50,
+        min_lr_ratio=0.1,
+    )
+
+    opt_g, opt_d = factory.create_optimizers(generator=model, discriminator=loss_fn.discriminator)
+    sched_g, sched_d = factory.create_schedulers(opt_g, opt_d)
+
+    assert isinstance(sched_g, torch.optim.lr_scheduler.LambdaLR)
+    assert isinstance(sched_d, torch.optim.lr_scheduler.LambdaLR)
+    assert sched_g.base_lrs == [1e-4, 1e-4, 1e-4, 1e-4]
+    assert sched_d.base_lrs == [2e-4]
+
+
+def test_gan_optimizer_factory_schedulers_warmup_and_decay() -> None:
+    model = DummyGANModel()
+    loss_fn = DummyDiscriminatorLoss()
+    factory = GANOptimizerFactory(
+        lr_g=1e-4,
+        lr_d=2e-4,
+        warmup_steps=2,
+        max_epochs=2,
+        steps_per_epoch=10,
+        min_lr_ratio=0.5,
+    )
+
+    opt_g, opt_d = factory.create_optimizers(generator=model, discriminator=loss_fn.discriminator)
+    sched_g, sched_d = factory.create_schedulers(opt_g, opt_d)
+
+    # At warmup step 0, lr should be 0
+    assert sched_g.get_last_lr()[0] == 0.0
+
+    # After warmup (step 2), lr should be at peak
+    sched_g.step()
+    sched_g.step()
+    assert abs(sched_g.get_last_lr()[0] - 1e-4) < 1e-10
+
+    # At end (total_steps = 2 * 10 = 20), lr should decay to min_lr_ratio
+    for _ in range(18):
+        sched_g.step()
+    expected_min_lr = 1e-4 * 0.5
+    assert abs(sched_g.get_last_lr()[0] - expected_min_lr) < 1e-10
