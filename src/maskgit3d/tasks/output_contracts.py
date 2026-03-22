@@ -1,12 +1,6 @@
-from dataclasses import dataclass, field
 from typing import TypedDict
 
 import torch
-
-
-# =============================================================================
-# NEW OUTPUT CONTRACTS (Phase 1 - Refactor)
-# =============================================================================
 
 
 class VQVAETrainingStepOutput(TypedDict):
@@ -61,76 +55,3 @@ class MaskGITEvalStepOutput(TypedDict):
     generated_images: torch.Tensor
     masked_logits: torch.Tensor
     masked_targets: torch.Tensor
-
-
-# =============================================================================
-# LEGACY DATACLASSES (kept for backwards compatibility during transition)
-# =============================================================================
-
-
-@dataclass
-class VQVAETrainingOutput:
-    """Output dataclass for VQVAE training step callback payload."""
-
-    x_real: torch.Tensor
-    x_recon: torch.Tensor
-    vq_loss: torch.Tensor
-    last_layer: torch.nn.Parameter | None = None
-
-
-@dataclass
-class VQVAEValidationOutput:
-    """Output dataclass for VQVAE validation/test step."""
-
-    x_real: torch.Tensor
-    x_recon: torch.Tensor
-    vq_loss: torch.Tensor
-    inference_time: float | None = field(default=None)
-    use_sliding_window: bool | None = field(default=None)
-
-
-@dataclass
-class MaskGITTrainingOutput:
-    """Output dataclass for MaskGIT training step callback payload."""
-
-    tokens: torch.Tensor
-    masked_logits: torch.Tensor
-    masked_targets: torch.Tensor
-    mask_ratio: float
-
-
-@dataclass
-class MaskGITValidationOutput:
-    """Output dataclass for MaskGIT validation/test step."""
-
-    x_real: torch.Tensor
-    generated_images: torch.Tensor
-    masked_logits: torch.Tensor
-    masked_targets: torch.Tensor
-    mask_ratio: float
-    token_shape: torch.Size | None = field(default=None)
-
-
-class VQVAEStepOutputRequired(TypedDict):
-    x_real: torch.Tensor
-    x_recon: torch.Tensor
-    vq_loss: torch.Tensor
-
-
-class VQVAEStepOutput(VQVAEStepOutputRequired, total=False):
-    last_layer: torch.nn.Parameter | None
-    inference_time: float
-    use_sliding_window: bool
-
-
-class MaskGITStepOutputRequired(TypedDict):
-    x_real: torch.Tensor
-    generated_images: torch.Tensor
-
-
-class MaskGITStepOutput(MaskGITStepOutputRequired, total=False):
-    masked_logits: torch.Tensor
-    masked_targets: torch.Tensor
-    mask_ratio: float
-    input_shape: torch.Size
-    token_shape: torch.Size

@@ -9,7 +9,7 @@ from .reconstruction_loss import ReconstructionLossCallback
 from .sample_saving import SampleSavingCallback
 from .training_stability import TrainingStabilityCallback
 from .training_time import TrainingTimeCallback
-from .vqvae_training_losses import TrainingLossCallback, VQVAETrainingLossCallback
+from .vqvae_training_losses import TrainingLossCallback
 
 __all__ = [
     "FIDCallback",
@@ -22,5 +22,4 @@ __all__ = [
     "TrainingLossCallback",
     "TrainingStabilityCallback",
     "TrainingTimeCallback",
-    "VQVAETrainingLossCallback",
 ]

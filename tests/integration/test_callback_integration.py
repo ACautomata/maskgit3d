@@ -7,7 +7,7 @@ from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
 
-from maskgit3d.callbacks.vqvae_training_losses import VQVAETrainingLossCallback
+from maskgit3d.callbacks.vqvae_training_losses import TrainingLossCallback
 from maskgit3d.callbacks.masked_cross_entropy import MaskedCrossEntropyCallback
 from maskgit3d.runtime.callback_selection import select_callback_config
 from maskgit3d import train as train_module
