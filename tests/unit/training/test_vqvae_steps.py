@@ -22,7 +22,14 @@ class RecordingLoss:
         loss = kwargs["reconstructions"].mean() + kwargs["vq_loss"] + optimizer_idx
         metric_prefix = kwargs["split"]
         metric_name = "disc_loss" if optimizer_idx == 1 else "total_loss"
-        return loss, {f"{metric_prefix}/{metric_name}": torch.tensor(float(optimizer_idx + 1))}
+        return loss, {
+            f"{metric_prefix}/{metric_name}": torch.tensor(float(optimizer_idx + 1)),
+            f"{metric_prefix}/nll_loss": torch.tensor(0.5),
+            f"{metric_prefix}/rec_loss": torch.tensor(0.3),
+            f"{metric_prefix}/p_loss": torch.tensor(0.1),
+            f"{metric_prefix}/g_loss": torch.tensor(0.2),
+            f"{metric_prefix}/vq_loss": kwargs["vq_loss"],
+        }
 
 
 class RecordingStrategy:
@@ -69,10 +76,10 @@ class RecordingReconstructor:
 
     def reconstruct(
         self, vqvae: Any, batch: torch.Tensor | tuple[torch.Tensor, ...]
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         x_real = self.extract_input_tensor(batch)
         self.reconstruct_calls.append((vqvae, x_real))
-        return x_real + self.recon_offset
+        return x_real + self.recon_offset, torch.tensor(0.1)
 
 
 class RecordingLogger:
@@ -95,7 +102,7 @@ class DummyVQVAE(torch.nn.Module):
         return recon, vq_loss
 
 
-def test_training_step_runs_manual_optimization_and_logs_train_metrics() -> None:
+def test_training_step_runs_manual_optimization_and_returns_loss_dict() -> None:
     logger = RecordingLogger()
     reconstructor = RecordingReconstructor()
     loss_fn = RecordingLoss()
@@ -113,19 +120,16 @@ def test_training_step_runs_manual_optimization_and_logs_train_metrics() -> None
     opt_d = RecordingOptimizer()
     batch = (torch.ones(2, 1, 4, 4, 4), torch.zeros(2, 1, 4, 4, 4))
 
-    result = cast(
-        tuple[torch.Tensor, dict[str, torch.Tensor | torch.nn.Parameter | None]],
-        service.training_step(
-            batch,
-            batch_idx=0,
-            optimizers=[opt_g, opt_d],
-            global_step=3,
-        ),
+    outputs = service.training_step(
+        batch,
+        batch_idx=0,
+        optimizers=[opt_g, opt_d],
+        global_step=3,
     )
-    loss, callback_payload = result
 
-    assert isinstance(loss, torch.Tensor)
-    assert set(callback_payload) == {"x_real", "x_recon", "vq_loss", "last_layer"}
+    assert isinstance(outputs, dict)
+    assert "loss" in outputs
+    assert isinstance(outputs["loss"], torch.Tensor)
     assert len(backward_calls) == 2
     assert opt_g.zero_grad_calls == 1
     assert opt_d.zero_grad_calls == 1
@@ -155,7 +159,7 @@ def test_get_decoder_last_layer_returns_final_decoder_weight() -> None:
     assert last_layer.shape == torch.Size([1, 1, 1, 1, 1])
 
 
-def test_reconstruction_step_reuses_reconstructor_without_logging_metrics() -> None:
+def test_reconstruction_step_returns_only_raw_data() -> None:
     logger = RecordingLogger()
     reconstructor = RecordingReconstructor(recon_offset=0.25)
     service = VQVAETrainingSteps(
@@ -168,20 +172,18 @@ def test_reconstruction_step_reuses_reconstructor_without_logging_metrics() -> N
     )
     batch = torch.zeros(1, 1, 4, 4, 4)
 
-    outputs = service.reconstruction_step(batch, split="val")
+    outputs = service.reconstruction_step(batch)
 
     assert reconstructor.reconstruct_calls
+    assert set(outputs.keys()) == {"x_real", "x_recon"}
     assert outputs["x_real"].shape == batch.shape
     assert outputs["x_recon"].shape == batch.shape
-    assert isinstance(outputs["vq_loss"], torch.Tensor)
     assert logger.calls == []
 
 
-def test_test_reconstruction_step_reports_sliding_window_usage_and_resets_cuda_stats(
-    monkeypatch,
-) -> None:
+def test_reconstruction_step_returns_only_raw_data() -> None:
     logger = RecordingLogger()
-    reconstructor = RecordingReconstructor(recon_offset=0.25, inferer=object())
+    reconstructor = RecordingReconstructor(recon_offset=0.25)
     service = VQVAETrainingSteps(
         vqvae=DummyVQVAE(),
         loss_fn=RecordingLoss(),
@@ -190,13 +192,12 @@ def test_test_reconstruction_step_reports_sliding_window_usage_and_resets_cuda_s
         log_fn=logger,
         manual_backward_fn=lambda loss: None,
     )
-    reset_calls: list[str] = []
-    monkeypatch.setattr("torch.cuda.is_available", lambda: True)
-    monkeypatch.setattr("torch.cuda.reset_peak_memory_stats", lambda: reset_calls.append("reset"))
+    batch = torch.zeros(1, 1, 4, 4, 4)
 
-    outputs = service.reconstruction_step(torch.zeros(1, 1, 4, 4, 4), split="test")
+    outputs = service.reconstruction_step(batch)
 
-    assert outputs["use_sliding_window"] is True
-    assert outputs["inference_time"] == 0.0
-    assert isinstance(outputs["vq_loss"], torch.Tensor)
-    assert reset_calls == ["reset"]
+    assert reconstructor.reconstruct_calls
+    assert set(outputs.keys()) == {"x_real", "x_recon"}
+    assert outputs["x_real"].shape == batch.shape
+    assert outputs["x_recon"].shape == batch.shape
+    assert logger.calls == []

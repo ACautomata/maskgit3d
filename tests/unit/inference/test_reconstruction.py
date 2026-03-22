@@ -86,7 +86,7 @@ def test_reconstruct_without_sliding_window_uses_direct_forward_path() -> None:
     model = DummyVQVAE()
     x = torch.randn(1, 1, 8, 8, 8)
 
-    result = reconstructor.reconstruct(model, x)
+    result, vq_loss = reconstructor.reconstruct(model, x)
 
     assert torch.allclose(result, x + 10.0)
     assert len(model.forward_inputs) == 1
@@ -104,7 +104,7 @@ def test_reconstruct_with_sliding_window_pads_and_crops_latent() -> None:
     model = DummyVQVAE()
     x = torch.randn(1, 1, 10, 9, 11)
 
-    result = reconstructor.reconstruct(model, x)
+    result, vq_loss = reconstructor.reconstruct(model, x)
 
     assert inferer.calls[0].shape == (1, 1, 12, 12, 12)
     assert len(model.decode_inputs) == 1
@@ -183,7 +183,7 @@ def test_reconstruct_with_large_latent_uses_decoder_sliding_window(monkeypatch) 
     model = DummyVQVAE()
     x = torch.randn(1, 1, 8, 8, 8)
 
-    result = reconstructor.reconstruct(model, x)
+    result, vq_loss = reconstructor.reconstruct(model, x)
 
     assert len(RecordingDecoderInferer.instances) == 1
     decoder_inferer = RecordingDecoderInferer.instances[0]

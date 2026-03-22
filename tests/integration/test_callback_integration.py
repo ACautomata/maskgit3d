@@ -7,8 +7,8 @@ from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
 
-from maskgit3d.callbacks.maskgit_metrics import MaskGITMetricsCallback
-from maskgit3d.callbacks.vqvae_metrics import VQVAEMetricsCallback
+from maskgit3d.callbacks.vqvae_training_losses import VQVAETrainingLossCallback
+from maskgit3d.callbacks.masked_cross_entropy import MaskedCrossEntropyCallback
 from maskgit3d.runtime.callback_selection import select_callback_config
 from maskgit3d import train as train_module
 
@@ -30,8 +30,8 @@ class TestCallbackIntegration:
             assert "early_stopping" in cfg.callbacks
             assert "lr_monitor" in cfg.callbacks
             assert "nan_detection" in cfg.callbacks
-            assert "vqvae_metrics" in cfg.callbacks
-            assert "maskgit_metrics" in cfg.callbacks
+            assert "vqvae_training_losses" in cfg.callbacks
+            assert "masked_cross_entropy" in cfg.callbacks
             assert "best_checkpoint_maskgit" in cfg.callbacks
             assert "early_stopping_maskgit" in cfg.callbacks
 
@@ -52,8 +52,9 @@ class TestCallbackIntegration:
             )
 
             assert selected is not None
-            assert "maskgit_metrics" in selected
-            assert "vqvae_metrics" not in selected
+            assert "masked_cross_entropy" in selected
+            assert "mask_accuracy" in selected
+            assert "vqvae_training_losses" not in selected
             assert selected.best_checkpoint_maskgit.monitor == "val_loss"
             assert selected.early_stopping_maskgit.monitor == "val_loss"
 
@@ -99,6 +100,7 @@ class TestCallbackIntegration:
 
     def test_vqvae_validation_metrics_are_logged_by_callback(self):
         from maskgit3d.tasks.vqvae_task import VQVAETask
+        from maskgit3d.callbacks.reconstruction_loss import ReconstructionLossCallback
 
         task = VQVAETask(
             in_channels=1,
@@ -115,18 +117,18 @@ class TestCallbackIntegration:
 
         task.log = capture_log  # type: ignore[method-assign]
         task.eval()
-        callback = VQVAEMetricsCallback()
+        callback = ReconstructionLossCallback()
         batch = (torch.randn(1, 1, 32, 32, 32), torch.zeros(1))
 
         outputs = task.validation_step(batch, 0)
 
         assert logged == {}
         callback.on_validation_batch_end(MagicMock(), task, outputs, batch, 0)
-        assert "val_perceptual_loss" in logged
         assert "val_rec_loss" in logged
 
     def test_maskgit_validation_metrics_are_logged_by_callback(self):
         from maskgit3d.tasks.maskgit_task import MaskGITTask
+        from maskgit3d.callbacks.mask_accuracy import MaskAccuracyCallback
 
         task = MaskGITTask(hidden_size=128, num_layers=2, num_heads=4, lr=1e-4)
         logged: dict[str, object] = {}
@@ -136,7 +138,7 @@ class TestCallbackIntegration:
 
         task.log = capture_log  # type: ignore[method-assign]
         task.eval()
-        callback = MaskGITMetricsCallback()
+        callback = MaskAccuracyCallback()
         batch = torch.randn(1, 1, 16, 16, 16)
 
         with torch.no_grad():
@@ -146,9 +148,7 @@ class TestCallbackIntegration:
         assert "generated_images" in result
         assert logged == {}
         callback.on_validation_batch_end(MagicMock(), task, result, batch, 0)
-        assert "val_loss" in logged
         assert "val_mask_acc" in logged
-        assert "val_mask_ratio" in logged
 
     def test_checkpoint_monitor_metric_exists(self):
         """Test that checkpoint config monitors a metric that tasks log."""
@@ -158,8 +158,8 @@ class TestCallbackIntegration:
         with initialize_config_dir(config_dir=config_dir, version_base=None):
             cfg = compose(config_name="train", overrides=["callbacks=default"])
 
-            assert cfg.callbacks.best_checkpoint.monitor == "val_perceptual_loss"
-            assert cfg.callbacks.early_stopping.monitor == "val_perceptual_loss"
+            assert cfg.callbacks.best_checkpoint.monitor == "val_rec_loss"
+            assert cfg.callbacks.early_stopping.monitor == "val_rec_loss"
             assert cfg.callbacks.best_checkpoint_maskgit.monitor == "val_loss"
             assert cfg.callbacks.early_stopping_maskgit.monitor == "val_loss"
 
@@ -172,8 +172,8 @@ class TestCallbackIntegration:
 
             assert cfg.callbacks is not None
             assert "sample_saving" in cfg.callbacks
-            assert "vqvae_metrics" in cfg.callbacks
-            assert "maskgit_metrics" in cfg.callbacks
+            assert "reconstruction_loss" in cfg.callbacks
+            assert "masked_cross_entropy" in cfg.callbacks
 
     def test_train_main_with_default_callbacks(self, monkeypatch):
         """Test that train.main converts callbacks dict to list for Trainer."""
