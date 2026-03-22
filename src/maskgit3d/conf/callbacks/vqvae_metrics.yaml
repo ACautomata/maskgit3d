@@ -1,2 +1,0 @@
-vqvae_metrics:
-  _target_: maskgit3d.callbacks.vqvae_metrics.VQVAEMetricsCallback

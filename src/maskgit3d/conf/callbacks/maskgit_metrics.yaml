@@ -1,2 +1,0 @@
-maskgit_metrics:
-  _target_: maskgit3d.callbacks.maskgit_metrics.MaskGITMetricsCallback
