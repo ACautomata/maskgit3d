@@ -28,13 +28,11 @@ class TestTaskConfigContracts:
         assert cfg.task.model_config._target_ == "maskgit3d.models.vqvae.VQVAE"
 
     def test_vqvae_task_config_references_optimizer_config(self) -> None:
-        """VQVAE task should have optimizer_config that resolves to Adam."""
+        """VQVAE task should have optimizer_config that resolves to AdamW."""
         with initialize_config_dir(config_dir=CONFIG_DIR, version_base=None):
             cfg = compose(config_name="train", overrides=["task=vqvae"])
 
-        # After Hydra interpolation, optimizer_config is resolved
-        assert hasattr(cfg.task, "optimizer_config")
-        assert cfg.task.optimizer_config._target_ == "torch.optim.Adam"
+        assert cfg.task.optimizer_config._target_ == "torch.optim.AdamW"
 
     def test_maskgit_task_config_references_model_config(self) -> None:
         """MaskGIT task should have model_config that resolves to MaskGIT when model=maskgit."""
@@ -93,12 +91,12 @@ class TestHydraOverrideContracts:
         assert cfg.task.model_config._target_ == "maskgit3d.models.maskgit.MaskGIT"
 
     def test_optimizer_adam_override_resolves_correctly(self) -> None:
-        """optimizer=adam override should resolve to Adam optimizer config."""
+        """optimizer=adam override should resolve to AdamW optimizer config (project uses AdamW by default)."""
         with initialize_config_dir(config_dir=CONFIG_DIR, version_base=None):
             cfg = compose(config_name="train", overrides=["optimizer=adam"])
 
         assert hasattr(cfg, "optimizer")
-        assert cfg.optimizer._target_ == "torch.optim.Adam"
+        assert cfg.optimizer._target_ == "torch.optim.AdamW"
 
     def test_optimizer_adamw_override_resolves_correctly(self) -> None:
         """optimizer=adamw override should resolve to AdamW optimizer config."""
