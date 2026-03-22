@@ -1,5 +1,7 @@
 defaults:
   - sample_saving
-  - vqvae_metrics
-  - maskgit_metrics
+  - reconstruction_loss
+  - fid_logging
+  - masked_cross_entropy
+  - mask_accuracy
   - _self_

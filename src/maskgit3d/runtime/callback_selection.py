@@ -5,6 +5,11 @@ from omegaconf import OmegaConf
 _KNOWN_CALLBACK_KEYS = {
     "vqvae_metrics",
     "maskgit_metrics",
+    "vqvae_training_losses",
+    "reconstruction_loss",
+    "fid_logging",
+    "masked_cross_entropy",
+    "mask_accuracy",
     "best_checkpoint",
     "last_checkpoint",
     "early_stopping",
@@ -23,12 +28,17 @@ _KNOWN_CALLBACK_KEYS = {
 _TRAIN_EXCLUDES = {
     "vqvae": {
         "maskgit_metrics",
+        "masked_cross_entropy",
+        "mask_accuracy",
         "best_checkpoint_maskgit",
         "last_checkpoint_maskgit",
         "early_stopping_maskgit",
     },
     "maskgit": {
         "vqvae_metrics",
+        "vqvae_training_losses",
+        "reconstruction_loss",
+        "fid_logging",
         "best_checkpoint",
         "last_checkpoint",
         "early_stopping",
@@ -37,8 +47,17 @@ _TRAIN_EXCLUDES = {
 
 _EVAL_BASE_KEEP = {"sample_saving"}
 _EVAL_STAGE_EXCLUDES = {
-    "vqvae": {"maskgit_metrics"},
-    "maskgit": {"vqvae_metrics"},
+    "vqvae": {
+        "maskgit_metrics",
+        "masked_cross_entropy",
+        "mask_accuracy",
+    },
+    "maskgit": {
+        "vqvae_metrics",
+        "vqvae_training_losses",
+        "reconstruction_loss",
+        "fid_logging",
+    },
 }
 
 
@@ -66,7 +85,13 @@ def select_callback_config(callbacks_cfg: Any, task: Any, *, stage: str) -> Any:
         excluded = _TRAIN_EXCLUDES[family]
         selected_keys = (callback_keys - excluded) | unknown_keys
     else:
-        keep = _EVAL_BASE_KEEP | {f"{family}_metrics"}
+        keep = _EVAL_BASE_KEEP | {
+            f"{family}_metrics",
+            "reconstruction_loss",
+            "fid_logging",
+            "masked_cross_entropy",
+            "mask_accuracy",
+        }
         selected_keys = (callback_keys & keep) | unknown_keys
 
     selected = {key: callbacks_cfg[key] for key in callbacks_cfg.keys() if key in selected_keys}

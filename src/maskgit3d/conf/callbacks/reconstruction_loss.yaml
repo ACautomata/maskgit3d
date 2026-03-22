@@ -1,0 +1,2 @@
+reconstruction_loss:
+  _target_: maskgit3d.callbacks.reconstruction_loss.ReconstructionLossCallback

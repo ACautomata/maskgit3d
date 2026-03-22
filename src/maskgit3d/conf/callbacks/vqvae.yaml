@@ -1,5 +1,7 @@
 defaults:
-  - vqvae_metrics
+  - vqvae_training_losses
+  - reconstruction_loss
+  - fid_logging
   - model_checkpoint
   - early_stopping
   - lr_monitor

@@ -1,0 +1,2 @@
+masked_cross_entropy:
+  _target_: maskgit3d.callbacks.masked_cross_entropy.MaskedCrossEntropyCallback

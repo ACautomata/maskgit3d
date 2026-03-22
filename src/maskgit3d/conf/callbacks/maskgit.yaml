@@ -1,5 +1,6 @@
 defaults:
-  - maskgit_metrics
+  - masked_cross_entropy
+  - mask_accuracy
   - model_checkpoint_maskgit
   - early_stopping_maskgit
   - lr_monitor

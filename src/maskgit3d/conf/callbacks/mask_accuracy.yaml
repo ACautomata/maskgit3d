@@ -1,0 +1,2 @@
+mask_accuracy:
+  _target_: maskgit3d.callbacks.mask_accuracy.MaskAccuracyCallback

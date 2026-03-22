@@ -1,9 +1,9 @@
-# Default callbacks configuration for maskgit-3d training
-# Includes essential callbacks for checkpointing, early stopping, and monitoring
-
 defaults:
-  - vqvae_metrics
-  - maskgit_metrics
+  - vqvae_training_losses
+  - reconstruction_loss
+  - fid_logging
+  - masked_cross_entropy
+  - mask_accuracy
   - model_checkpoint
   - model_checkpoint_maskgit
   - early_stopping
@@ -15,13 +15,3 @@ defaults:
   - training_stability
   - cuda_memory
   - _self_
-
-# Rich progress bar for better visualization (optional)
-# Uncomment if rich is installed:
-# - _target_: lightning.pytorch.callbacks.RichProgressBar
-#   theme:
-#     _target_: lightning.pytorch.callbacks.progress.rich_progress.RichProgressBarTheme
-#   description: "Training"
-
-# TQDM progress bar (default, always included by Trainer)
-# No explicit config needed

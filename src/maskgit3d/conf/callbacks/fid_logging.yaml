@@ -1,0 +1,4 @@
+fid_logging:
+  _target_: maskgit3d.callbacks.fid_logging.FIDCallback
+  spatial_dims: 3
+  perceptual_network: alex
