@@ -1,3 +1,65 @@
-vqvae_training_losses:
-  _target_: maskgit3d.callbacks.vqvae_training_losses.VQVAETrainingLossCallback
+# Individual VQVAE training loss callbacks - one per metric
+# Each callback logs a single loss component
+
+train_loss:
+  _target_: maskgit3d.callbacks.vqvae_training_losses.TrainingLossCallback
+  metric_name: loss
+  log_name: train/loss
+  prog_bar: true
+  log_every_n_steps: 1
+
+train_loss_g:
+  _target_: maskgit3d.callbacks.vqvae_training_losses.TrainingLossCallback
+  metric_name: loss_g
+  log_name: train/loss_g
+  prog_bar: false
+  log_every_n_steps: 1
+
+train_loss_d:
+  _target_: maskgit3d.callbacks.vqvae_training_losses.TrainingLossCallback
+  metric_name: loss_d
+  log_name: train/loss_d
+  prog_bar: false
+  log_every_n_steps: 1
+
+train_nll_loss:
+  _target_: maskgit3d.callbacks.vqvae_training_losses.TrainingLossCallback
+  metric_name: nll_loss
+  log_name: train/nll_loss
+  prog_bar: false
+  log_every_n_steps: 1
+
+train_rec_loss:
+  _target_: maskgit3d.callbacks.vqvae_training_losses.TrainingLossCallback
+  metric_name: rec_loss
+  log_name: train/rec_loss
+  prog_bar: false
+  log_every_n_steps: 1
+
+train_p_loss:
+  _target_: maskgit3d.callbacks.vqvae_training_losses.TrainingLossCallback
+  metric_name: p_loss
+  log_name: train/p_loss
+  prog_bar: false
+  log_every_n_steps: 1
+
+train_g_loss:
+  _target_: maskgit3d.callbacks.vqvae_training_losses.TrainingLossCallback
+  metric_name: g_loss
+  log_name: train/g_loss
+  prog_bar: false
+  log_every_n_steps: 1
+
+train_vq_loss:
+  _target_: maskgit3d.callbacks.vqvae_training_losses.TrainingLossCallback
+  metric_name: vq_loss
+  log_name: train/vq_loss
+  prog_bar: false
+  log_every_n_steps: 1
+
+train_disc_loss:
+  _target_: maskgit3d.callbacks.vqvae_training_losses.TrainingLossCallback
+  metric_name: disc_loss
+  log_name: train/disc_loss
+  prog_bar: false
   log_every_n_steps: 1

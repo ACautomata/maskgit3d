@@ -30,7 +30,7 @@ class TestCallbackIntegration:
             assert "early_stopping" in cfg.callbacks
             assert "lr_monitor" in cfg.callbacks
             assert "nan_detection" in cfg.callbacks
-            assert "vqvae_training_losses" in cfg.callbacks
+            assert "train_loss" in cfg.callbacks
             assert "masked_cross_entropy" in cfg.callbacks
             assert "best_checkpoint_maskgit" in cfg.callbacks
             assert "early_stopping_maskgit" in cfg.callbacks
@@ -54,7 +54,7 @@ class TestCallbackIntegration:
             assert selected is not None
             assert "masked_cross_entropy" in selected
             assert "mask_accuracy" in selected
-            assert "vqvae_training_losses" not in selected
+            assert "train_loss" not in selected
             assert selected.best_checkpoint_maskgit.monitor == "val_loss"
             assert selected.early_stopping_maskgit.monitor == "val_loss"
 
