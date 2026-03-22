@@ -195,17 +195,16 @@ def test_maskgit_task_training_step(vqvae_checkpoint: str):
         vqvae_ckpt_path=vqvae_checkpoint, hidden_size=128, num_layers=2, num_heads=4, lr=1e-4
     )
     x = torch.randn(1, 1, 16, 16, 16)
-    loss = task.training_step(x, 0)
-    pop_callback_payload = cast(Any, getattr(task, "pop_callback_payload"))
-    payload = cast(dict[str, Any] | None, pop_callback_payload("train"))
+    output: dict[str, Any] = cast(dict[str, Any], task.training_step(x, 0))
+    loss_value = output.get("loss")
+    mask_ratio = output.get("mask_ratio")
 
-    assert isinstance(loss, torch.Tensor)
-    assert loss.item() >= 0
-    assert payload is not None
-    assert set(payload) == {"tokens", "masked_logits", "masked_targets", "mask_ratio"}
-    assert payload["tokens"].dim() == 4
-    assert payload["masked_logits"].dim() == 2
-    assert payload["masked_targets"].dim() == 1
+    assert isinstance(output, dict)
+    assert set(output) == {"loss", "mask_ratio"}
+    assert isinstance(loss_value, torch.Tensor)
+    assert loss_value.item() >= 0
+    assert isinstance(mask_ratio, float)
+    assert 0.0 <= mask_ratio <= 1.0
 
 
 def test_maskgit_task_validation_step(vqvae_checkpoint: str):
@@ -221,7 +220,7 @@ def test_maskgit_task_validation_step(vqvae_checkpoint: str):
     assert "x_real" in outputs
     assert "masked_logits" in outputs
     assert "masked_targets" in outputs
-    assert "mask_ratio" in outputs
+    assert set(outputs) == {"x_real", "generated_images", "masked_logits", "masked_targets"}
     assert torch.equal(outputs["x_real"], x.cpu())
 
 
@@ -238,9 +237,7 @@ def test_maskgit_task_test_step(vqvae_checkpoint: str):
     assert "x_real" in outputs
     assert "masked_logits" in outputs
     assert "masked_targets" in outputs
-    assert "mask_ratio" in outputs
-    assert "input_shape" in outputs
-    assert "token_shape" in outputs
+    assert set(outputs) == {"x_real", "generated_images", "masked_logits", "masked_targets"}
     assert isinstance(outputs["generated_images"], torch.Tensor)
 
 
@@ -257,8 +254,7 @@ def test_maskgit_task_predict_step(vqvae_checkpoint: str):
     assert isinstance(outputs, dict)
     assert "x_real" in outputs
     assert "generated_images" in outputs
-    assert "input_shape" in outputs
-    assert "token_shape" in outputs
+    assert set(outputs) == {"x_real", "generated_images"}
     assert torch.equal(outputs["x_real"], x.cpu())
 
 
@@ -433,14 +429,19 @@ def test_maskgit_task_training_step_with_list_batch(vqvae_checkpoint: str):
     x = torch.randn(1, 1, 16, 16, 16)
     batch = [x]
 
-    loss = task.training_step(batch, 0)  # type: ignore[arg-type]
-    pop_callback_payload = cast(Any, getattr(task, "pop_callback_payload"))
-    payload = cast(dict[str, Any] | None, pop_callback_payload("train"))
+    output: dict[str, Any] = cast(
+        dict[str, Any],
+        task.training_step(batch, 0),  # type: ignore[arg-type]
+    )
+    loss_value = output.get("loss")
+    mask_ratio = output.get("mask_ratio")
 
-    assert isinstance(loss, torch.Tensor)
-    assert loss.item() >= 0
-    assert payload is not None
-    assert payload["tokens"].shape[0] == 1
+    assert isinstance(output, dict)
+    assert set(output) == {"loss", "mask_ratio"}
+    assert isinstance(loss_value, torch.Tensor)
+    assert loss_value.item() >= 0
+    assert isinstance(mask_ratio, float)
+    assert 0.0 <= mask_ratio <= 1.0
 
 
 def test_maskgit_task_validation_step_with_list_batch(vqvae_checkpoint: str):
@@ -634,8 +635,8 @@ class TestMaskGITTaskModelConfig:
         """MaskGITTask can be constructed with model_config DictConfig."""
         from omegaconf import DictConfig
 
-        from maskgit3d.models.maskgit import MaskGIT
-        from maskgit3d.tasks.maskgit_task import MaskGITTask
+        from src.maskgit3d.models.maskgit import MaskGIT
+        from src.maskgit3d.tasks.maskgit_task import MaskGITTask
 
         model_cfg = DictConfig(
             {
@@ -658,7 +659,7 @@ class TestMaskGITTaskModelConfig:
         """When model_config is provided, scalar transformer params are ignored."""
         from omegaconf import DictConfig
 
-        from maskgit3d.tasks.maskgit_task import MaskGITTask
+        from src.maskgit3d.tasks.maskgit_task import MaskGITTask
 
         model_cfg = DictConfig(
             {
@@ -678,8 +679,8 @@ class TestMaskGITTaskModelConfig:
 
     def test_scalar_params_still_work(self, vqvae_checkpoint):
         """Backward compat: scalar params still work without model_config."""
-        from maskgit3d.models.maskgit import MaskGIT
-        from maskgit3d.tasks.maskgit_task import MaskGITTask
+        from src.maskgit3d.models.maskgit import MaskGIT
+        from src.maskgit3d.tasks.maskgit_task import MaskGITTask
 
         task = MaskGITTask(
             vqvae_ckpt_path=str(vqvae_checkpoint),
@@ -693,7 +694,7 @@ class TestMaskGITTaskModelConfig:
         """model_config should be in hparams for checkpoint loading."""
         from omegaconf import DictConfig
 
-        from maskgit3d.tasks.maskgit_task import MaskGITTask
+        from src.maskgit3d.tasks.maskgit_task import MaskGITTask
 
         model_cfg = DictConfig(
             {

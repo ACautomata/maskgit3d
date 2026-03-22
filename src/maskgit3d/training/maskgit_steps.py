@@ -6,6 +6,8 @@ import torch
 import torch.nn.functional as F
 from omegaconf import OmegaConf
 
+from ..tasks.output_contracts import MaskGITEvalStepOutput, MaskGITTrainingStepOutput
+
 
 class MaskGITTrainingSteps:
     def __init__(
@@ -66,16 +68,20 @@ class MaskGITTrainingSteps:
         self,
         batch: torch.Tensor | tuple[Any, ...] | list[Any],
         encode_images_to_tokens_fn: Callable[[torch.Tensor], torch.Tensor],
-    ) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
+    ) -> MaskGITTrainingStepOutput:
         x = self.extract_input_tensor(batch)
         tokens = encode_images_to_tokens_fn(x)
-        return self._compute_masked_predictions(tokens)
+        loss, raw_data = self.compute_masked_loss(tokens)
+        return {
+            "loss": loss,
+            "mask_ratio": raw_data["mask_ratio"],
+        }
 
     def validation_step(
         self,
         batch: torch.Tensor | tuple[Any, ...] | list[Any],
         encode_images_to_tokens_fn: Callable[[torch.Tensor], torch.Tensor],
-    ) -> dict[str, Any]:
+    ) -> MaskGITEvalStepOutput:
         x = self.extract_input_tensor(batch)
         tokens = encode_images_to_tokens_fn(x)
         _, callback_payload = self._compute_masked_predictions(tokens)
@@ -91,39 +97,23 @@ class MaskGITTrainingSteps:
             "generated_images": generated_images.detach().cpu(),
             "masked_logits": cast(torch.Tensor, callback_payload["masked_logits"]).cpu(),
             "masked_targets": cast(torch.Tensor, callback_payload["masked_targets"]).cpu(),
-            "mask_ratio": float(callback_payload["mask_ratio"]),
-            "token_shape": tokens.shape,
         }
 
     def test_step(
         self,
         batch: torch.Tensor | tuple[Any, ...] | list[Any],
         encode_images_to_tokens_fn: Callable[[torch.Tensor], torch.Tensor],
-    ) -> dict[str, Any]:
-        x = self.extract_input_tensor(batch)
-        tokens = encode_images_to_tokens_fn(x)
-        _, callback_payload = self._compute_masked_predictions(tokens)
-        with torch.no_grad():
-            generated_images = self.maskgit.generate(
-                shape=tokens.shape,
-                temperature=1.0,
-                num_iterations=12,
-            )
-        return {
-            "x_real": x.detach().cpu(),
-            "generated_images": generated_images.detach().cpu(),
-            "masked_logits": cast(torch.Tensor, callback_payload["masked_logits"]).cpu(),
-            "masked_targets": cast(torch.Tensor, callback_payload["masked_targets"]).cpu(),
-            "mask_ratio": float(callback_payload["mask_ratio"]),
-            "input_shape": x.shape,
-            "token_shape": tokens.shape,
-        }
+    ) -> MaskGITEvalStepOutput:
+        return self.validation_step(
+            batch=batch,
+            encode_images_to_tokens_fn=encode_images_to_tokens_fn,
+        )
 
     def predict_step(
         self,
         batch: torch.Tensor | tuple[Any, ...] | list[Any],
         encode_images_to_tokens_fn: Callable[[torch.Tensor], torch.Tensor],
-    ) -> dict[str, Any]:
+    ) -> dict[str, torch.Tensor]:
         x = self.extract_input_tensor(batch)
         tokens = encode_images_to_tokens_fn(x)
         with torch.no_grad():
@@ -135,6 +125,4 @@ class MaskGITTrainingSteps:
         return {
             "x_real": x.detach().cpu(),
             "generated_images": generated_images.detach().cpu(),
-            "input_shape": x.shape,
-            "token_shape": tokens.shape,
         }

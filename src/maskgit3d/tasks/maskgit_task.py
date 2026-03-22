@@ -10,6 +10,7 @@ from ..models.maskgit import MaskGIT
 from ..models.vqvae import VQVAE
 from ..training import MaskGITTrainingSteps
 from .base_task import BaseTask
+from .output_contracts import MaskGITEvalStepOutput, MaskGITTrainingStepOutput
 
 if TYPE_CHECKING:
     from ..runtime.optimizer_factory import TransformerOptimizerFactory
@@ -185,19 +186,17 @@ class MaskGITTask(BaseTask):
 
     def training_step(
         self, batch: torch.Tensor | tuple[Any, ...] | list[Any], batch_idx: int
-    ) -> torch.Tensor:
+    ) -> MaskGITTrainingStepOutput:
         del batch_idx
         resolved_batch = cast(torch.Tensor | tuple[Any, ...] | list[Any], batch)
-        loss, callback_payload = self.training_steps.training_step(
+        return self.training_steps.training_step(
             batch=resolved_batch,
             encode_images_to_tokens_fn=self.encode_images_to_tokens,
         )
-        self.save_callback_payload("train", callback_payload)
-        return loss
 
     def validation_step(
         self, batch: torch.Tensor | tuple[Any, ...] | list[Any], batch_idx: int
-    ) -> dict[str, Any]:
+    ) -> MaskGITEvalStepOutput:
         del batch_idx
         resolved_batch = cast(torch.Tensor | tuple[Any, ...] | list[Any], batch)
         return self.training_steps.validation_step(
@@ -218,7 +217,7 @@ class MaskGITTask(BaseTask):
 
     def test_step(
         self, batch: torch.Tensor | tuple[Any, ...] | list[Any], batch_idx: int
-    ) -> dict[str, Any]:
+    ) -> MaskGITEvalStepOutput:
         del batch_idx
         resolved_batch = cast(torch.Tensor | tuple[Any, ...] | list[Any], batch)
         return self.training_steps.test_step(
@@ -228,7 +227,7 @@ class MaskGITTask(BaseTask):
 
     def predict_step(
         self, batch: torch.Tensor | tuple[Any, ...] | list[Any], batch_idx: int
-    ) -> dict[str, Any]:
+    ) -> dict[str, torch.Tensor]:
         del batch_idx
         resolved_batch = cast(torch.Tensor | tuple[Any, ...] | list[Any], batch)
         return self.training_steps.predict_step(
