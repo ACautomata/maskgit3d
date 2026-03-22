@@ -20,6 +20,7 @@ class VQVAEMetricsCallback(Callback):
     Args:
         log_every_n_steps: Log training metrics every N steps (0 = every step).
         log_val_every_n_batches: Log validation metrics every N batches.
+        use_fid: Whether to compute FID metric during validation.
 
     Example:
         >>> callback = VQVAEMetricsCallback()
@@ -37,7 +38,21 @@ class VQVAEMetricsCallback(Callback):
         self.log_val_every_n_batches = log_val_every_n_batches
         self._train_step_count = 0
         self.use_fid = use_fid
-        self.fid_metric = FIDMetric(spatial_dims=3) if use_fid else None
+        self._fid_metric: FIDMetric | None = None  # Lazily initialized
+
+    def _get_fid_metric(self, pl_module: LightningModule) -> FIDMetric | None:
+        """Get or lazily initialize FIDMetric with the correct device."""
+        if not self.use_fid:
+            return None
+
+        if self._fid_metric is None:
+            # Get device from the Lightning module (GPU if available)
+            device = getattr(pl_module, "device", None)
+            if device is None:
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self._fid_metric = FIDMetric(spatial_dims=3, device=device)
+
+        return self._fid_metric
 
     def on_train_batch_end(
         self,
@@ -136,15 +151,17 @@ class VQVAEMetricsCallback(Callback):
         pl_module.log("val_rec_loss", loss_l1, prog_bar=False)
 
         # Accumulate features for FID (compute at epoch end)
-        if self.use_fid and self.fid_metric is not None:
-            self.fid_metric.update(x_recon, x_real)
+        fid_metric = self._get_fid_metric(pl_module)
+        if fid_metric is not None:
+            fid_metric.update(x_recon, x_real)
 
     def on_validation_epoch_end(self, trainer: Trainer, pl_module: LightningModule) -> None:
         """Compute and log FID once per validation epoch."""
-        if self.use_fid and self.fid_metric is not None:
-            fid_score = self.fid_metric.compute()
+        fid_metric = self._get_fid_metric(pl_module)
+        if fid_metric is not None:
+            fid_score = fid_metric.compute()
             pl_module.log("val_fid", fid_score["fid"], prog_bar=True)
-            self.fid_metric.reset()
+            fid_metric.reset()
 
     def on_test_batch_end(
         self,
@@ -178,8 +195,9 @@ class VQVAEMetricsCallback(Callback):
         pl_module.log("loss_l1:test", loss_l1, prog_bar=False)
         pl_module.log("loss_vq:test", vq_loss, prog_bar=False)
 
-        if self.use_fid and self.fid_metric is not None:
-            self.fid_metric.update(x_recon, x_real)
+        fid_metric = self._get_fid_metric(pl_module)
+        if fid_metric is not None:
+            fid_metric.update(x_recon, x_real)
 
         if inference_time is not None:
             pl_module.log("inference_time:test", inference_time, prog_bar=True)
@@ -194,10 +212,11 @@ class VQVAEMetricsCallback(Callback):
 
     def on_test_epoch_end(self, trainer: Trainer, pl_module: LightningModule) -> None:
         """Compute and log FID once per test epoch."""
-        if self.use_fid and self.fid_metric is not None:
-            fid_score = self.fid_metric.compute()
+        fid_metric = self._get_fid_metric(pl_module)
+        if fid_metric is not None:
+            fid_score = fid_metric.compute()
             pl_module.log("fid:test", fid_score["fid"], prog_bar=True)
-            self.fid_metric.reset()
+            fid_metric.reset()
 
     def _get_callback_payload(
         self,

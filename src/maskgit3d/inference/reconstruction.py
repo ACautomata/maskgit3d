@@ -43,13 +43,18 @@ class VQVAEReconstructor:
         self,
         vqvae: Any,
         batch: torch.Tensor | Sequence[Any],
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Reconstruct input and return both reconstruction and vq_loss.
+
+        Returns:
+            Tuple of (reconstructed tensor, vq_loss tensor)
+        """
         x_real = self.extract_input_tensor(batch)
         inferer = self.get_sliding_window_inferer()
 
         if inferer is None:
-            recon, _ = vqvae(x_real)
-            return recon
+            recon, vq_loss = vqvae(x_real)
+            return recon, vq_loss
 
         original_shape = x_real.shape[2:]
         x_real_padded = self.pad_to_divisible(x_real)
@@ -72,7 +77,8 @@ class VQVAEReconstructor:
         )
 
         if not latent_needs_sliding_window:
-            return vqvae.decode(z_q)
+            decoded = vqvae.decode(z_q)
+            return decoded, torch.tensor(0.0, device=z_q.device)
 
         latent_inferer = SlidingWindowInferer(
             roi_size=latent_roi_size,
@@ -89,5 +95,5 @@ class VQVAEReconstructor:
         def decode_fn(latent_patch: torch.Tensor) -> torch.Tensor:
             return vqvae.decode(latent_patch)
 
-        decoded = latent_inferer(z_q, decode_fn)
-        return cast(torch.Tensor, decoded)
+        decoded = cast(torch.Tensor, latent_inferer(z_q, decode_fn))
+        return decoded, torch.tensor(0.0, device=z_q.device)

@@ -152,34 +152,30 @@ class VQVAETrainingSteps:
         if split == "test" and inferer is not None and torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
 
-        x_recon = self.reconstructor.reconstruct(self.vqvae, x_real)
-        vq_loss = self._extract_vq_loss(x_real)
-        vq_loss_tensor = self._ensure_tensor(vq_loss, x_real.device)
+        x_recon, vq_loss = self.reconstructor.reconstruct(self.vqvae, x_real)
 
         if split == "val":
             return {
                 "x_real": x_real.detach(),
                 "x_recon": x_recon.detach(),
-                "vq_loss": vq_loss_tensor.detach(),
+                "vq_loss": vq_loss.detach(),
             }
 
         return {
             "x_real": x_real.detach(),
             "x_recon": x_recon.detach(),
-            "vq_loss": vq_loss_tensor.detach(),
+            "vq_loss": vq_loss.detach(),
             "inference_time": 0.0,
             "use_sliding_window": inferer is not None,
         }
 
     def predict_step(self, batch: torch.Tensor | Sequence[Any]) -> dict[str, torch.Tensor]:
         x_real = self.extract_input_tensor(batch)
-        x_recon = self.reconstructor.reconstruct(self.vqvae, x_real)
-        vq_loss = self._extract_vq_loss(x_real)
-        vq_loss_tensor = self._ensure_tensor(vq_loss, x_real.device)
+        x_recon, vq_loss = self.reconstructor.reconstruct(self.vqvae, x_real)
         return {
             "x_real": x_real.detach(),
             "x_recon": x_recon.detach(),
-            "vq_loss": vq_loss_tensor.detach(),
+            "vq_loss": vq_loss.detach(),
         }
 
     def _extract_vq_loss(self, x_real: torch.Tensor) -> Any:

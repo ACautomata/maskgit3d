@@ -294,7 +294,10 @@ class VQVAETask(BaseTask):
             sched_g, sched_d = self.optimizer_factory.create_schedulers(
                 opt_g, opt_d, total_steps=total_steps
             )
-            return [opt_g, opt_d], [sched_g, sched_d]
+            return [opt_g, opt_d], [
+                {"scheduler": sched_g, "interval": "step"},
+                {"scheduler": sched_d, "interval": "step"},
+            ]
 
         from ..runtime.optimizer_factory import GANOptimizerFactory
 
@@ -314,7 +317,10 @@ class VQVAETask(BaseTask):
         )
         total_steps = self._get_total_steps()
         sched_g, sched_d = factory.create_schedulers(opt_g, opt_d, total_steps=total_steps)
-        return [opt_g, opt_d], [sched_g, sched_d]
+        return [opt_g, opt_d], [
+            {"scheduler": sched_g, "interval": "step"},
+            {"scheduler": sched_d, "interval": "step"},
+        ]
 
     def _get_total_steps(self) -> int | None:
         try:
