@@ -100,7 +100,6 @@ def test_training_step_returns_loss_dict() -> None:
     assert isinstance(outputs, dict)
     assert "loss" in outputs
     assert isinstance(outputs["loss"], torch.Tensor)
-    assert "mask_ratio" in outputs
 
 
 def test_validation_step_returns_raw_and_model_outputs() -> None:

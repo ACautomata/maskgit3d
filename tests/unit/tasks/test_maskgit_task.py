@@ -197,14 +197,11 @@ def test_maskgit_task_training_step(vqvae_checkpoint: str):
     x = torch.randn(1, 1, 16, 16, 16)
     output: dict[str, Any] = cast(dict[str, Any], task.training_step(x, 0))
     loss_value = output.get("loss")
-    mask_ratio = output.get("mask_ratio")
 
     assert isinstance(output, dict)
-    assert set(output) == {"loss", "mask_ratio"}
+    assert set(output) == {"loss"}
     assert isinstance(loss_value, torch.Tensor)
     assert loss_value.item() >= 0
-    assert isinstance(mask_ratio, float)
-    assert 0.0 <= mask_ratio <= 1.0
 
 
 def test_maskgit_task_validation_step(vqvae_checkpoint: str):
@@ -434,14 +431,11 @@ def test_maskgit_task_training_step_with_list_batch(vqvae_checkpoint: str):
         task.training_step(batch, 0),  # type: ignore[arg-type]
     )
     loss_value = output.get("loss")
-    mask_ratio = output.get("mask_ratio")
 
     assert isinstance(output, dict)
-    assert set(output) == {"loss", "mask_ratio"}
+    assert set(output) == {"loss"}
     assert isinstance(loss_value, torch.Tensor)
     assert loss_value.item() >= 0
-    assert isinstance(mask_ratio, float)
-    assert 0.0 <= mask_ratio <= 1.0
 
 
 def test_maskgit_task_validation_step_with_list_batch(vqvae_checkpoint: str):

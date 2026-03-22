@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any, Callable, cast
 
 import torch
-import torch.nn.functional as F
 from omegaconf import OmegaConf
 
 from ..tasks.output_contracts import MaskGITEvalStepOutput, MaskGITTrainingStepOutput
@@ -25,28 +24,16 @@ class MaskGITTrainingSteps:
             return cast(torch.Tensor, batch[0])
         return batch
 
-    def compute_masked_loss(
+    def _get_masked_predictions_for_training(
         self, tokens: torch.Tensor, mask_ratio: float | None = None
-    ) -> tuple[torch.Tensor, dict[str, int | float]]:
-        loss, callback_payload = self._compute_masked_predictions(tokens, mask_ratio=mask_ratio)
-        masked_logits = cast(torch.Tensor, callback_payload["masked_logits"])
-        masked_targets = cast(torch.Tensor, callback_payload["masked_targets"])
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
+        """Compute masked predictions and loss for training.
 
-        with torch.no_grad():
-            predictions = masked_logits.argmax(dim=-1)
-            correct = (predictions == masked_targets).sum().item()
-            total = masked_targets.numel()
+        Returns:
+            Tuple of (loss, masked_logits, masked_targets, mask_ratio)
+        """
+        import torch.nn.functional as F
 
-        raw_data: dict[str, int | float] = {
-            "correct": correct,
-            "total": total,
-            "mask_ratio": float(callback_payload["mask_ratio"]),
-        }
-        return loss, raw_data
-
-    def _compute_masked_predictions(
-        self, tokens: torch.Tensor, mask_ratio: float | None = None
-    ) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         batch_size = tokens.shape[0]
         tokens_flat = tokens.view(batch_size, -1)
         effective_mask_ratio = (
@@ -57,12 +44,26 @@ class MaskGITTrainingSteps:
             mask_ratio=effective_mask_ratio,
         )
         loss = F.cross_entropy(masked_logits, masked_targets)
-        return loss, {
-            "tokens": tokens.detach(),
-            "masked_logits": masked_logits.detach(),
-            "masked_targets": masked_targets.detach(),
-            "mask_ratio": float(effective_mask_ratio),
-        }
+        return loss, masked_logits.detach(), masked_targets.detach(), float(effective_mask_ratio)
+
+    def _get_masked_predictions_for_eval(
+        self, tokens: torch.Tensor, mask_ratio: float | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor, float]:
+        """Get masked predictions for evaluation without computing loss.
+
+        Returns:
+            Tuple of (masked_logits, masked_targets, mask_ratio)
+        """
+        batch_size = tokens.shape[0]
+        tokens_flat = tokens.view(batch_size, -1)
+        effective_mask_ratio = (
+            self.maskgit.mask_scheduler.sample_mask_ratio() if mask_ratio is None else mask_ratio
+        )
+        masked_logits, masked_targets, _ = self.maskgit.transformer.predict_masked(
+            tokens_flat,
+            mask_ratio=effective_mask_ratio,
+        )
+        return masked_logits.detach(), masked_targets.detach(), float(effective_mask_ratio)
 
     def training_step(
         self,
@@ -71,11 +72,39 @@ class MaskGITTrainingSteps:
     ) -> MaskGITTrainingStepOutput:
         x = self.extract_input_tensor(batch)
         tokens = encode_images_to_tokens_fn(x)
-        loss, raw_data = self.compute_masked_loss(tokens)
-        return {
-            "loss": loss,
-            "mask_ratio": raw_data["mask_ratio"],
+        loss, _, _, _ = self._get_masked_predictions_for_training(tokens)
+        return {"loss": loss}
+
+    def compute_masked_loss(
+        self, tokens: torch.Tensor, mask_ratio: float | None = None
+    ) -> tuple[torch.Tensor, dict[str, int | float]]:
+        """Compute masked loss and return raw data for testing.
+
+        This method is used for testing/debugging and returns loss
+        plus raw data for metrics computation.
+
+        Args:
+            tokens: Token indices tensor
+            mask_ratio: Optional explicit mask ratio
+
+        Returns:
+            Tuple of (loss, raw_data dict with correct/total/mask_ratio)
+        """
+        loss, masked_logits, masked_targets, effective_mask_ratio = (
+            self._get_masked_predictions_for_training(tokens, mask_ratio=mask_ratio)
+        )
+
+        with torch.no_grad():
+            predictions = masked_logits.argmax(dim=-1)
+            correct = (predictions == masked_targets).sum().item()
+            total = masked_targets.numel()
+
+        raw_data: dict[str, int | float] = {
+            "correct": correct,
+            "total": total,
+            "mask_ratio": effective_mask_ratio,
         }
+        return loss, raw_data
 
     def validation_step(
         self,
@@ -84,7 +113,7 @@ class MaskGITTrainingSteps:
     ) -> MaskGITEvalStepOutput:
         x = self.extract_input_tensor(batch)
         tokens = encode_images_to_tokens_fn(x)
-        _, callback_payload = self._compute_masked_predictions(tokens)
+        masked_logits, masked_targets, _ = self._get_masked_predictions_for_eval(tokens)
 
         with torch.no_grad():
             generated_images = self.maskgit.generate(
@@ -95,8 +124,8 @@ class MaskGITTrainingSteps:
         return {
             "x_real": x.detach().cpu(),
             "generated_images": generated_images.detach().cpu(),
-            "masked_logits": cast(torch.Tensor, callback_payload["masked_logits"]).cpu(),
-            "masked_targets": cast(torch.Tensor, callback_payload["masked_targets"]).cpu(),
+            "masked_logits": masked_logits.cpu(),
+            "masked_targets": masked_targets.cpu(),
         }
 
     def test_step(

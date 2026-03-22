@@ -15,17 +15,14 @@ class MaskedCrossEntropyCallback(Callback):
 
     Args:
         log_train_every_n_steps: Log training loss every N steps (default: 1).
-        log_val_every_n_batches: Log validation loss every N batches (default: 1).
     """
 
     def __init__(
         self,
         log_train_every_n_steps: int = 1,
-        log_val_every_n_batches: int = 1,
     ) -> None:
         super().__init__()
         self.log_train_every_n_steps = log_train_every_n_steps
-        self.log_val_every_n_batches = log_val_every_n_batches
         self._train_step_count = 0
 
     def on_train_batch_end(
@@ -52,15 +49,6 @@ class MaskedCrossEntropyCallback(Callback):
             loss = outputs["loss"]
             if isinstance(loss, torch.Tensor):
                 pl_module.log("train/loss", loss, prog_bar=True)
-
-        if isinstance(outputs, dict) and "mask_ratio" in outputs:
-            mask_ratio = outputs["mask_ratio"]
-            if isinstance(mask_ratio, int | float):
-                pl_module.log(
-                    "train/mask_ratio",
-                    torch.tensor(float(mask_ratio)),
-                    prog_bar=False,
-                )
 
     def on_validation_batch_end(
         self,

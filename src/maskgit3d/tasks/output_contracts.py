@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import NotRequired, TypedDict
+from typing import TypedDict
 
 import torch
 
@@ -46,11 +46,9 @@ class MaskGITTrainingStepOutput(TypedDict):
 
     Returns a dictionary containing:
         - loss: Scalar loss tensor for backward pass
-        - mask_ratio: Actual mask ratio used (float)
     """
 
     loss: torch.Tensor
-    mask_ratio: NotRequired[float]
 
 
 class MaskGITEvalStepOutput(TypedDict):
