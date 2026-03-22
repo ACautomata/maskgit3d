@@ -1,0 +1,51 @@
+# Lightweight VQVAE Model Configuration for MedMNIST 3D
+# Optimized for small dataset (~1000 training samples)
+#
+# Key differences from default vqvae.yaml:
+# - Halved channel counts: [32, 64, 128] vs [64, 128, 256, 256]
+# - Reduced downsampling: x4 (2 levels) vs x8 (3 levels)
+# - Smaller latent dimension: 128 vs 256
+# - Smaller codebook: 4096 vs 8192
+#
+# This reduces model capacity to prevent overfitting on small datasets.
+# Estimated parameters: ~10M vs ~50M in default config.
+#
+# Usage:
+#   maskgit3d-train model=vqvae_small task=vqvae_medmnist
+
+_target_: maskgit3d.models.vqvae.VQVAE
+
+in_channels: 1
+out_channels: 1
+
+# Reduced latent dimension for smaller model
+latent_channels: 128
+num_embeddings: 4096
+embedding_dim: 128
+
+# Halved channels, x4 downsampling (3 levels = 2 downsampling steps)
+# Original: [64, 128, 256, 256] → x8 downsampling
+# This:     [32, 64, 128] → x4 downsampling
+num_channels:
+  - 32
+  - 64
+  - 128
+
+# Residual blocks per level
+num_res_blocks:
+  - 2
+  - 2
+  - 2
+
+# Attention at deepest level only
+attention_levels:
+  - false
+  - false
+  - true
+
+# VQ commitment cost
+commitment_cost: 0.5
+
+# Data parallelism
+num_splits: 1
+dim_split: 0

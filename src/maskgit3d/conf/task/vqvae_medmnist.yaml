@@ -1,0 +1,79 @@
+# VQVAE Task Configuration for MedMNIST 3D Dataset
+# Optimized for small dataset (~1000 training samples)
+#
+# Key differences from default vqvae.yaml:
+# - Lower disc_start to enable GAN within reasonable epochs
+# - Smaller warmup_steps for faster training start
+# - Lower min_lr_ratio for better final convergence
+#
+# Usage:
+#   # Quick start with optimized model:
+#   maskgit3d-train task=vqvae_medmnist model=vqvae_small
+#
+#   # Or use the medmnist training config (recommended):
+#   maskgit3d-train --config-name train_medmnist
+#
+#   # Custom epochs:
+#   maskgit3d-train --config-name train_medmnist trainer.max_epochs=200
+
+_target_: maskgit3d.tasks.vqvae_task.VQVAETask
+
+model_config: ${model}
+optimizer_config: ${optimizer}
+disc_optimizer_config: ${optimizer}
+data_config: ${data}
+
+# Learning rates (keep same as default)
+lr_g: 1.0e-4
+lr_d: 1.0e-4
+
+# Weight decay
+weight_decay_g: 0.01
+weight_decay_d: 0.0
+
+# Learning rate schedule
+# MedMNIST with batch_size=64: ~15 steps/epoch
+# 100 epochs = ~1500 total steps
+# Warmup for first ~3-5 epochs
+warmup_steps: 50
+min_lr_ratio: 0.01  # Lower than default (0.1) for better final convergence
+
+# Loss weights
+lambda_l1: 1.0
+lambda_vq: 1.0
+lambda_gan: 0.1
+
+# Perceptual loss (LPIPS)
+use_perceptual: true
+lambda_perceptual: 0.1
+perceptual_network: alex
+
+# GAN / Discriminator settings
+# CRITICAL: disc_start adjusted for MedMNIST's small size
+# - batch_size=64 → ~15 steps/epoch
+# - disc_start=150 means GAN starts at epoch ~10
+# - This ensures model learns basic reconstruction before adversarial training
+disc_start: 150
+disc_factor: 1.0
+use_adaptive_weight: true
+adaptive_weight_max: 100.0
+disc_loss: hinge
+
+# Gradient clipping
+gradient_clip_enabled: true
+gradient_clip_val: 1.0
+
+# Data parallelism (not needed for single GPU)
+num_splits: null
+dim_split: 0
+
+# Sliding window inference (disabled for training)
+sliding_window:
+  enabled: false
+  roi_size: [32, 32, 32]
+  overlap: 0.25
+  mode: gaussian
+  sigma_scale: 0.125
+  sw_batch_size: 4
+  sw_device: null
+  device: null
