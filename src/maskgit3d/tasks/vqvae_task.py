@@ -14,6 +14,7 @@ from ..models.vqvae.splitting import compute_downsampling_factor, resolve_num_sp
 from ..training import VQVAETrainingSteps
 from .base_task import BaseTask
 from .gan_training_strategy import GANTrainingStrategy
+from .output_contracts import VQVAEEvalStepOutput, VQVAETrainingStepOutput
 
 if TYPE_CHECKING:
     from ..runtime.optimizer_factory import GANOptimizerFactory
@@ -262,27 +263,25 @@ class VQVAETask(BaseTask):
         batch: torch.Tensor | Sequence[Any],
         batch_idx: int,
         optimizers: list[torch.optim.Optimizer] | None = None,
-    ) -> torch.Tensor:
+    ) -> VQVAETrainingStepOutput:
         resolved_optimizers = (
             cast(list[torch.optim.Optimizer], self.optimizers())
             if optimizers is None
             else optimizers
         )
-        loss, callback_payload = self.training_steps.training_step(
+        return self.training_steps.training_step(
             batch=batch,
             batch_idx=batch_idx,
             optimizers=resolved_optimizers,
             global_step=self.global_step,
             manual_backward_fn=self.manual_backward,
         )
-        self.save_callback_payload("train", callback_payload)
-        return loss
 
     def validation_step(
         self, batch: torch.Tensor | Sequence[Any], batch_idx: int
-    ) -> dict[str, Any]:
+    ) -> VQVAEEvalStepOutput:
         del batch_idx
-        return self.training_steps.reconstruction_step(batch=batch, split="val")
+        return self.training_steps.reconstruction_step(batch=batch)
 
     def configure_optimizers(self) -> Any:
         if self.optimizer_factory is not None:
@@ -331,12 +330,12 @@ class VQVAETask(BaseTask):
         return None
 
     @torch.no_grad()
-    def test_step(self, batch: torch.Tensor | Sequence[Any], batch_idx: int) -> dict[str, Any]:
+    def test_step(self, batch: torch.Tensor | Sequence[Any], batch_idx: int) -> VQVAEEvalStepOutput:
         del batch_idx
-        return self.training_steps.reconstruction_step(batch=batch, split="test")
+        return self.training_steps.reconstruction_step(batch=batch)
 
     def predict_step(
         self, batch: torch.Tensor | Sequence[Any], batch_idx: int
-    ) -> dict[str, torch.Tensor]:
+    ) -> VQVAEEvalStepOutput:
         del batch_idx
-        return self.training_steps.predict_step(batch)
+        return self.training_steps.reconstruction_step(batch)

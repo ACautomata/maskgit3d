@@ -6,6 +6,7 @@ from typing import Any, Callable
 import torch
 
 from ..inference import VQVAEReconstructor
+from ..tasks.output_contracts import VQVAEEvalStepOutput, VQVAETrainingStepOutput
 from ..tasks.gan_training_strategy import GANTrainingStrategy
 
 
@@ -92,7 +93,7 @@ class VQVAETrainingSteps:
         optimizers: Sequence[Any],
         global_step: int,
         manual_backward_fn: Callable[[torch.Tensor], None] | None = None,
-    ) -> tuple[torch.Tensor, dict[str, torch.Tensor | torch.nn.Parameter | None]]:
+    ) -> VQVAETrainingStepOutput:
         backward = manual_backward_fn or self.manual_backward_fn
         if backward is None:
             raise ValueError("training_step requires manual_backward_fn.")
@@ -115,16 +116,10 @@ class VQVAETrainingSteps:
         backward(loss_g)
         self.gan_strategy.step_generator(opt_g, loss_g, self.vqvae)
 
-        callback_payload: dict[str, torch.Tensor | torch.nn.Parameter | None] = {
-            "x_real": x_real.detach(),
-            "x_recon": x_recon.detach(),
-            "vq_loss": vq_loss.detach(),
-            "last_layer": last_layer,
-        }
-
         x_recon_detached = x_recon.detach()
         returned_loss = loss_g.detach()
-        del log_g, x_recon
+        zero = torch.zeros((), device=returned_loss.device, dtype=returned_loss.dtype)
+        del x_recon, last_layer, batch_idx
 
         loss_d, log_d = self.shared_step_discriminator(
             x_real=x_real,
@@ -138,45 +133,33 @@ class VQVAETrainingSteps:
         backward(loss_d)
         self.gan_strategy.step_discriminator(opt_d, loss_d)
 
-        del x_real, x_recon_detached, loss_d, log_d, vq_loss, batch_idx, loss_g
-        return returned_loss, callback_payload
+        output: VQVAETrainingStepOutput = {
+            "loss": returned_loss,
+            "loss_g": returned_loss,
+            "loss_d": loss_d.detach(),
+            "nll_loss": log_g.get("train/nll_loss", zero).detach(),
+            "rec_loss": log_g.get("train/rec_loss", zero).detach(),
+            "p_loss": log_g.get("train/p_loss", zero).detach(),
+            "g_loss": log_g.get("train/g_loss", zero).detach(),
+            "vq_loss": log_g.get("train/vq_loss", zero).detach(),
+            "disc_loss": log_d.get("train/disc_loss", zero).detach(),
+        }
+        del x_real, x_recon_detached, loss_d, log_d, vq_loss, loss_g, log_g, zero
+        return output
 
     def reconstruction_step(
         self,
         batch: torch.Tensor | Sequence[Any],
-        split: str,
-    ) -> dict[str, Any]:
+    ) -> VQVAEEvalStepOutput:
         x_real = self.extract_input_tensor(batch)
-        inferer = self.get_sliding_window_inferer()
-
-        if split == "test" and inferer is not None and torch.cuda.is_available():
-            torch.cuda.reset_peak_memory_stats()
-
-        x_recon, vq_loss = self.reconstructor.reconstruct(self.vqvae, x_real)
-
-        if split == "val":
-            return {
-                "x_real": x_real.detach(),
-                "x_recon": x_recon.detach(),
-                "vq_loss": vq_loss.detach(),
-            }
-
+        x_recon, _ = self.reconstructor.reconstruct(self.vqvae, x_real)
         return {
-            "x_real": x_real.detach(),
-            "x_recon": x_recon.detach(),
-            "vq_loss": vq_loss.detach(),
-            "inference_time": 0.0,
-            "use_sliding_window": inferer is not None,
+            "x_real": x_real.detach().cpu(),
+            "x_recon": x_recon.detach().cpu(),
         }
 
-    def predict_step(self, batch: torch.Tensor | Sequence[Any]) -> dict[str, torch.Tensor]:
-        x_real = self.extract_input_tensor(batch)
-        x_recon, vq_loss = self.reconstructor.reconstruct(self.vqvae, x_real)
-        return {
-            "x_real": x_real.detach(),
-            "x_recon": x_recon.detach(),
-            "vq_loss": vq_loss.detach(),
-        }
+    def predict_step(self, batch: torch.Tensor | Sequence[Any]) -> VQVAEEvalStepOutput:
+        return self.reconstruction_step(batch)
 
     def _extract_vq_loss(self, x_real: torch.Tensor) -> Any:
         encode = getattr(self.vqvae, "encode", None)
