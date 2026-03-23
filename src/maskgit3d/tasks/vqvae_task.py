@@ -277,11 +277,17 @@ class VQVAETask(BaseTask):
             manual_backward_fn=self.manual_backward,
         )
 
+    @torch.no_grad()
     def validation_step(
         self, batch: torch.Tensor | Sequence[Any], batch_idx: int
     ) -> VQVAEEvalStepOutput:
         del batch_idx
-        return self.training_steps.reconstruction_step(batch=batch)
+        x_real = self._extract_input_tensor(batch)
+        x_recon, _ = self.vqvae(x_real)
+        return {
+            "x_real": x_real.detach().cpu(),
+            "x_recon": x_recon.detach().cpu(),
+        }
 
     def configure_optimizers(self) -> Any:
         if self.optimizer_factory is not None:

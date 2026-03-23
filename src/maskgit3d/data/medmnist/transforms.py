@@ -3,7 +3,7 @@
 from collections.abc import Callable
 
 from monai.transforms.compose import Compose
-from monai.transforms.croppad.array import CenterSpatialCrop, RandSpatialCrop, SpatialPad
+from monai.transforms.croppad.array import RandSpatialCrop, SpatialPad
 from monai.transforms.intensity.array import ScaleIntensity, ScaleIntensityRange
 from monai.transforms.spatial.array import Resize
 from monai.transforms.utility.array import EnsureType
@@ -53,14 +53,14 @@ def create_training_transforms(config: MedMNISTConfig) -> Callable:
 def create_validation_transforms(config: MedMNISTConfig) -> Callable:
     """Create validation transforms pipeline.
 
-    Uses center crop to match training spatial size, enabling single forward pass
-    without sliding window inference. Deterministic for reproducibility.
+    Uses random crop (same as training) to match training spatial size.
+    Enables single forward pass without sliding window inference.
 
     Pipeline:
     1. EnsureType - Ensure tensor type
     2. SpatialPad - Pad to crop_size if smaller
     3. ScaleIntensityRange - Normalize [0,255] to [-1,1]
-    4. CenterSpatialCrop - Center crop to crop_size (deterministic)
+    4. RandSpatialCrop - Random crop to crop_size (same as training)
 
     Args:
         config: MedMNIST configuration
@@ -82,7 +82,11 @@ def create_validation_transforms(config: MedMNISTConfig) -> Callable:
                 b_min=-1.0,
                 b_max=1.0,
             ),
-            CenterSpatialCrop(roi_size=crop_size),
+            RandSpatialCrop(
+                roi_size=crop_size,
+                random_center=True,
+                random_size=False,
+            ),
         ]
     )
 
