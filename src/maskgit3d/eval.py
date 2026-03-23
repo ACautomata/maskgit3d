@@ -3,6 +3,7 @@ from typing import Any
 
 import hydra
 from hydra.utils import instantiate, to_absolute_path
+from lightning import seed_everything
 from lightning.pytorch import LightningModule
 from omegaconf import DictConfig, OmegaConf
 
@@ -21,6 +22,10 @@ def _build_eval_task(cfg: DictConfig, ckpt_path: str) -> LightningModule:
 
 @hydra.main(version_base=None, config_path="conf", config_name="eval")
 def main(cfg: DictConfig) -> None:
+    seed = cfg.get("seed")
+    if seed is not None:
+        seed_everything(int(seed), workers=True)
+
     ckpt_path = _resolve_required_ckpt_path(cfg.get("ckpt_path"))
     task: LightningModule = _build_eval_task(cfg, ckpt_path)
 

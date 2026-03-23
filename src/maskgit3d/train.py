@@ -3,6 +3,7 @@ from typing import Any
 
 import hydra
 from hydra.utils import instantiate, to_absolute_path
+from lightning import seed_everything
 from omegaconf import DictConfig, OmegaConf
 
 from maskgit3d.runtime.callback_selection import select_callback_config
@@ -20,6 +21,10 @@ def _build_training_task(cfg: DictConfig):
 
 @hydra.main(version_base=None, config_path="conf", config_name="train")
 def main(cfg: DictConfig) -> None:
+    seed = cfg.get("seed")
+    if seed is not None:
+        seed_everything(int(seed), workers=True)
+
     datamodule = instantiate(cfg.data)
     task = _build_training_task(cfg)
 

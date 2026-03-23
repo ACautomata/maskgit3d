@@ -54,6 +54,47 @@ def test_train_main_passes_resolved_checkpoint_path(monkeypatch: pytest.MonkeyPa
     )
 
 
+def test_train_main_seeds_when_seed_is_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = OmegaConf.create(
+        {
+            "seed": 42,
+            "data": {"_target_": "tests.DataModule"},
+            "task": {"_target_": "tests.Task"},
+            "trainer": {"_target_": "tests.Trainer"},
+            "callbacks": None,
+            "logger": None,
+            "checkpoint_path": None,
+        }
+    )
+
+    datamodule = Mock(name="datamodule")
+    task = Mock(name="task")
+    trainer = Mock(name="trainer")
+    seed_calls: list[tuple[int, bool]] = []
+
+    def fake_instantiate(config, **kwargs):
+        target = config.get("_target_")
+        if target == "tests.DataModule":
+            return datamodule
+        if target == "tests.Trainer":
+            assert kwargs == {}
+            return trainer
+        raise AssertionError(f"Unexpected target: {target}")
+
+    monkeypatch.setattr(train_module, "instantiate", fake_instantiate)
+    monkeypatch.setattr(train_module, "_build_training_task", lambda cfg: task)
+    monkeypatch.setattr(
+        train_module,
+        "seed_everything",
+        lambda seed, workers: seed_calls.append((seed, workers)),
+    )
+
+    train_module.main.__wrapped__(cfg)
+
+    assert seed_calls == [(42, True)]
+    trainer.fit.assert_called_once_with(task, datamodule=datamodule, ckpt_path=None)
+
+
 def test_eval_main_requires_ckpt_path() -> None:
     cfg = OmegaConf.create(
         {
@@ -123,6 +164,47 @@ def test_eval_main_loads_checkpoint_and_runs_requested_stage(
     eval_module.main.__wrapped__(cfg)
 
     getattr(trainer, trainer_method).assert_called_once_with(loaded_task, datamodule=datamodule)
+
+
+def test_eval_main_seeds_when_seed_is_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = OmegaConf.create(
+        {
+            "seed": 7,
+            "data": {"_target_": "tests.DataModule"},
+            "task": {"_target_": "tests.Task"},
+            "trainer": {"_target_": "tests.Trainer"},
+            "ckpt_path": "checkpoints/best.ckpt",
+            "mode": "validate",
+        }
+    )
+
+    datamodule = Mock(name="datamodule")
+    trainer = Mock(name="trainer")
+    loaded_task = Mock(name="loaded_task")
+    seed_calls: list[tuple[int, bool]] = []
+
+    def fake_instantiate(config, **kwargs):
+        target = config.get("_target_")
+        if target == "tests.DataModule":
+            return datamodule
+        if target == "tests.Trainer":
+            assert kwargs == {}
+            return trainer
+        raise AssertionError(f"Unexpected target: {target}")
+
+    monkeypatch.setattr(eval_module, "instantiate", fake_instantiate)
+    monkeypatch.setattr(eval_module, "_build_eval_task", lambda cfg, ckpt_path: loaded_task)
+    monkeypatch.setattr(eval_module, "to_absolute_path", lambda path: f"/abs/{path}")
+    monkeypatch.setattr(
+        eval_module,
+        "seed_everything",
+        lambda seed, workers: seed_calls.append((seed, workers)),
+    )
+
+    eval_module.main.__wrapped__(cfg)
+
+    assert seed_calls == [(7, True)]
+    trainer.validate.assert_called_once_with(loaded_task, datamodule=datamodule)
 
 
 def test_packaged_config_targets_use_installable_namespace() -> None:

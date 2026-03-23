@@ -1,0 +1,13 @@
+defaults:
+  - /callbacks/vqvae_training_losses@_here_
+  - /callbacks/reconstruction_loss@_here_
+  - /callbacks/fid_logging@_here_
+  - /callbacks/model_checkpoint_vqvae_fid@_here_
+  - /callbacks/early_stopping_vqvae_fid@_here_
+  - /callbacks/lr_monitor@_here_
+  - /callbacks/nan_detection@_here_
+  - /callbacks/training_time@_here_
+  - /callbacks/gradient_norm@_here_
+  - /callbacks/training_stability@_here_
+  - /callbacks/cuda_memory@_here_
+  - _self_

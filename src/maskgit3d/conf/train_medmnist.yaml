@@ -13,7 +13,7 @@ defaults:
   - data: medmnist3d
   - optimizer: adam
   - trainer: default
-  - optional callbacks: default
+  - optional callbacks: vqvae_medmnist
   - optional logger: tensorboard
 
 seed: 42

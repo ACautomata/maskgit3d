@@ -24,8 +24,8 @@ disc_optimizer_config: ${optimizer}
 data_config: ${data}
 
 # Learning rates (adjusted for smaller batch size)
-lr_g: 5.0e-5
-lr_d: 5.0e-5
+lr_g: 2.0e-4
+lr_d: 2.0e-4
 
 # Weight decay
 weight_decay_g: 0.01

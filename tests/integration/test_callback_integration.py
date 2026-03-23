@@ -7,10 +7,8 @@ from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
 
-from maskgit3d.callbacks.vqvae_training_losses import TrainingLossCallback
-from maskgit3d.callbacks.masked_cross_entropy import MaskedCrossEntropyCallback
-from maskgit3d.runtime.callback_selection import select_callback_config
 from maskgit3d import train as train_module
+from maskgit3d.runtime.callback_selection import select_callback_config
 
 
 class TestCallbackIntegration:
@@ -99,8 +97,8 @@ class TestCallbackIntegration:
             assert len(trainer.callbacks) >= len(callbacks)
 
     def test_vqvae_validation_metrics_are_logged_by_callback(self):
-        from maskgit3d.tasks.vqvae_task import VQVAETask
         from maskgit3d.callbacks.reconstruction_loss import ReconstructionLossCallback
+        from maskgit3d.tasks.vqvae_task import VQVAETask
 
         task = VQVAETask(
             in_channels=1,
@@ -127,8 +125,8 @@ class TestCallbackIntegration:
         assert "val_rec_loss" in logged
 
     def test_maskgit_validation_metrics_are_logged_by_callback(self):
-        from maskgit3d.tasks.maskgit_task import MaskGITTask
         from maskgit3d.callbacks.mask_accuracy import MaskAccuracyCallback
+        from maskgit3d.tasks.maskgit_task import MaskGITTask
 
         task = MaskGITTask(hidden_size=128, num_layers=2, num_heads=4, lr=1e-4)
         logged: dict[str, object] = {}
@@ -174,6 +172,16 @@ class TestCallbackIntegration:
             assert "sample_saving" in cfg.callbacks
             assert "reconstruction_loss" in cfg.callbacks
             assert "masked_cross_entropy" in cfg.callbacks
+
+    def test_train_medmnist_uses_fid_for_vqvae_selection(self):
+        from pathlib import Path
+
+        config_dir = str(Path(__file__).parent.parent.parent / "src/maskgit3d/conf")
+        with initialize_config_dir(config_dir=config_dir, version_base=None):
+            cfg = compose(config_name="train_medmnist")
+
+            assert cfg.callbacks.best_checkpoint.monitor == "val_fid"
+            assert cfg.callbacks.early_stopping.monitor == "val_fid"
 
     def test_train_main_with_default_callbacks(self, monkeypatch):
         """Test that train.main converts callbacks dict to list for Trainer."""
