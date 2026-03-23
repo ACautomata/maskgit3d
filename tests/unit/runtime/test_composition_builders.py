@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import torch
 from omegaconf import OmegaConf
 
 from src.maskgit3d.losses.vq_perceptual_loss import VQPerceptualLoss
@@ -60,12 +61,23 @@ def test_build_vqvae_task_returns_assembled_task() -> None:
     assert _matches_type(task.training_steps, VQVAETrainingSteps)
 
 
-def test_build_maskgit_task_returns_assembled_task(monkeypatch) -> None:
+def test_build_maskgit_task_returns_assembled_task(tmp_path) -> None:
+    # Create a temporary checkpoint file with model config
+    ckpt_path = tmp_path / "vqvae.ckpt"
+    vqvae = create_vqvae_model(OmegaConf.create(_vqvae_model_config()))
+    torch.save(
+        {
+            "state_dict": vqvae.state_dict(),
+            "hyper_parameters": {"model_config": _vqvae_model_config()},
+        },
+        ckpt_path,
+    )
+
     cfg = OmegaConf.create(
         {
             "task": {
                 "_target_": "maskgit3d.tasks.maskgit_task.MaskGITTask",
-                "vqvae_ckpt_path": "/tmp/vqvae.ckpt",
+                "vqvae_ckpt_path": str(ckpt_path),
                 "warmup_steps": 10,
             },
             "model": {
@@ -81,11 +93,6 @@ def test_build_maskgit_task_returns_assembled_task(monkeypatch) -> None:
             },
             "optimizer": {"_target_": "torch.optim.AdamW", "lr": 1e-4, "weight_decay": 0.01},
         }
-    )
-
-    monkeypatch.setattr(
-        "src.maskgit3d.runtime.composition.load_vqvae_from_checkpoint",
-        lambda _: create_vqvae_model(OmegaConf.create(_vqvae_model_config())),
     )
 
     task = build_maskgit_task(cfg)

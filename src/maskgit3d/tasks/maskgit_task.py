@@ -1,7 +1,7 @@
 """MaskGIT training task with automatic optimization."""
 
-from typing import TYPE_CHECKING, Any, cast
 import warnings
+from typing import TYPE_CHECKING, Any, cast
 
 import torch
 from omegaconf import DictConfig
@@ -47,6 +47,8 @@ class MaskGITTask(BaseTask):
         weight_decay: Weight decay for optimizer.
         warmup_steps: Number of warmup steps for learning rate scheduler.
     """
+
+    optimizer_factory: "TransformerOptimizerFactory | None"
 
     def __init__(
         self,
@@ -119,12 +121,12 @@ class MaskGITTask(BaseTask):
         self.save_hyperparameters(ignore=["vqvae_ckpt_path"])
 
     def _build_vqvae(self, vqvae_ckpt_path: str | None) -> VQVAE:
-        if vqvae_ckpt_path is not None:
+        if vqvae_ckpt_path is None:
+            vqvae = VQVAE()
+        else:
             from ..runtime.checkpoints import VQVAECheckpointLoader
 
             vqvae = VQVAECheckpointLoader().load(vqvae_ckpt_path)
-        else:
-            vqvae = VQVAE()
         vqvae.eval()
         vqvae.requires_grad_(False)
         return vqvae
@@ -243,13 +245,20 @@ class MaskGITTask(BaseTask):
                 total_steps=total_steps,
             )
         # Legacy fallback (deprecated path)
+        from omegaconf import OmegaConf
+
         from ..runtime.optimizer_factory import create_optimizer
         from ..runtime.scheduler_factory import create_scheduler
-        from omegaconf import OmegaConf
 
         optimizer_config = self.hparams.get("optimizer_config")
         if optimizer_config is not None:
-            optimizer = create_optimizer(self.maskgit.parameters(), optimizer_config)
+            # Override lr and weight_decay from task's values, not from config
+            from omegaconf import OmegaConf
+
+            cfg = OmegaConf.create(OmegaConf.to_container(optimizer_config, resolve=True))
+            cfg.lr = self.lr
+            cfg.weight_decay = self.weight_decay
+            optimizer = create_optimizer(self.maskgit.parameters(), cast(DictConfig, cfg))
         else:
             optimizer = torch.optim.AdamW(
                 self.maskgit.transformer.parameters(),

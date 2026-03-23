@@ -15,7 +15,6 @@ from ...utils.sliding_window import (
     create_sliding_window_inferer,
     pad_to_divisible,
 )
-
 from ..vqvae import VQVAE
 from ..vqvae.splitting import compute_downsampling_factor
 from .sampling import MaskGITSampler

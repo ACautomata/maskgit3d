@@ -124,5 +124,5 @@ def select_callback_config(callbacks_cfg: Any, task: Any, *, stage: str) -> Any:
             }
         selected_keys = (callback_keys & keep) | unknown_keys
 
-    selected = {key: callbacks_cfg[key] for key in callbacks_cfg.keys() if key in selected_keys}
+    selected = {key: callbacks_cfg[key] for key in callbacks_cfg if key in selected_keys}
     return OmegaConf.create(selected)

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any, Callable
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import torch
 
 from ..inference import VQVAEReconstructor
-from ..tasks.output_contracts import VQVAEEvalStepOutput, VQVAETrainingStepOutput
 from ..tasks.gan_training_strategy import GANTrainingStrategy
+from ..tasks.output_contracts import VQVAEEvalStepOutput, VQVAETrainingStepOutput
 
 
 class VQVAETrainingSteps:
@@ -39,9 +39,12 @@ class VQVAETrainingSteps:
     def get_decoder_last_layer(self) -> torch.nn.Parameter | None:
         try:
             decoder = self.vqvae.decoder.decoder
-            params = [param for param in decoder.parameters() if param.ndim >= 2]
+            params: list[torch.nn.Parameter] = [
+                param for param in decoder.parameters() if param.ndim >= 2
+            ]
             if params:
-                return params[-1]
+                result: torch.nn.Parameter | None = params[-1]
+                return result
         except (AttributeError, IndexError):
             return None
         return None
@@ -59,7 +62,7 @@ class VQVAETrainingSteps:
             last_layer = self.get_decoder_last_layer()
 
         x_recon, vq_loss = self.vqvae(x_real)
-        return self.loss_fn(
+        result: tuple[torch.Tensor, dict[str, torch.Tensor]] = self.loss_fn(
             inputs=x_real,
             reconstructions=x_recon,
             vq_loss=vq_loss,
@@ -68,6 +71,7 @@ class VQVAETrainingSteps:
             last_layer=last_layer,
             split=split,
         )
+        return result
 
     def shared_step_discriminator(
         self,
@@ -77,7 +81,7 @@ class VQVAETrainingSteps:
         split: str,
         global_step: int,
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        return self.loss_fn(
+        disc_result: tuple[torch.Tensor, dict[str, torch.Tensor]] = self.loss_fn(
             inputs=x_real,
             reconstructions=x_recon,
             vq_loss=vq_loss,
@@ -85,6 +89,7 @@ class VQVAETrainingSteps:
             global_step=global_step,
             split=split,
         )
+        return disc_result
 
     def training_step(
         self,
@@ -131,7 +136,7 @@ class VQVAETrainingSteps:
 
         opt_d.zero_grad()
         backward(loss_d)
-        self.gan_strategy.step_discriminator(opt_d, loss_d)
+        self.gan_strategy.step_discriminator(opt_d, loss_d, self.loss_fn.discriminator)
 
         output: VQVAETrainingStepOutput = {
             "loss": returned_loss,

@@ -4,10 +4,8 @@ from collections.abc import Iterable
 from typing import Any, Protocol
 
 import torch
-from hydra.utils import instantiate
-from hydra.utils import get_class
-from omegaconf import DictConfig
-from omegaconf import OmegaConf
+from hydra.utils import get_class, instantiate
+from omegaconf import DictConfig, OmegaConf
 
 
 class OptimizerFactoryProtocol(Protocol):
@@ -81,8 +79,18 @@ class GANOptimizerFactory:
             {"params": generator.decoder.parameters(), "lr": self.lr_g},
         ]
 
+        # Include quantizer params for FSQ (no EMA, needs gradient optimization)
+        quantizer_type = getattr(generator, "quantizer_type", "vq")
+        if quantizer_type == "fsq":
+            param_groups.append({"params": generator.quantizer.parameters(), "lr": self.lr_g})
+
         if self.optimizer_config is not None:
-            opt_g = instantiate(self.optimizer_config, _partial_=True)(param_groups, lr=self.lr_g)
+            # Override weight_decay from task's weight_decay_g, not from config
+            gen_config = OmegaConf.create(
+                OmegaConf.to_container(self.optimizer_config, resolve=True)
+            )
+            gen_config.weight_decay = self.weight_decay_g
+            opt_g = instantiate(gen_config, _partial_=True)(param_groups, lr=self.lr_g)
         else:
             # Default to AdamW with betas=(0.9, 0.9) and weight_decay for stable GAN training
             opt_g = torch.optim.AdamW(
@@ -90,7 +98,12 @@ class GANOptimizerFactory:
             )
 
         if self.disc_optimizer_config is not None:
-            opt_d = instantiate(self.disc_optimizer_config, _partial_=True)(
+            # Override weight_decay from task's weight_decay_d, not from config
+            disc_config = OmegaConf.create(
+                OmegaConf.to_container(self.disc_optimizer_config, resolve=True)
+            )
+            disc_config.weight_decay = self.weight_decay_d
+            opt_d = instantiate(disc_config, _partial_=True)(
                 discriminator.parameters(), lr=self.lr_d
             )
         else:
@@ -208,4 +221,4 @@ def create_optimizer(
         factory = AdamWOptimizerFactory()
         return factory.create(params, optimizer_config)
 
-    return optimizer_class(params, **_optimizer_kwargs(optimizer_config))
+    return optimizer_class(params, **_optimizer_kwargs(optimizer_config))  # type: ignore[no-any-return]

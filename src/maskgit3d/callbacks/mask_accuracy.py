@@ -42,11 +42,15 @@ class MaskAccuracyCallback(Callback):
         masked_logits = outputs.get("masked_logits")
         masked_targets = outputs.get("masked_targets")
 
-        if masked_logits is not None and masked_targets is not None:
-            if isinstance(masked_logits, torch.Tensor) and isinstance(masked_targets, torch.Tensor):
-                predictions = masked_logits.argmax(dim=-1)
-                accuracy = (predictions == masked_targets).float().mean()
-                pl_module.log("val_mask_acc", accuracy, prog_bar=True)
+        if (
+            masked_logits is not None
+            and masked_targets is not None
+            and isinstance(masked_logits, torch.Tensor)
+            and isinstance(masked_targets, torch.Tensor)
+        ):
+            predictions = masked_logits.argmax(dim=-1)
+            accuracy = (predictions == masked_targets).float().mean()
+            pl_module.log("val_mask_acc", accuracy, prog_bar=True)
 
     def on_test_batch_end(
         self,
@@ -64,8 +68,12 @@ class MaskAccuracyCallback(Callback):
         masked_logits = outputs.get("masked_logits")
         masked_targets = outputs.get("masked_targets")
 
-        if masked_logits is not None and masked_targets is not None:
-            if isinstance(masked_logits, torch.Tensor) and isinstance(masked_targets, torch.Tensor):
-                predictions = masked_logits.argmax(dim=-1)
-                accuracy = (predictions == masked_targets).float().mean()
-                pl_module.log("mask_acc:test", accuracy, prog_bar=True)
+        if (
+            masked_logits is not None
+            and masked_targets is not None
+            and isinstance(masked_logits, torch.Tensor)
+            and isinstance(masked_targets, torch.Tensor)
+        ):
+            predictions = masked_logits.argmax(dim=-1)
+            accuracy = (predictions == masked_targets).float().mean()
+            pl_module.log("mask_acc:test", accuracy, prog_bar=True)

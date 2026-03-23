@@ -1,8 +1,7 @@
 import importlib
 import sys
-from typing import get_type_hints
-
 from pathlib import Path
+from typing import get_type_hints
 
 import torch
 

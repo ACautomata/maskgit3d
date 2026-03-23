@@ -108,7 +108,7 @@ class VQVAE(nn.Module):
                 commitment_cost=commitment_cost,
             )
         elif quantizer_type == "fsq":
-            self.quantizer: QuantizerProtocol = FSQQuantizer(
+            self.quantizer = FSQQuantizer(
                 levels=list(fsq_levels),
                 embedding_dim=embedding_dim,
             )

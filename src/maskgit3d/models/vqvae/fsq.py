@@ -170,4 +170,4 @@ class FSQQuantizer(nn.Module):
 
         z_q = z_q.permute(0, 4, 1, 2, 3).contiguous()
 
-        return z_q
+        return torch.Tensor(z_q)

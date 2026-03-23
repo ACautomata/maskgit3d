@@ -66,10 +66,14 @@ class MaskedCrossEntropyCallback(Callback):
         masked_logits = outputs.get("masked_logits")
         masked_targets = outputs.get("masked_targets")
 
-        if masked_logits is not None and masked_targets is not None:
-            if isinstance(masked_logits, torch.Tensor) and isinstance(masked_targets, torch.Tensor):
-                loss = F.cross_entropy(masked_logits, masked_targets)
-                pl_module.log("val_loss", loss, prog_bar=True)
+        if (
+            masked_logits is not None
+            and masked_targets is not None
+            and isinstance(masked_logits, torch.Tensor)
+            and isinstance(masked_targets, torch.Tensor)
+        ):
+            loss = F.cross_entropy(masked_logits, masked_targets)
+            pl_module.log("val_loss", loss, prog_bar=True)
 
     def on_test_batch_end(
         self,
@@ -87,10 +91,14 @@ class MaskedCrossEntropyCallback(Callback):
         masked_logits = outputs.get("masked_logits")
         masked_targets = outputs.get("masked_targets")
 
-        if masked_logits is not None and masked_targets is not None:
-            if isinstance(masked_logits, torch.Tensor) and isinstance(masked_targets, torch.Tensor):
-                loss = F.cross_entropy(masked_logits, masked_targets)
-                pl_module.log("loss:test", loss, prog_bar=True)
+        if (
+            masked_logits is not None
+            and masked_targets is not None
+            and isinstance(masked_logits, torch.Tensor)
+            and isinstance(masked_targets, torch.Tensor)
+        ):
+            loss = F.cross_entropy(masked_logits, masked_targets)
+            pl_module.log("loss:test", loss, prog_bar=True)
 
     def on_train_epoch_start(self, trainer: Trainer, pl_module: LightningModule) -> None:
         """Reset step counter at epoch start."""

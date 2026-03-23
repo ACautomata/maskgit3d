@@ -9,7 +9,6 @@ Phase 0: Freeze current behavior before architectural changes.
 from pathlib import Path
 
 from hydra import compose, initialize_config_dir
-from omegaconf import OmegaConf
 
 CONFIG_DIR = str(Path(__file__).parent.parent.parent / "src/maskgit3d/conf")
 

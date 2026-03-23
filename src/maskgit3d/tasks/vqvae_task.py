@@ -1,8 +1,8 @@
 """VQVAE training task with GAN-based manual optimization and adaptive weighting."""
 
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal, cast
-import warnings
 
 import torch
 from omegaconf import DictConfig, OmegaConf
@@ -269,13 +269,26 @@ class VQVAETask(BaseTask):
             if optimizers is None
             else optimizers
         )
-        return self.training_steps.training_step(
+        result = self.training_steps.training_step(
             batch=batch,
             batch_idx=batch_idx,
             optimizers=resolved_optimizers,
             global_step=self.global_step,
             manual_backward_fn=self.manual_backward,
         )
+        try:
+            schedulers = self.lr_schedulers()
+            if schedulers is not None:
+                scheduler_list = schedulers if isinstance(schedulers, list) else [schedulers]
+                for scheduler in scheduler_list:
+                    if scheduler is not None and hasattr(scheduler, "step"):
+                        if hasattr(scheduler, "patience"):
+                            scheduler.step(self.trainer.callback_metrics.get("val_loss"))  # type: ignore[arg-type, union-attr]
+                        else:
+                            scheduler.step()
+        except RuntimeError:
+            pass
+        return result
 
     @torch.no_grad()
     def validation_step(

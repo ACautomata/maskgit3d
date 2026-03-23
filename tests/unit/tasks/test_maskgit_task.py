@@ -564,17 +564,26 @@ def test_maskgit_task_validation_step_returns_consistent_structure(vqvae_checkpo
     assert "masked_logits" in outputs_batch_1
 
 
-def test_maskgit_task_no_vqvae_checkpoint(vqvae_checkpoint: str):
-    task = MaskGITTask(
-        vqvae_ckpt_path=None,
-        hidden_size=128,
-        num_layers=2,
-        num_heads=4,
-        lr=1e-4,
+def test_maskgit_task_no_vqvae_checkpoint():
+    # Should raise ValueError when vqvae_ckpt_path is None in builder
+    from omegaconf import OmegaConf
+    from src.maskgit3d.runtime.composition import build_maskgit_task
+
+    cfg = OmegaConf.create(
+        {
+            "task": {
+                "_target_": "maskgit3d.tasks.maskgit_task.MaskGITTask",
+                "vqvae_ckpt_path": None,
+                "hidden_size": 128,
+                "num_layers": 2,
+                "num_heads": 4,
+            },
+            "model": {"_target_": "maskgit3d.models.maskgit.MaskGIT"},
+        }
     )
-    assert task.maskgit is not None
-    assert task.vqvae is not None
-    assert not any(p.requires_grad for p in task.vqvae.parameters())
+
+    with pytest.raises(ValueError, match="vqvae_ckpt_path is required"):
+        build_maskgit_task(cfg)
 
 
 def test_maskgit_task_compute_masked_loss_ensures_at_least_one_masked(vqvae_checkpoint: str):

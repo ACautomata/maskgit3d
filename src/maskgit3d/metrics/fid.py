@@ -6,7 +6,7 @@ from typing import Any, Protocol
 
 import torch
 from torch import nn
-from torchvision.models import inception_v3, Inception_V3_Weights
+from torchvision.models import Inception_V3_Weights, inception_v3  # type: ignore[import-untyped]
 
 
 class LightningMetricProtocol(Protocol):

@@ -66,7 +66,7 @@ class PatchDiscriminator3D(nn.Module):
                 nn.init.normal_(m.weight, 0.0, 0.02)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
-            elif isinstance(m, (nn.BatchNorm3d, nn.InstanceNorm3d)):
+            elif isinstance(m, nn.BatchNorm3d | nn.InstanceNorm3d):
                 if m.weight is not None:
                     nn.init.normal_(m.weight, 1.0, 0.02)
                 if m.bias is not None:

@@ -32,8 +32,8 @@ def create_sliding_window_inferer(cfg: dict[str, Any]) -> SlidingWindowInferer |
     mode = cfg.get("mode", "gaussian")
     sigma_scale = cfg.get("sigma_scale", 0.125)
     sw_batch_size = cfg.get("sw_batch_size", 1)
-    sw_device = cfg.get("sw_device", None)
-    device = cfg.get("device", None)
+    sw_device = cfg.get("sw_device")
+    device = cfg.get("device")
 
     return SlidingWindowInferer(
         roi_size=roi_size,

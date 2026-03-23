@@ -37,7 +37,7 @@ def compute_downsampling_factor(num_channels: tuple[int, ...] | list[int]) -> in
         raise ValueError("num_channels must have at least one element")
     # Each transition between levels applies 2x downsampling
     num_downsamplings = len(num_channels) - 1
-    return 2**num_downsamplings
+    return int(2**num_downsamplings)
 
 
 def compute_max_num_splits(

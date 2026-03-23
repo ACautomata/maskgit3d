@@ -8,7 +8,7 @@ from src.maskgit3d.tasks.vqvae_task import VQVAETask
 
 
 def test_build_training_task_returns_task_via_instantiate(monkeypatch) -> None:
-    """Test that build_training_task uses Hydra instantiate for simple task creation."""
+    """Test that build_training_task dispatches to build_vqvae_task for VQVAE tasks."""
     composition_module = import_module("src.maskgit3d.runtime.composition")
     cfg = OmegaConf.create(
         {
@@ -21,18 +21,31 @@ def test_build_training_task_returns_task_via_instantiate(monkeypatch) -> None:
                 "lr_g": 1e-4,
                 "lr_d": 1e-4,
             },
-            "model": {"_target_": "tests.ModelConfig"},
+            "model": {
+                "_target_": "tests.ModelConfig",
+                "num_channels": [64, 128, 256, 256],
+                "num_res_blocks": [2, 2, 2, 1],
+                "attention_levels": [False, False, False, True],
+            },
             "optimizer": {"_target_": "tests.OptimizerConfig"},
             "data": {"crop_size": [32, 32, 32]},
         }
     )
 
     fake_task = Mock(spec=VQVAETask)
+    fake_task.hparams = {}
+    fake_vqvae = Mock()
+    fake_vqvae.encoder = Mock()
+    fake_vqvae.quant_conv = Mock()
+    fake_vqvae.post_quant_conv = Mock()
+    fake_vqvae.decoder = Mock()
+    fake_vqvae.quantizer = Mock()
+    fake_vqvae.quantizer_type = "vq"
 
     def fake_instantiate(config, **kwargs):
         target = config.get("_target_")
         if target == "maskgit3d.tasks.vqvae_task.VQVAETask":
-            assert kwargs["model_config"].get("_target_") == "tests.ModelConfig"
+            assert kwargs["model_config"] is None
             assert kwargs["optimizer_config"].get("_target_") == "tests.OptimizerConfig"
             assert kwargs["disc_optimizer_config"].get("_target_") == "tests.OptimizerConfig"
             assert list(kwargs["data_config"].crop_size) == [32, 32, 32]
@@ -41,6 +54,11 @@ def test_build_training_task_returns_task_via_instantiate(monkeypatch) -> None:
         return config
 
     monkeypatch.setattr(composition_module, "instantiate", fake_instantiate)
+    monkeypatch.setattr(composition_module, "create_vqvae_model", lambda cfg: fake_vqvae)
+    monkeypatch.setattr(composition_module, "VQPerceptualLoss", Mock)
+    monkeypatch.setattr(composition_module, "GANTrainingStrategy", Mock)
+    monkeypatch.setattr(composition_module, "VQVAEReconstructor", Mock)
+    monkeypatch.setattr(composition_module, "VQVAETrainingSteps", Mock)
 
     task = composition_module.build_training_task(cfg)
 
@@ -48,7 +66,7 @@ def test_build_training_task_returns_task_via_instantiate(monkeypatch) -> None:
 
 
 def test_build_training_task_returns_maskgit_task_via_instantiate(monkeypatch) -> None:
-    """Test that build_training_task uses Hydra instantiate for MaskGIT task."""
+    """Test that build_training_task dispatches to build_maskgit_task for MaskGIT tasks."""
     composition_module = import_module("src.maskgit3d.runtime.composition")
     cfg = OmegaConf.create(
         {
@@ -64,17 +82,30 @@ def test_build_training_task_returns_maskgit_task_via_instantiate(monkeypatch) -
     )
 
     fake_task = Mock(spec=MaskGITTask)
+    fake_task.hparams = {}
+    fake_task.vqvae = Mock()
 
     def fake_instantiate(config, **kwargs):
         target = config.get("_target_")
         if target == "maskgit3d.tasks.maskgit_task.MaskGITTask":
-            assert kwargs["model_config"].get("_target_") == "tests.MaskGITModelConfig"
+            # model_config is set to None by build_maskgit_task before instantiation
+            assert kwargs["model_config"] is None
             assert kwargs["optimizer_config"].get("_target_") == "tests.OptimizerConfig"
+            # MaskGIT tasks should NOT have disc_optimizer_config or data_config
+            assert "disc_optimizer_config" not in kwargs
+            assert "data_config" not in kwargs
             assert kwargs["_recursive_"] is False
             return fake_task
         return config
 
     monkeypatch.setattr(composition_module, "instantiate", fake_instantiate)
+    # Mock checkpoint loading to avoid file not found error
+    fake_vqvae = Mock()
+    monkeypatch.setattr(
+        composition_module, "load_vqvae_from_checkpoint", lambda ckpt_path: fake_vqvae
+    )
+    monkeypatch.setattr(composition_module, "create_maskgit_model", lambda cfg, vqvae: Mock())
+    monkeypatch.setattr(composition_module, "MaskGITTrainingSteps", Mock)
 
     task = composition_module.build_training_task(cfg)
 

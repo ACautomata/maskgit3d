@@ -1,7 +1,7 @@
 """Tests for VQVAETask."""
 
-from typing import Any, cast
 import warnings
+from typing import Any, cast
 
 import pytest
 import torch
@@ -617,6 +617,9 @@ def test_vqvae_task_training_step_with_optimizers_parameter():
     opt_d = torch.optim.Adam(task.loss_fn.discriminator.parameters(), lr=1e-4)
 
     task.manual_backward = lambda loss: loss.backward()  # type: ignore[assignment]
+    # Use object.__setattr__ to bypass property read-only restriction
+    object.__setattr__(task, "_global_step", 0)
+    task.lr_schedulers = lambda: None  # type: ignore[assignment]
 
     batch = torch.randn(1, 1, 32, 32, 32)
     output = task.training_step(batch, 0, optimizers=[opt_g, opt_d])
@@ -650,6 +653,8 @@ def test_vqvae_task_training_step_accepts_tuple_batch():
     opt_d = torch.optim.Adam(task.loss_fn.discriminator.parameters(), lr=1e-4)
 
     task.manual_backward = lambda loss: loss.backward()  # type: ignore[assignment]
+    object.__setattr__(task, "_global_step", 0)
+    task.lr_schedulers = lambda: None  # type: ignore[assignment]
 
     image_batch = torch.randn(1, 1, 32, 32, 32)
     target_batch = image_batch.clone()

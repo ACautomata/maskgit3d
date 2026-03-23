@@ -61,7 +61,7 @@ class VQVAEReconstructor:
 
         def encode_fn(patch: torch.Tensor) -> torch.Tensor:
             _, _, _, z_e = vqvae.encode(patch)
-            return z_e
+            return torch.Tensor(z_e)
 
         z_e_padded = cast(torch.Tensor, inferer(x_real_padded, encode_fn))
         latent_shape = tuple(size // self.downsampling_factor for size in original_shape)
@@ -93,7 +93,8 @@ class VQVAEReconstructor:
         )
 
         def decode_fn(latent_patch: torch.Tensor) -> torch.Tensor:
-            return vqvae.decode(latent_patch)
+            decoded: torch.Tensor = vqvae.decode(latent_patch)
+            return decoded
 
         decoded = cast(torch.Tensor, latent_inferer(z_q, decode_fn))
         return decoded, torch.tensor(0.0, device=z_q.device)

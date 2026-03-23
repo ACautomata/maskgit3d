@@ -199,9 +199,11 @@ class TestMaskGITSlidingWindowEncoding:
             encode_fn_outputs.append(result.clone())
             return result
 
-        with patch.object(small_maskgit, "_get_sliding_window_inferer", return_value=mock_inferer):
-            with torch.no_grad():
-                _ = small_maskgit.encode_images_to_tokens(x)
+        with (
+            patch.object(small_maskgit, "_get_sliding_window_inferer", return_value=mock_inferer),
+            torch.no_grad(),
+        ):
+            _ = small_maskgit.encode_images_to_tokens(x)
 
         embedding_dim = small_vqvae.quantizer.embedding_dim
         for output in encode_fn_outputs:

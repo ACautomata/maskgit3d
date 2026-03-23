@@ -2,11 +2,17 @@
 # Direct task instantiation with these parameters is deprecated.
 # Use build_vqvae_task() from runtime.composition instead.
 # See docs/migration/v2.0.md for migration guide.
+
+defaults:
+  - /model@model: vqvae
+  - /optimizer@optimizer: adam
+  - /optimizer@disc_optimizer: adamw_discriminator
+
 _target_: maskgit3d.tasks.vqvae_task.VQVAETask
 
 model_config: ${model}
 optimizer_config: ${optimizer}
-disc_optimizer_config: ${optimizer}
+disc_optimizer_config: ${disc_optimizer}
 data_config: ${data}
 
 lr_g: 1.0e-4

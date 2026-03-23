@@ -53,6 +53,9 @@ maskgit-3d/
 | `MaskGIT` | Class | `models/maskgit/maskgit.py` | Transformer for token prediction |
 | `VQPerceptualLoss` | Class | `losses/vq_perceptual_loss.py` | GAN + L1 + VQ + perceptual loss |
 | `MedMNISTDataModule` | Class | `data/medmnist/datamodule.py` | MedMNIST-3D data loading |
+| `VQVAETrainingSteps` | Class | `training/vqvae_steps.py` | Training logic abstraction (generator + discriminator steps) |
+| `GANTrainingStrategy` | Class | `training/gan_strategy.py` | Optimizer stepping with gradient clipping |
+| `VQVAEReconstructor` | Class | `inference/reconstructor.py` | Reconstruction with sliding window support |
 
 ## CONVENTIONS
 
@@ -137,6 +140,99 @@ pytest -m "not slow" tests                        # Skip slow tests
 ruff format src/maskgit3d/ tests/
 ruff check --fix src/maskgit3d/ tests/
 ```
+
+## VQVAE PIPELINE
+
+Complete training/validation/testing pipeline for Stage 1 (VQVAE) training.
+
+### Pipeline Flow
+
+```
+Hydra Config (conf/task/vqvae.yaml)
+    ↓
+Builder Pattern (runtime/composition.py: build_vqvae_task)
+    ├─> VQVAE model (encoder → quantizer → decoder)
+    ├─> VQPerceptualLoss (L1 + perceptual + VQ + GAN)
+    ├─> GANTrainingStrategy (gradient clipping)
+    └─> VQVAETrainingSteps (training logic)
+    ↓
+Data Loading (MedMNIST3DDataModule)
+    ↓
+Training Loop (trainer.fit)
+    ├─> Generator step: vqvae(x) → (x_recon, vq_loss) → loss_g → opt_g.step()
+    └─> Discriminator step: x_recon.detach() → loss_d → opt_d.step()
+    ↓
+Validation/Test (trainer.validate/test)
+    └─> metrics calculation + callbacks
+```
+
+### Key Components
+
+**1. VQVAE Model** (`models/vqvae/vqvae.py`)
+- Forward: `x → encoder → quant_conv → quantizer → post_quant_conv → decoder → x_recon`
+- Quantizers: VQ (learned codebook) or FSQ (no learned params)
+- Methods: `encode()`, `decode()`, `decode_from_indices()`
+
+**2. Loss Computation** (`losses/vq_perceptual_loss.py`)
+- Components: L1 + Perceptual (LPIPS) + VQ + GAN
+- Adaptive weight: `d_weight = ||∇nll_loss|| / (||∇g_loss|| + 1e-4)`
+- Discriminator warmup: `disc_start` steps before enabling GAN loss
+
+**3. Training Steps** (`training/vqvae_steps.py`)
+- `VQVAETrainingSteps.training_step()`: Full training loop
+- `shared_step_generator()`: Generator forward + loss
+- `shared_step_discriminator()`: Discriminator forward + loss (with detached reconstructions)
+- `GANTrainingStrategy`: Handles optimizer stepping with gradient clipping
+
+**4. Task Class** (`tasks/vqvae_task.py`)
+- `automatic_optimization = False` for manual GAN training
+- Delegates to `VQVAETrainingSteps` for training logic
+- Contains `VQVAEReconstructor` for sliding window inference
+
+**5. Configuration** (`conf/task/vqvae.yaml`)
+```yaml
+# Learning rates
+lr_g: 1.0e-4
+lr_d: 1.0e-4
+
+# Loss weights
+lambda_l1: 1.0
+lambda_vq: 1.0
+lambda_gan: 0.1
+lambda_perceptual: 0.1
+
+# Discriminator
+disc_start: 2000           # Warmup steps
+use_adaptive_weight: true
+adaptive_weight_max: 100.0
+disc_loss: hinge           # or vanilla
+
+# Gradient clipping
+gradient_clip_enabled: true
+gradient_clip_val: 1.0
+
+# Sliding window for large images
+sliding_window:
+  enabled: false
+  roi_size: [32, 32, 32]
+  overlap: 0.25
+```
+
+### Important Implementation Details
+
+**Dual Optimizer Training**:
+- Generator optimizer (`opt_g`): Updates encoder, quantizer, decoder
+- Discriminator optimizer (`opt_d`): Updates discriminator only
+- Alternating steps: generator → discriminator (both per batch)
+
+**Adaptive Weight Mechanism**:
+Prevents mode collapse by dynamically balancing reconstruction and GAN gradients.
+
+**Gradient Checkpointing**:
+Enabled via `model.gradient_checkpointing = true` to reduce memory usage.
+
+**Sliding Window Inference**:
+For large images that don't fit in GPU memory, `VQVAEReconstructor` processes in overlapping patches.
 
 ## NOTES
 

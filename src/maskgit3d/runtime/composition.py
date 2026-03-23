@@ -6,8 +6,6 @@ from hydra.utils import get_class, instantiate
 from lightning import LightningModule
 from omegaconf import DictConfig, OmegaConf
 
-from .checkpoints import load_vqvae_from_checkpoint
-from .model_factory import create_maskgit_model, create_vqvae_model
 from ..inference import VQVAEReconstructor
 from ..losses.vq_perceptual_loss import VQPerceptualLoss
 from ..models.maskgit import MaskGIT
@@ -16,6 +14,8 @@ from ..tasks.gan_training_strategy import GANTrainingStrategy
 from ..tasks.maskgit_task import MaskGITTask
 from ..tasks.vqvae_task import VQVAETask
 from ..training import MaskGITTrainingSteps, VQVAETrainingSteps
+from .checkpoints import load_vqvae_from_checkpoint
+from .model_factory import create_maskgit_model, create_vqvae_model
 
 
 def _get_task_target(cfg: DictConfig) -> str:
@@ -25,7 +25,7 @@ def _get_task_target(cfg: DictConfig) -> str:
     return str(task_target)
 
 
-def _build_task_kwargs(cfg: DictConfig) -> dict[str, object]:
+def _build_task_kwargs(cfg: DictConfig, is_vqvae: bool = True) -> dict[str, object]:
     task_kwargs: dict[str, object] = {
         "_recursive_": False,
     }
@@ -33,8 +33,13 @@ def _build_task_kwargs(cfg: DictConfig) -> dict[str, object]:
         task_kwargs["model_config"] = cfg.model
     if cfg.get("optimizer") is not None:
         task_kwargs["optimizer_config"] = cfg.optimizer
-        task_kwargs["disc_optimizer_config"] = cfg.optimizer
-    if cfg.get("data") is not None:
+    if is_vqvae:
+        # VQVAE tasks need separate discriminator optimizer config
+        if cfg.get("disc_optimizer") is not None:
+            task_kwargs["disc_optimizer_config"] = cfg.disc_optimizer
+        elif cfg.get("optimizer") is not None:
+            task_kwargs["disc_optimizer_config"] = cfg.optimizer
+    if cfg.get("data") is not None and is_vqvae:
         task_kwargs["data_config"] = cfg.data
     return task_kwargs
 
@@ -85,7 +90,7 @@ def _is_task_instance(task: object, task_type: type[object]) -> bool:
 
 
 def build_vqvae_task(cfg: DictConfig) -> VQVAETask:
-    task_kwargs = _build_task_kwargs(cfg)
+    task_kwargs = _build_task_kwargs(cfg, is_vqvae=True)
     task_kwargs["model_config"] = None
     task = instantiate(cfg.task, **task_kwargs)
     if not _is_task_instance(task, VQVAETask):
@@ -136,23 +141,27 @@ def build_vqvae_task(cfg: DictConfig) -> VQVAETask:
     task.training_steps = training_steps
     task.hparams["model_config"] = model_config
     vqvae.enable_gradient_checkpointing()
-    return task
+    return cast(VQVAETask, task)
 
 
 def build_maskgit_task(cfg: DictConfig) -> MaskGITTask:
-    task_kwargs = _build_task_kwargs(cfg)
-    task_kwargs.pop("disc_optimizer_config", None)
+    task_kwargs = _build_task_kwargs(cfg, is_vqvae=False)
     task_kwargs["model_config"] = None
-    task_kwargs["vqvae_ckpt_path"] = None
+
+    # Validate vqvae_ckpt_path before instantiation to provide clear error message
+    ckpt_path = cfg.task.get("vqvae_ckpt_path")
+    if ckpt_path is None:
+        raise ValueError(
+            "task.vqvae_ckpt_path is required for MaskGIT training. "
+            "Please provide a path to a trained VQVAE checkpoint."
+        )
+    task_kwargs["vqvae_ckpt_path"] = ckpt_path
+
     task = instantiate(cfg.task, **task_kwargs)
     if not _is_task_instance(task, MaskGITTask):
         raise TypeError("build_maskgit_task only supports MaskGITTask.")
 
-    ckpt_path = cfg.task.get("vqvae_ckpt_path")
-    if ckpt_path is not None:
-        vqvae = load_vqvae_from_checkpoint(str(ckpt_path))
-    else:
-        vqvae = task.vqvae
+    vqvae = load_vqvae_from_checkpoint(str(ckpt_path))
     vqvae.eval()
     vqvae.requires_grad_(False)
 
@@ -177,19 +186,27 @@ def build_maskgit_task(cfg: DictConfig) -> MaskGITTask:
     task.training_steps = training_steps
     if model_config is not None:
         task.hparams["model_config"] = model_config
-    return task
+    return cast(MaskGITTask, task)
 
 
 def build_training_task(cfg: DictConfig) -> VQVAETask | MaskGITTask:
-    _get_task_target(cfg)
+    """Build training task by dispatching to specialized builders.
 
-    task_kwargs = _build_task_kwargs(cfg)
+    This function determines the task type from cfg.task._target_ and
+    delegates to the appropriate specialized builder (build_vqvae_task
+    or build_maskgit_task) which properly constructs all components.
+    """
+    task_target = _get_task_target(cfg)
 
-    task = instantiate(cfg.task, **task_kwargs)
-    if not isinstance(task, VQVAETask | MaskGITTask):
-        raise TypeError("build_training_task only supports VQVAETask and MaskGITTask.")
+    # Dispatch to specialized builders based on task type
+    if "vqvae" in task_target.lower():
+        return build_vqvae_task(cfg)
+    if "maskgit" in task_target.lower():
+        return build_maskgit_task(cfg)
 
-    return task
+    raise TypeError(
+        f"build_training_task only supports VQVAETask and MaskGITTask. Got: {task_target}"
+    )
 
 
 def build_eval_task(cfg: DictConfig, ckpt_path: str) -> LightningModule:

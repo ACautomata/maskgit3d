@@ -1,6 +1,6 @@
 """Protocol definitions for VQVAE components."""
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from torch import Tensor
 
@@ -21,6 +21,10 @@ class QuantizerProtocol(Protocol):
     @property
     def embedding_dim(self) -> int:
         """Dimension of each embedding vector."""
+        ...
+
+    def parameters(self, recurse: bool = True) -> Any:
+        """Return parameters (for FSQ compatibility)."""
         ...
 
     def __call__(self, z: Tensor) -> tuple[Tensor, Tensor, Tensor]: ...

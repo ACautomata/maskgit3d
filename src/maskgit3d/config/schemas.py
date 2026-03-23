@@ -36,7 +36,7 @@ def _dictconfig_to_container(conf: DictConfig | dict[str, Any]) -> dict[str, Any
 @dataclass
 class ConfigSchema:
     def to_conf(self) -> DictConfig:
-        return OmegaConf.structured(self)
+        return cast(DictConfig, OmegaConf.structured(self))
 
     @classmethod
     def from_conf(cls: type[SchemaT], conf: DictConfig | dict[str, Any]) -> SchemaT:
@@ -49,7 +49,7 @@ def _dictconfig_to_obj(self: DictConfig, schema_cls: type[SchemaT]) -> SchemaT:
 
 
 if not hasattr(DictConfig, "to_obj"):
-    setattr(DictConfig, "to_obj", _dictconfig_to_obj)
+    DictConfig.to_obj = _dictconfig_to_obj  # type: ignore[attr-defined]
 
 
 @dataclass

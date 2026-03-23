@@ -36,19 +36,25 @@ class GANTrainingStrategy:
         self,
         optimizer: torch.optim.Optimizer,
         loss: torch.Tensor,
+        discriminator: torch.nn.Module,
     ) -> None:
-        """Execute discriminator optimization step (clip + step only; zero_grad is caller's responsibility)."""
+        """Execute discriminator optimization step with gradient clipping."""
+        if self.gradient_clip_enabled and self.gradient_clip_val > 0:
+            torch.nn.utils.clip_grad_norm_(discriminator.parameters(), self.gradient_clip_val)
         optimizer.step()
 
     def _get_generator_params(self, vqvae: "VQVAE") -> list[torch.nn.Parameter]:
         """Get generator parameters for gradient clipping.
 
-        Note: Excludes quantizer parameters since VQVAE uses EMA-based codebook updates.
-        This matches configure_optimizers() which also excludes quantizer from the optimizer.
+        VQ: Excludes quantizer (uses EMA-based codebook updates).
+        FSQ: Includes quantizer (no EMA, needs gradient optimization).
         """
-        return (
+        params = (
             list(vqvae.encoder.parameters())
             + list(vqvae.quant_conv.parameters())
             + list(vqvae.post_quant_conv.parameters())
             + list(vqvae.decoder.parameters())
         )
+        if getattr(vqvae, "quantizer_type", "vq") == "fsq":
+            params.extend(list(vqvae.quantizer.parameters()))
+        return params

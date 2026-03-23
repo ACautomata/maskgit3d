@@ -124,11 +124,25 @@ class TestCallbackIntegration:
         callback.on_validation_batch_end(MagicMock(), task, outputs, batch, 0)
         assert "val_rec_loss" in logged
 
-    def test_maskgit_validation_metrics_are_logged_by_callback(self):
+    def test_maskgit_validation_metrics_are_logged_by_callback(self, monkeypatch):
         from maskgit3d.callbacks.mask_accuracy import MaskAccuracyCallback
+        from maskgit3d.models.vqvae import VQVAE
         from maskgit3d.tasks.maskgit_task import MaskGITTask
 
-        task = MaskGITTask(hidden_size=128, num_layers=2, num_heads=4, lr=1e-4)
+        # Mock VQVAE checkpoint loading
+        fake_vqvae = VQVAE()
+        monkeypatch.setattr(
+            "maskgit3d.runtime.checkpoints.VQVAECheckpointLoader.load",
+            lambda self, ckpt_path: fake_vqvae,
+        )
+
+        task = MaskGITTask(
+            hidden_size=128,
+            num_layers=2,
+            num_heads=4,
+            lr=1e-4,
+            vqvae_ckpt_path="/tmp/fake_vqvae.ckpt",
+        )
         logged: dict[str, object] = {}
 
         def capture_log(name: str, value: object, **_: object) -> None:

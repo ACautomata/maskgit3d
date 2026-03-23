@@ -2,148 +2,242 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **⚠️ ARCHITECTURE UPDATE**: Project migrated from Fabric + dependency injection to PyTorch Lightning + builder pattern. Old `cli/`, `config/`, `domain/`, `application/`, `infrastructure/` directories removed. See AGENTS.md for current architecture.
+
 ## Project Overview
 
-**maskgit-3d** 是一个基于 PyTorch + Lightning + MONAI 的 3D 医学图像生成深度学习框架，采用依赖注入架构。
+**maskgit-3d** is a 3D medical image generation framework using PyTorch + Lightning + MONAI with two-stage training.
 
-- **双阶段训练**: VQGAN (Stage 1) + MaskGIT (Stage 2)
-- **数据集**: MedMNIST-3D、BraTS 等医学影像数据集
-- **配置管理**: Hydra + OmegaConf
-- **依赖注入**: injector 库
+- **Two-Stage Training**: VQVAE (Stage 1) + MaskGIT (Stage 2)
+- **Datasets**: MedMNIST-3D, BraTS
+- **Configuration**: Hydra config composition with builder pattern
+- **Architecture**: PyTorch Lightning tasks with training steps abstraction
 
 ## Runtime Environment
 
-### Conda 环境
+### Conda Environment
 
 ```bash
-# 激活已有环境
+# Activate existing environment
 conda activate maskgit3d
 
-# 或创建新环境
+# Or create new environment
 conda create -n maskgit3d python=3.10 -y
 conda activate maskgit3d
 ```
 
-### 依赖安装
+### Installation
 
 ```bash
-# 使用 poetry 安装
-poetry install
-
-# 或手动安装核心依赖
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-pip install lightning monai injector hydra-core omegaconf medmnist nibabel einops
+# Install with dependencies
 pip install -e .
+
+# With dev dependencies
+pip install -e .[dev]
 ```
 
 ## Common Commands
 
+### Training
+
 ```bash
-# 安装开发依赖
-poetry install
+# VQVAE training (Stage 1) - default
+maskgit3d-train
 
-# 运行全部测试
-poetry run pytest --cache-clear -vv tests
+# With overrides
+maskgit3d-train \
+    trainer.max_epochs=10 \
+    task.lr_g=1e-4 \
+    task.lr_d=1e-4 \
+    data.batch_size=4 \
+    data.num_workers=0
 
-# 运行单个测试
-poetry run pytest tests/path/to/test_file.py::test_function_name -v
+# Resume from checkpoint
+maskgit3d-train ckpt_path=./checkpoints/last.ckpt
 
-# 运行带覆盖率测试
-make test
-
-# 代码格式化
-make format
+# MaskGIT training (Stage 2, requires VQVAE checkpoint)
+maskgit3d-train \
+    task=maskgit \
+    task.vqvae_ckpt_path=./checkpoints/vqvae.ckpt \
+    trainer.max_epochs=10
 ```
 
-### 训练与测试
+### Evaluation
 
 ```bash
-# VQGAN 训练 (Stage 1)
-maskgit3d-train model=vqgan dataset=medmnist3d
+# Validation from checkpoint
+maskgit3d-test ckpt_path=./checkpoints/model.ckpt
 
-# MaskGIT 训练 (Stage 2，需要先训练 VQGAN)
-maskgit3d-train model=maskgit dataset=medmnist3d \
-    model.pretrained_vqgan_path=./checkpoints/vqgan/best.ckpt
+# Test mode
+maskgit3d-test \
+    task=maskgit \
+    ckpt_path=./checkpoints/model.ckpt \
+    mode=test
+```
 
-# 模型测试
-maskgit3d-test model=vqgan dataset=medmnist3d \
-    checkpoint.load_from=./checkpoints/vqgan/best.ckpt
+### Testing
+
+```bash
+# Run all tests
+pytest --cache-clear -vv tests
+
+# Specific test file
+pytest tests/unit/tasks/test_vqvae_task.py -v
+
+# Skip slow tests
+pytest -m "not slow" tests
+```
+
+### Formatting
+
+```bash
+# Format code
+ruff format src/maskgit3d/ tests/
+ruff check --fix src/maskgit3d/ tests/
 ```
 
 ## Architecture
 
-### 项目结构
+### Current Project Structure
 
 ```
 src/maskgit3d/
-├── cli/              # 命令行接口 (train/test)
-├── config/           # 依赖注入模块 (modules.py)
-├── domain/           # 领域接口定义 (interfaces.py)
-├── application/      # Fabric 训练管道 (pipeline.py)
-├── infrastructure/  # 具体实现
-│   ├── vqgan/        # VQVAE/VQGAN 实现
-│   ├── maskgit/      # MaskGIT Transformer 实现
-│   ├── data/         # 数据提供者 (MedMNIST, BraTS)
-│   └── training/     # 训练/推理策略
-└── conf/             # Hydra 配置文件
+├── conf/               # Hydra configs (inside package for editable install)
+│   ├── task/           # Task configs (vqvae.yaml, maskgit.yaml)
+│   ├── model/          # Model configs (not directly wired)
+│   ├── data/           # Data configs (medmnist3d.yaml, brats.yaml)
+│   ├── callbacks/      # Callback configs
+│   └── trainer/        # Trainer configs
+├── tasks/              # LightningModule implementations
+│   ├── vqvae_task.py   # VQVAETask (Stage 1)
+│   └── maskgit_task.py # MaskGITTask (Stage 2)
+├── models/             # Model architectures
+│   ├── vqvae/          # VQVAE (encoder, quantizer, decoder)
+│   ├── maskgit/        # MaskGIT transformer
+│   └── discriminator/  # Discriminator for GAN
+├── training/           # Training step orchestration
+│   ├── vqvae_steps.py  # VQVAETrainingSteps
+│   ├── maskgit_steps.py# MaskGITTrainingSteps
+│   └── gan_strategy.py # GANTrainingStrategy
+├── data/               # DataModules
+│   ├── medmnist/       # MedMNIST3DDataModule
+│   └── brats/          # BraTSDataModule
+├── losses/             # Loss implementations
+│   └── vq_perceptual_loss.py
+├── callbacks/          # Lightning callbacks
+├── runtime/            # Builder pattern
+│   └── composition.py  # build_vqvae_task, build_maskgit_task
+├── interfaces/         # Protocols
+├── train.py            # CLI entry: maskgit3d-train
+└── eval.py             # CLI entry: maskgit3d-test
 ```
 
-### 依赖注入模块 (config/modules.py)
+### Key Components
 
-| 模块 | 职责 |
-|------|------|
-| `ModelModule` | 模型实现 (VQVAE、MaskGIT) |
-| `DataModule` | 数据加载器 (MedMNIST-3D、BraTS) |
-| `TrainingModule` | 训练策略与优化器 |
-| `InferenceModule` | 推理策略与指标 |
-| `SystemModule` | 系统级配置 (device) |
+| Symbol | Type | Location | Role |
+|--------|------|----------|------|
+| `VQVAETask` | Class | `tasks/vqvae_task.py` | Stage 1 training (VQVAE) |
+| `MaskGITTask` | Class | `tasks/maskgit_task.py` | Stage 2 training (MaskGIT) |
+| `build_vqvae_task` | Function | `runtime/composition.py` | Constructs VQVAETask from config |
+| `build_maskgit_task` | Function | `runtime/composition.py` | Constructs MaskGITTask from config |
+| `VQVAE` | Class | `models/vqvae/vqvae.py` | Encoder + Quantizer + Decoder |
+| `VQVAETrainingSteps` | Class | `training/vqvae_steps.py` | Training logic abstraction |
+| `GANTrainingStrategy` | Class | `training/gan_strategy.py` | Optimizer stepping with gradient clipping |
+| `VQPerceptualLoss` | Class | `losses/vq_perceptual_loss.py` | L1 + perceptual + VQ + GAN loss |
+| `MedMNIST3DDataModule` | Class | `data/medmnist/datamodule.py` | MedMNIST-3D data loading |
 
-### 领域接口 (domain/interfaces.py)
+### Builder Pattern
 
-- `ModelInterface` - 模型基接口
-- `VQModelInterface` - VQ 模型特化接口
-- `MaskGITModelInterface` -特化接口
- MaskGIT 模型- `DataProvider` - 数据提供者接口
-- `TrainingStrategy` - 训练策略接口
-- `InferenceStrategy` - 推理策略接口
-- `OptimizerFactory` - 优化器工厂接口
+Tasks are constructed via builder functions in `runtime/composition.py`:
 
-### CLI 入口 (cli/train.py)
+```python
+def build_vqvae_task(cfg: DictConfig) -> VQVAETask:
+    model = create_vqvae_model(cfg.model)
+    loss_fn = VQPerceptualLoss(...)
+    training_steps = VQVAETrainingSteps(...)
+    return VQVAETask(model=model, loss_fn=loss_fn, ...)
+```
 
-使用 Hydra 的 `@hydra.main` 装饰器，通过配置文件创建依赖注入模块：
-1. 解析配置文件提取模型、数据、训练参数
-2. 创建 `CompositeModule` 配置注入绑定
-3. 使用 `Injector` 创建各组件实例
-4. 构建 `FabricTrainingPipeline` 并执行训练
+### Training Steps Abstraction
 
-## Key Configuration Files
+Training logic is separated from Lightning tasks:
+- `VQVAETrainingSteps.training_step()` - Full training loop
+- `VQVAETask.training_step()` delegates to training steps
+- Enables independent testing of training logic
 
-| 文件 | 用途 |
-|------|------|
-| `conf/config.yaml` | 主配置 |
-| `conf/model/vqgan.yaml` | VQGAN 模型配置 |
-| `conf/model/maskgit.yaml` | MaskGIT 模型配置 |
-| `conf/dataset/medmnist3d.yaml` | MedMNIST 数据集配置 |
-| `conf/dataset/brats.yaml` | BraTS 数据集配置 |
-| `conf/training/default.yaml` | 训练配置 |
+## VQVAE Pipeline
 
-### Dataset Configuration Parameters
+### Training Flow
 
-| Parameter | Description |
-|-----------|-------------|
-| `crop_size` | Random crop size for training (D, H, W). Must be divisible by 16 for VQVAE. |
-| `roi_size` | ROI size for sliding window inference (D, H, W). |
-| `image_size` | Legacy parameter, used as default for crop_size/roi_size if not specified. |
+```
+Hydra Config (conf/task/vqvae.yaml)
+    ↓
+Builder Pattern (runtime/composition.py)
+    ├─> VQVAE model
+    ├─> VQPerceptualLoss
+    ├─> GANTrainingStrategy
+    └─> VQVAETrainingSteps
+    ↓
+Data Loading (MedMNIST3DDataModule)
+    ↓
+Training Loop
+    ├─> Generator: vqvae(x) → loss_g → opt_g.step()
+    └─> Discriminator: x_recon.detach() → loss_d → opt_d.step()
+```
+
+### Key Configuration (conf/task/vqvae.yaml)
+
+```yaml
+# Learning rates
+lr_g: 1.0e-4
+lr_d: 1.0e-4
+
+# Loss weights
+lambda_l1: 1.0
+lambda_vq: 1.0
+lambda_gan: 0.1
+lambda_perceptual: 0.1
+
+# Discriminator warmup
+disc_start: 2000
+use_adaptive_weight: true
+adaptive_weight_max: 100.0
+
+# Gradient clipping
+gradient_clip_enabled: true
+gradient_clip_val: 1.0
+```
+
+## Conventions
+
+### Config Location
+- Hydra configs in `src/maskgit3d/conf/` (inside package, not project root)
+- Required for editable install via `config_path="conf"`
+
+### Task-Based Config
+- `conf/task/*.yaml` defines complete task config
+- Model/optimizer configs exist but not directly wired to train.py
+- Construction via builder functions only
+
+### Manual Optimization
+- VQVAETask uses `automatic_optimization = False` for GAN training
+- Alternating generator/discriminator steps per batch
 
 ## Important Notes
 
-1. **Stage 2 依赖 Stage 1**: MaskGIT 训练需要先完成 VQGAN 训练
-2. **VQGAN 冻结**: 默认情况下 Stage 2 会冻结 VQGAN 参数
-3. **数据格式**: 支持 NIfTI (.nii.gz) 和 NumPy 数组格式
+1. **Stage Dependencies**: Stage 2 (MaskGIT) requires Stage 1 (VQVAE) checkpoint
+2. **Data Path**: Use absolute paths (Hydra doesn't expand `~`)
+3. **Crop Size**: Must be divisible by 16 for VQVAE encoder
+4. **Checkpoints**: Saved to `./checkpoints/` by default
 
 ## Testing
 
-- 测试覆盖要求: >80%
-- 测试标记: `@pytest.mark.slow`, `@pytest.mark.gpu`, `@pytest.mark.integration`
-- 单元测试: `tests/unit/`
-- 集成测试: `tests/integration/`
+- Coverage requirement: >80%
+- Test markers: `@pytest.mark.slow`, `@pytest.mark.gpu`, `@pytest.mark.integration`
+- Unit tests: `tests/unit/` (mirrors src structure)
+- Integration tests: `tests/integration/`
+
+## References
+
+- **Primary**: AGENTS.md (current architecture)
+- **Outdated**: This file previously described Fabric + injector architecture (removed)

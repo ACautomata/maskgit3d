@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 import torch
-from omegaconf import OmegaConf
 
 from src.maskgit3d.training.maskgit_steps import MaskGITTrainingSteps
 

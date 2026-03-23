@@ -41,7 +41,9 @@ class VectorQuantizer(nn.Module):
         self.embedding.weight.requires_grad = False
 
         self.register_buffer("_ema_cluster_size", torch.zeros(num_embeddings))
+        self._ema_cluster_size: torch.Tensor
         self.register_buffer("_ema_embed_sum", self.embedding.weight.data.clone())
+        self._ema_embed_sum: torch.Tensor
 
     def forward(self, z: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Quantize continuous latent vectors.

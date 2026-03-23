@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import torch
 
@@ -15,6 +15,7 @@ class RecordingLoss:
         self.calls: list[dict[str, Any]] = []
         self.use_perceptual = True
         self.perceptual_loss = lambda recon, real: torch.tensor(0.75)
+        self.discriminator = torch.nn.Linear(1, 1)
 
     def __call__(self, **kwargs: Any) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         self.calls.append(kwargs)
@@ -35,14 +36,14 @@ class RecordingLoss:
 class RecordingStrategy:
     def __init__(self) -> None:
         self.generator_calls: list[tuple[Any, torch.Tensor, Any]] = []
-        self.discriminator_calls: list[tuple[Any, torch.Tensor]] = []
+        self.discriminator_calls: list[tuple[Any, torch.Tensor, Any]] = []
 
     def step_generator(self, optimizer: Any, loss: torch.Tensor, vqvae: Any) -> None:
         self.generator_calls.append((optimizer, loss, vqvae))
         optimizer.step()
 
-    def step_discriminator(self, optimizer: Any, loss: torch.Tensor) -> None:
-        self.discriminator_calls.append((optimizer, loss))
+    def step_discriminator(self, optimizer: Any, loss: torch.Tensor, discriminator: Any) -> None:
+        self.discriminator_calls.append((optimizer, loss, discriminator))
         optimizer.step()
 
 
@@ -157,28 +158,6 @@ def test_get_decoder_last_layer_returns_final_decoder_weight() -> None:
 
     assert isinstance(last_layer, torch.nn.Parameter)
     assert last_layer.shape == torch.Size([1, 1, 1, 1, 1])
-
-
-def test_reconstruction_step_returns_only_raw_data() -> None:
-    logger = RecordingLogger()
-    reconstructor = RecordingReconstructor(recon_offset=0.25)
-    service = VQVAETrainingSteps(
-        vqvae=DummyVQVAE(),
-        loss_fn=RecordingLoss(),
-        gan_strategy=RecordingStrategy(),
-        reconstructor=reconstructor,
-        log_fn=logger,
-        manual_backward_fn=lambda loss: None,
-    )
-    batch = torch.zeros(1, 1, 4, 4, 4)
-
-    outputs = service.reconstruction_step(batch)
-
-    assert reconstructor.reconstruct_calls
-    assert set(outputs.keys()) == {"x_real", "x_recon"}
-    assert outputs["x_real"].shape == batch.shape
-    assert outputs["x_recon"].shape == batch.shape
-    assert logger.calls == []
 
 
 def test_reconstruction_step_returns_only_raw_data() -> None:

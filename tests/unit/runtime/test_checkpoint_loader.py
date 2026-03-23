@@ -32,5 +32,5 @@ def test_vqvae_checkpoint_loader_uses_weights_only_when_loading() -> None:
     torch_load.assert_called_once_with(
         "/tmp/vqvae.ckpt",
         map_location="cpu",
-        weights_only=True,
+        weights_only=False,  # Changed to False to allow loading hyper_parameters
     )

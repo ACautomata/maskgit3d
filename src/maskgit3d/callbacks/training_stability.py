@@ -165,11 +165,13 @@ class TrainingStabilityCallback(Callback):
             return outputs
         if isinstance(outputs, dict):
             if "loss" in outputs:
-                return outputs["loss"]
+                loss: torch.Tensor | float | None = outputs["loss"]
+                return loss
             # Try common loss keys
             for key in ["train_loss", "total_loss", "step_loss"]:
                 if key in outputs:
-                    return outputs[key]
+                    val: torch.Tensor | float | None = outputs[key]
+                    return val
         return None
 
     def _process_loss(self, trainer: Trainer, loss_value: float) -> None:
