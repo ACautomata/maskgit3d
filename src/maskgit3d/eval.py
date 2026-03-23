@@ -16,7 +16,7 @@ def _resolve_required_ckpt_path(path: str | None) -> str:
 
 
 def _build_eval_task(cfg: DictConfig, ckpt_path: str) -> LightningModule:
-    return import_module("src.maskgit3d.runtime.composition").build_eval_task(cfg, ckpt_path)
+    return import_module("maskgit3d.runtime.composition").build_eval_task(cfg, ckpt_path)
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="eval")
