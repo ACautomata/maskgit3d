@@ -343,6 +343,61 @@ def test_vqvae_task_validation_step_with_perceptual():
     assert set(outputs) == {"x_real", "x_recon"}
 
 
+def test_vqvae_task_validation_step_uses_reconstruction_path():
+    from unittest.mock import MagicMock
+
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        use_perceptual=False,
+    )
+    task.eval()
+
+    mock_recon_step = MagicMock(return_value={"x_real": torch.zeros(1), "x_recon": torch.zeros(1)})
+    task.training_steps.reconstruction_step = mock_recon_step
+
+    x = torch.randn(1, 1, 32, 32, 32)
+
+    with torch.no_grad():
+        task.validation_step(x, 0)
+
+    mock_recon_step.assert_called_once_with(batch=x)
+
+
+@pytest.mark.integration
+def test_vqvae_task_validation_step_with_sliding_window():
+    sliding_window_cfg = {
+        "enabled": True,
+        "roi_size": [16, 16, 16],
+        "overlap": 0.25,
+        "mode": "gaussian",
+        "sw_batch_size": 1,
+    }
+    task = VQVAETask(
+        in_channels=1,
+        out_channels=1,
+        latent_channels=64,
+        num_embeddings=100,
+        embedding_dim=64,
+        use_perceptual=False,
+        sliding_window=sliding_window_cfg,
+    )
+    task.eval()
+
+    x = torch.randn(1, 1, 32, 32, 32)
+
+    with torch.no_grad():
+        outputs = task.validation_step(x, 0)
+
+    assert isinstance(outputs, dict)
+    assert set(outputs) == {"x_real", "x_recon"}
+    assert isinstance(outputs["x_real"], torch.Tensor)
+    assert isinstance(outputs["x_recon"], torch.Tensor)
+
+
 def test_vqvae_task_test_step_without_sliding_window():
     task = VQVAETask(
         in_channels=1,

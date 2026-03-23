@@ -53,14 +53,16 @@ def create_training_transforms(config: MedMNISTConfig) -> Callable:
 def create_validation_transforms(config: MedMNISTConfig) -> Callable:
     """Create validation transforms pipeline.
 
-    Uses random crop (same as training) to match training spatial size.
-    Enables single forward pass without sliding window inference.
+    No spatial cropping - preserves original input size for sliding window inference.
+    Use this when validation should operate on full-size images with sliding window.
 
     Pipeline:
     1. EnsureType - Ensure tensor type
-    2. SpatialPad - Pad to crop_size if smaller
-    3. ScaleIntensityRange - Normalize [0,255] to [-1,1]
-    4. RandSpatialCrop - Random crop to crop_size (same as training)
+    2. ScaleIntensityRange - Normalize [0,255] to [-1,1]
+
+    Note:
+        Unlike training transforms, this does NOT crop the data.
+        The VQVAE reconstructor handles sliding window inference for large inputs.
 
     Args:
         config: MedMNIST configuration
@@ -69,8 +71,6 @@ def create_validation_transforms(config: MedMNISTConfig) -> Callable:
         Composed transform callable
     """
     crop_size = config.crop_size
-
-    validate_crop_size_for_vqvae(crop_size)
 
     return Compose(
         [
@@ -81,11 +81,6 @@ def create_validation_transforms(config: MedMNISTConfig) -> Callable:
                 a_max=255.0,
                 b_min=-1.0,
                 b_max=1.0,
-            ),
-            RandSpatialCrop(
-                roi_size=crop_size,
-                random_center=True,
-                random_size=False,
             ),
         ]
     )

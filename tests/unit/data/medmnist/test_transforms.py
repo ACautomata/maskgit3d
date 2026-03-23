@@ -11,6 +11,7 @@ from src.maskgit3d.data.medmnist.transforms import (
     create_medmnist_preprocessing,
     create_medmnist_training_preprocessing,
     create_training_transforms,
+    create_validation_transforms,
 )
 
 
@@ -81,6 +82,61 @@ class TestCreateInferenceTransforms:
         """Test that values are normalized to [-1, 1]."""
         config = MedMNISTConfig(dataset_name=MedMNISTDatasetName.ORGAN)
         transform = create_inference_transforms(config)
+
+        input_tensor = torch.full((1, 28, 28, 28), 255.0)
+        output = _assert_tensor(transform(input_tensor))
+
+        assert output.max() <= 1.0
+        assert output.min() >= -1.0
+
+
+class TestCreateValidationTransforms:
+    def test_returns_callable(self):
+        config = MedMNISTConfig(dataset_name=MedMNISTDatasetName.ORGAN)
+        transform = create_validation_transforms(config)
+        assert callable(transform)
+
+    def test_does_not_crop_preserves_original_size(self):
+        config = MedMNISTConfig(
+            dataset_name=MedMNISTDatasetName.ORGAN,
+            crop_size=(32, 32, 32),
+        )
+        transform = create_validation_transforms(config)
+
+        input_tensor = torch.randint(0, 256, (1, 28, 28, 28), dtype=torch.float32)
+        output = _assert_tensor(transform(input_tensor))
+
+        assert output.shape == (1, 32, 32, 32)
+
+    def test_no_crop_for_larger_input(self):
+        config = MedMNISTConfig(
+            dataset_name=MedMNISTDatasetName.ORGAN,
+            crop_size=(32, 32, 32),
+        )
+        transform = create_validation_transforms(config)
+
+        input_tensor = torch.randint(0, 256, (1, 64, 64, 64), dtype=torch.float32)
+        output = _assert_tensor(transform(input_tensor))
+
+        assert output.shape == (1, 64, 64, 64)
+
+    def test_matches_inference_behavior_no_crop(self):
+        config = MedMNISTConfig(
+            dataset_name=MedMNISTDatasetName.ORGAN,
+            crop_size=(32, 32, 32),
+        )
+        val_transform = create_validation_transforms(config)
+        inf_transform = create_inference_transforms(config)
+
+        input_tensor = torch.randint(0, 256, (1, 28, 28, 28), dtype=torch.float32)
+        val_output = _assert_tensor(val_transform(input_tensor))
+        inf_output = _assert_tensor(inf_transform(input_tensor))
+
+        assert val_output.shape == inf_output.shape
+
+    def test_normalization(self):
+        config = MedMNISTConfig(dataset_name=MedMNISTDatasetName.ORGAN)
+        transform = create_validation_transforms(config)
 
         input_tensor = torch.full((1, 28, 28, 28), 255.0)
         output = _assert_tensor(transform(input_tensor))
