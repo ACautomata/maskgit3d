@@ -7,7 +7,11 @@ from torch.utils.data import DataLoader
 
 from .config import MedMNISTConfig, MedMNISTDatasetName, TaskType
 from .dataset import MedMNIST3DDataset
-from .transforms import create_inference_transforms, create_training_transforms
+from .transforms import (
+    create_inference_transforms,
+    create_training_transforms,
+    create_validation_transforms,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +94,7 @@ class MedMNIST3DDataModule(LightningDataModule):
             self.val_dataset = MedMNIST3DDataset(
                 config=self.config,
                 split="val",
-                transform=create_inference_transforms(self.config),
+                transform=create_validation_transforms(self.config),
             )
             logger.info(
                 f"Setup datasets: train={len(self.train_dataset)}, val={len(self.val_dataset)}"
@@ -108,7 +112,7 @@ class MedMNIST3DDataModule(LightningDataModule):
             self.val_dataset = MedMNIST3DDataset(
                 config=self.config,
                 split="val",
-                transform=create_inference_transforms(self.config),
+                transform=create_validation_transforms(self.config),
             )
 
     def train_dataloader(self) -> DataLoader:

@@ -3,7 +3,7 @@
 from collections.abc import Callable
 
 from monai.transforms.compose import Compose
-from monai.transforms.croppad.array import RandSpatialCrop, SpatialPad
+from monai.transforms.croppad.array import CenterSpatialCrop, RandSpatialCrop, SpatialPad
 from monai.transforms.intensity.array import ScaleIntensity, ScaleIntensityRange
 from monai.transforms.spatial.array import Resize
 from monai.transforms.utility.array import EnsureType
@@ -50,7 +50,60 @@ def create_training_transforms(config: MedMNISTConfig) -> Callable:
     )
 
 
+def create_validation_transforms(config: MedMNISTConfig) -> Callable:
+    """Create validation transforms pipeline.
+
+    Uses center crop to match training spatial size, enabling single forward pass
+    without sliding window inference. Deterministic for reproducibility.
+
+    Pipeline:
+    1. EnsureType - Ensure tensor type
+    2. SpatialPad - Pad to crop_size if smaller
+    3. ScaleIntensityRange - Normalize [0,255] to [-1,1]
+    4. CenterSpatialCrop - Center crop to crop_size (deterministic)
+
+    Args:
+        config: MedMNIST configuration
+
+    Returns:
+        Composed transform callable
+    """
+    crop_size = config.crop_size
+
+    validate_crop_size_for_vqvae(crop_size)
+
+    return Compose(
+        [
+            EnsureType(),
+            SpatialPad(spatial_size=crop_size, mode="constant"),
+            ScaleIntensityRange(
+                a_min=0.0,
+                a_max=255.0,
+                b_min=-1.0,
+                b_max=1.0,
+            ),
+            CenterSpatialCrop(roi_size=crop_size),
+        ]
+    )
+
+
 def create_inference_transforms(config: MedMNISTConfig) -> Callable:
+    """Create inference/test transforms pipeline.
+
+    No spatial cropping - preserves original input size for test/inference.
+    Use this for test set evaluation where full-volume reconstruction is needed.
+
+    Pipeline:
+    1. EnsureType - Ensure tensor type
+    2. SpatialPad - Pad to crop_size if smaller (for divisibility)
+    3. ScaleIntensityRange - Normalize [0,255] to [-1,1]
+
+    Args:
+        config: MedMNIST configuration
+
+    Returns:
+        Composed transform callable
+    """
     crop_size = config.crop_size
 
     return Compose(
