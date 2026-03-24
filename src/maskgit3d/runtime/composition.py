@@ -16,6 +16,7 @@ from ..tasks.vqvae_task import VQVAETask
 from ..training import MaskGITTrainingSteps, VQVAETrainingSteps
 from .checkpoints import load_vqvae_from_checkpoint
 from .model_factory import create_maskgit_model, create_vqvae_model
+from .optimizer_factory import TransformerOptimizerFactory
 
 
 def _get_task_target(cfg: DictConfig) -> str:
@@ -181,9 +182,17 @@ def build_maskgit_task(cfg: DictConfig) -> MaskGITTask:
         )
     training_steps = MaskGITTrainingSteps(maskgit=maskgit)
 
+    optimizer_factory = TransformerOptimizerFactory(
+        lr=float(cfg.task.get("lr", 1e-4)),
+        weight_decay=float(cfg.task.get("weight_decay", 0.01)),
+        warmup_steps=int(cfg.task.get("warmup_steps", 1000)),
+        optimizer_config=cfg.get("optimizer"),
+    )
+
     task.vqvae = vqvae
     task.maskgit = maskgit
     task.training_steps = training_steps
+    task.optimizer_factory = optimizer_factory
     if model_config is not None:
         task.hparams["model_config"] = model_config
     return cast(MaskGITTask, task)
