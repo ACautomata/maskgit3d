@@ -7,6 +7,7 @@ from .config import (
 )
 from .dataset import (
     BraTS2023CaseRecord,
+    BraTS2023Dataset,
     _discover_cases,
     _generate_stratified_split,
     _is_complete_case,
@@ -27,6 +28,7 @@ __all__ = [
     "MODALITY_ORDER",
     # Dataset
     "BraTS2023CaseRecord",
+    "BraTS2023Dataset",
     "_discover_cases",
     "_generate_stratified_split",
     "_is_complete_case",

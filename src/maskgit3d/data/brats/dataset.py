@@ -142,3 +142,62 @@ def _generate_stratified_split(
         held_out_cases.extend(shuffled[n_train:])
 
     return train_cases, held_out_cases
+
+
+class BraTS2023Dataset:
+    """PyTorch Dataset for BraTS 2023 reconstruction task.
+
+    This dataset loads multi-modal MRI data for self-reconstruction.
+    Each sample returns the 4-channel MRI volume as both input and target.
+
+    Attributes:
+        cases: List of BraTS2023CaseRecord for this split
+        transform: Optional MONAI transform to apply to samples
+    """
+
+    def __init__(self, cases: list[BraTS2023CaseRecord], transform=None) -> None:
+        """Initialize dataset.
+
+        Args:
+            cases: List of case records for this dataset split
+            transform: Optional MONAI transform pipeline
+        """
+        self.cases = cases
+        self.transform = transform
+
+    def __len__(self) -> int:
+        """Return number of cases in dataset."""
+        return len(self.cases)
+
+    def __getitem__(self, idx: int) -> dict:
+        """Get a single sample from the dataset.
+
+        Args:
+            idx: Index of case to retrieve
+
+        Returns:
+            Dictionary with keys:
+                - "image": List of 4 modality paths (or transformed tensor)
+                - "case_id": Case identifier
+                - "subdataset": Sub-dataset type
+
+        Raises:
+            IndexError: If idx is out of range
+        """
+        if idx < 0 or idx >= len(self.cases):
+            raise IndexError(f"Index {idx} out of range for dataset of size {len(self.cases)}")
+
+        case = self.cases[idx]
+
+        # Build MONAI-compatible sample dict
+        sample = {
+            "image": case.image_paths,
+            "case_id": case.case_id,
+            "subdataset": case.subdataset,
+        }
+
+        # Apply transform if provided
+        if self.transform is not None:
+            sample = self.transform(sample)
+
+        return sample
