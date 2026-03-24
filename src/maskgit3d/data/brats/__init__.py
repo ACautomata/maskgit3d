@@ -5,6 +5,12 @@ from .config import (
     BraTS2023Config,
     BraTSSubDataset,
 )
+from .dataset import (
+    BraTS2023CaseRecord,
+    _discover_cases,
+    _generate_stratified_split,
+    _is_complete_case,
+)
 from .transforms import (
     create_brats2023_inference_preprocessing,
     create_brats2023_preprocessing,
@@ -19,6 +25,11 @@ __all__ = [
     "BraTS2023Config",
     "BraTSSubDataset",
     "MODALITY_ORDER",
+    # Dataset
+    "BraTS2023CaseRecord",
+    "_discover_cases",
+    "_generate_stratified_split",
+    "_is_complete_case",
     # Transforms
     "create_brats_preprocessing",
     "create_brats_training_preprocessing",
