@@ -5,35 +5,67 @@ Uses BERT-style training where tokens are randomly masked and
 the model learns to predict them.
 """
 
+import math
+
 import torch
 import torch.nn as nn
 
 
-class PositionalEncoding3D(nn.Module):
-    """3D Positional encoding for volumetric tokens.
+class SinusoidalPositionalEncoding(nn.Module):
+    """Sinusoidal positional encoding for variable-length sequences.
 
-    Creates learnable embeddings for (D, H, W) positions.
+    Computes positional embeddings on-the-fly using sine and cosine functions.
+    Supports arbitrary sequence lengths without pre-allocated parameters.
     """
 
-    def __init__(self, num_tokens: int, embed_dim: int):
-        super().__init__()
-        self.num_tokens = num_tokens
-        self.embed_dim = embed_dim
+    pe: torch.Tensor  # type: ignore[assignment]
 
-        # Learnable positional embeddings
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_tokens, embed_dim))
-        nn.init.normal_(self.pos_embed, std=0.02)
+    def __init__(self, embed_dim: int, max_len: int = 8192):
+        """Initialize sinusoidal positional encoding.
+
+        Args:
+            embed_dim: Embedding dimension (must match hidden_size)
+            max_len: Maximum sequence length to precompute (for caching)
+        """
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.max_len = max_len
+
+        pe = torch.zeros(max_len, embed_dim)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(
+            torch.arange(0, embed_dim, 2).float() * (-math.log(10000.0) / embed_dim)
+        )
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        self.register_buffer("pe", pe.unsqueeze(0))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Add positional embeddings to input.
 
         Args:
-            x: Input tokens [B, N, C] where N = D * H * W
+            x: Input tokens [B, N, C] where N is sequence length
 
         Returns:
             Tokens with positional information added
         """
-        return x + self.pos_embed
+        seq_len = x.size(1)
+        if seq_len > self.max_len:
+            # Extend positional encoding dynamically if needed
+            return self._forward_extended(x, seq_len)
+        return x + self.pe[:, :seq_len, :]
+
+    def _forward_extended(self, x: torch.Tensor, seq_len: int) -> torch.Tensor:
+        """Compute positional encoding for sequences longer than max_len."""
+        position = torch.arange(0, seq_len, dtype=torch.float, device=x.device).unsqueeze(1)
+        div_term = torch.exp(
+            torch.arange(0, self.embed_dim, 2, dtype=torch.float, device=x.device)
+            * (-math.log(10000.0) / self.embed_dim)
+        )
+        pe = torch.zeros(seq_len, self.embed_dim, device=x.device, dtype=x.dtype)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        return x + pe.unsqueeze(0)
 
 
 class TransformerBlock(nn.Module):
@@ -113,7 +145,6 @@ class MaskGITTransformer(nn.Module):
         num_heads: int = 12,
         mlp_ratio: float = 4.0,
         dropout: float = 0.1,
-        max_seq_len: int = 4096,
     ):
         """Args:
         vocab_size: Size of vocabulary (codebook_size + 1 for mask)
@@ -123,7 +154,6 @@ class MaskGITTransformer(nn.Module):
         num_heads: Number of attention heads
         mlp_ratio: MLP expansion ratio
         dropout: Dropout probability
-        max_seq_len: Maximum sequence length
         """
         super().__init__()
         self.vocab_size = vocab_size
@@ -145,8 +175,8 @@ class MaskGITTransformer(nn.Module):
         self.mask_token = nn.Parameter(torch.zeros(1, 1, hidden_size))
         nn.init.normal_(self.mask_token, std=0.02)
 
-        # Positional encoding (will be initialized based on actual sequence)
-        self.pos_encoding: PositionalEncoding3D | None = None
+        # Sinusoidal positional encoding (supports arbitrary sequence lengths)
+        self.pos_encoding = SinusoidalPositionalEncoding(hidden_size)
 
         # Transformer blocks
         self.blocks = nn.ModuleList(
@@ -165,16 +195,6 @@ class MaskGITTransformer(nn.Module):
         self.norm = nn.LayerNorm(hidden_size)
         self.head = nn.Linear(hidden_size, vocab_size, bias=False)
 
-    def _init_pos_encoding(self, seq_len: int, device: torch.device) -> None:
-        """Initialize positional encoding if needed."""
-        if self.pos_encoding is None:
-            self.pos_encoding = PositionalEncoding3D(seq_len, self.hidden_size).to(device)
-        else:
-            current_seq_len = self.pos_encoding.pos_embed.shape[1]
-            if current_seq_len < seq_len:
-                self.pos_encoding = PositionalEncoding3D(seq_len, self.hidden_size).to(device)
-        assert self.pos_encoding is not None
-
     def encode(
         self,
         tokens: torch.Tensor,
@@ -189,17 +209,10 @@ class MaskGITTransformer(nn.Module):
         Returns:
             Logits [B, N, vocab_size] or embeddings [B, N, hidden_size]
         """
-        B, N = tokens.shape
-        device = tokens.device
-
-        # Initialize pos encoding if needed
-        self._init_pos_encoding(N, device)
-
         # Get token embeddings
         x = self.token_embed(tokens)
 
         # Add positional encoding
-        assert self.pos_encoding is not None
         x = self.pos_encoding(x)
 
         # Apply transformer blocks
@@ -230,24 +243,16 @@ class MaskGITTransformer(nn.Module):
         Returns:
             Logits [B, N, vocab_size]
         """
-        B, N = tokens.shape
-        device = tokens.device
-
         # If no mask specified, return all logits
         if mask_indices is None:
             return self.encode(tokens, return_logits=True)
 
-        # Initialize pos encoding if needed
-        self._init_pos_encoding(N, device)
-
         # Create input with mask tokens
         input_tokens = tokens.clone()
-
         input_tokens[mask_indices] = self.mask_token_id
 
         # Get embeddings
         x = self.token_embed(input_tokens)
-        assert self.pos_encoding is not None
         x = self.pos_encoding(x)
 
         # Apply transformer blocks
