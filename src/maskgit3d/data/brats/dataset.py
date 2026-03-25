@@ -1,13 +1,18 @@
 """BraTS2023 dataset implementation with case discovery and split generation."""
 
+import hashlib
 import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Tuple
 
+import torch
 from torch.utils.data import Dataset
 
 from maskgit3d.data.brats.config import MODALITY_ORDER, BraTSSubDataset
+
+
+MODALITY_TO_LABEL: dict[str, int] = {modality: idx for idx, modality in enumerate(MODALITY_ORDER)}
 
 
 @dataclass
@@ -113,7 +118,6 @@ def _generate_stratified_split(
     """
     random.seed(seed)
 
-    # Group cases by subdataset for stratification
     by_subdataset: dict[BraTSSubDataset, list[BraTS2023CaseRecord]] = {
         BraTSSubDataset.GLI: [],
         BraTSSubDataset.MEN: [],
@@ -130,14 +134,11 @@ def _generate_stratified_split(
         if not subdataset_cases:
             continue
 
-        # Shuffle within subdataset for reproducibility
         shuffled = subdataset_cases.copy()
         random.shuffle(shuffled)
 
-        # Calculate split point
         n_train = int(len(shuffled) * train_ratio)
 
-        # Add to respective lists
         train_cases.extend(shuffled[:n_train])
         held_out_cases.extend(shuffled[n_train:])
 
@@ -145,23 +146,53 @@ def _generate_stratified_split(
 
 
 class BraTS2023Dataset(Dataset):
-    """PyTorch Dataset for BraTS 2023 reconstruction task.
+    """PyTorch Dataset for BraTS 2023 with mixed-modality sampling.
 
-    This dataset loads multi-modal MRI data for self-reconstruction.
-    Each sample returns the 4-channel MRI volume as both input and target.
+    Each sample randomly selects one modality from the 4 available
+    (t1n, t1c, t2w, t2f) and returns it as a single-channel volume
+    along with its modality label.
 
     Attributes:
         cases: List of BraTS2023CaseRecord for this split
         transform: Optional MONAI transform to apply to samples
+        deterministic: If True, use deterministic sampling (for validation/test)
+        seed: Base seed for deterministic sampling
     """
 
-    def __init__(self, cases: list[BraTS2023CaseRecord], transform=None) -> None:
+    def __init__(
+        self,
+        cases: list[BraTS2023CaseRecord],
+        transform=None,
+        deterministic: bool = False,
+        seed: int = 42,
+    ) -> None:
         super().__init__()
         self.cases = cases
         self.transform = transform
+        self.deterministic = deterministic
+        self.seed = seed
 
     def __len__(self) -> int:
         return len(self.cases)
+
+    def _sample_modality(self, case_id: str) -> int:
+        """Sample a modality index for the given case.
+
+        Uses torch.randint for proper seeding with DataLoader workers.
+        For deterministic mode, derives modality from stable hash(case_id + seed).
+
+        Args:
+            case_id: Case identifier for deterministic hashing
+
+        Returns:
+            Modality index (0-3)
+        """
+        if self.deterministic:
+            key = f"{case_id}_{self.seed}".encode()
+            combined = int(hashlib.md5(key).hexdigest(), 16)
+            return combined % len(MODALITY_ORDER)
+        else:
+            return int(torch.randint(0, len(MODALITY_ORDER), (1,)).item())
 
     def __getitem__(self, idx: int) -> dict:
         if idx < 0 or idx >= len(self.cases):
@@ -169,8 +200,15 @@ class BraTS2023Dataset(Dataset):
 
         case = self.cases[idx]
 
+        modality_idx = self._sample_modality(case.case_id)
+        selected_path = case.image_paths[modality_idx]
+        modality_name = MODALITY_ORDER[modality_idx]
+        modality_label = modality_idx
+
         sample = {
-            "image": case.image_paths,
+            "image": selected_path,
+            "modality_label": modality_label,
+            "modality": modality_name,
             "case_id": case.case_id,
             "subdataset": case.subdataset,
         }
