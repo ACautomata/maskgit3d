@@ -247,3 +247,39 @@ class TestBraTS2023DataModule:
 
         assert datamodule.train_dataset is not None
         assert len(datamodule.train_dataset) == 8
+
+    @patch("maskgit3d.data.brats.datamodule._discover_cases")
+    def test_batch_is_tuple_format(self, mock_discover: MagicMock, tmp_path: Path) -> None:
+        """Test that DataLoader returns (images, labels) tuple."""
+        import torch
+        from monai.data import MetaTensor
+        import numpy as np
+        from maskgit3d.data.brats.datamodule import brats_collate_fn
+
+        batch = [
+            {
+                "image": MetaTensor(np.random.rand(32, 32, 32).astype(np.float32)),
+                "modality_label": 0,
+            },
+            {
+                "image": MetaTensor(np.random.rand(32, 32, 32).astype(np.float32)),
+                "modality_label": 2,
+            },
+            {
+                "image": MetaTensor(np.random.rand(32, 32, 32).astype(np.float32)),
+                "modality_label": 1,
+            },
+            {
+                "image": MetaTensor(np.random.rand(32, 32, 32).astype(np.float32)),
+                "modality_label": 3,
+            },
+        ]
+
+        images, labels = brats_collate_fn(batch)
+
+        assert isinstance(images, torch.Tensor), f"Expected Tensor, got {type(images)}"
+        assert isinstance(labels, torch.Tensor), f"Expected Tensor, got {type(labels)}"
+        assert images.shape[0] == 4
+        assert labels.shape[0] == 4
+        assert labels.dtype == torch.long
+        assert all(0 <= l.item() <= 3 for l in labels)

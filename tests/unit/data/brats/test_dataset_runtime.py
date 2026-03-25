@@ -48,7 +48,10 @@ class TestBraTS2023Dataset:
         assert isinstance(result, dict)
         assert "image" in result
         assert result["case_id"] == "BraTS-GLI-00000-000"
-        assert len(result["image"]) == 4
+        assert isinstance(result["image"], Path)
+        assert "modality_label" in result
+        assert isinstance(result["modality_label"], int)
+        assert 0 <= result["modality_label"] <= 3
 
     def test_dataset_getitem_with_transform(self) -> None:
         """Test getting item applies transform."""
@@ -98,16 +101,15 @@ class TestBraTS2023Dataset:
         with pytest.raises(IndexError):
             dataset[10]
 
-    def test_dataset_preserves_modality_order(self) -> None:
-        """Test that dataset preserves modality order in paths."""
+    def test_dataset_returns_modality_info(self) -> None:
+        """Test that dataset returns modality label and name."""
         cases = self.create_mock_cases(1)
-        dataset = BraTS2023Dataset(cases=cases, transform=None)
+        dataset = BraTS2023Dataset(cases=cases, transform=None, deterministic=True, seed=42)
 
         result = dataset[0]
-        paths = result["image"]
+        path = result["image"]
 
-        # Check modality order: t1n, t1c, t2w, t2f
-        assert "t1n" in str(paths[0])
-        assert "t1c" in str(paths[1])
-        assert "t2w" in str(paths[2])
-        assert "t2f" in str(paths[3])
+        assert isinstance(path, Path)
+        assert any(m in str(path) for m in ["t1n", "t1c", "t2w", "t2f"])
+        assert "modality_label" in result
+        assert result["modality"] in ["t1n", "t1c", "t2w", "t2f"]
