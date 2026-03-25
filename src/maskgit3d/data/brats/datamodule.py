@@ -3,6 +3,7 @@
 import logging
 from pathlib import Path
 
+import torch
 from lightning import LightningDataModule
 from torch.utils.data import DataLoader
 
@@ -11,6 +12,20 @@ from .dataset import BraTS2023Dataset, _discover_cases, _generate_stratified_spl
 from .transforms import create_brats2023_training_transforms, create_brats2023_validation_transforms
 
 logger = logging.getLogger(__name__)
+
+
+def brats_collate_fn(batch: list[dict]) -> tuple[torch.Tensor, torch.Tensor]:
+    """Collate BraTS samples into (images, labels) tuple.
+
+    Args:
+        batch: List of sample dicts with 'image' and 'modality_label' keys
+
+    Returns:
+        Tuple of (images_tensor, labels_tensor)
+    """
+    images = torch.stack([sample["image"] for sample in batch])
+    labels = torch.tensor([sample["modality_label"] for sample in batch], dtype=torch.long)
+    return images, labels
 
 
 class BraTS2023DataModule(LightningDataModule):
@@ -23,8 +38,11 @@ class BraTS2023DataModule(LightningDataModule):
     - Loads GLI, MEN, MET sub-datasets
     - Stratified 80/20 train/val split
     - Val and test use the same held-out split
+    - Training: Stochastic single-modality sampling (random from 4 modalities)
+    - Validation/Test: Deterministic single-modality sampling
     - Training: 128³ random crop with nnUNet-style augmentations
     - Inference: Full volume with sliding window support
+    - Returns samples with: image (1-channel), modality_label (0-3), modality name
 
     Attributes:
         config: BraTS2023Config instance
@@ -135,6 +153,8 @@ class BraTS2023DataModule(LightningDataModule):
             self.train_dataset = BraTS2023Dataset(
                 cases=train_cases,
                 transform=train_transform,
+                deterministic=False,
+                seed=self.config.seed,
             )
             logger.info(f"Setup train dataset: {len(self.train_dataset)} samples")
 
@@ -142,12 +162,13 @@ class BraTS2023DataModule(LightningDataModule):
             val_transform = create_brats2023_validation_transforms(
                 normalize_mode=self.normalize_mode,
             )
-            # Val and test use the SAME held-out cases
             self.val_dataset = BraTS2023Dataset(
                 cases=held_out_cases,
                 transform=val_transform,
+                deterministic=True,
+                seed=self.config.seed,
             )
-            self.test_dataset = self.val_dataset  # Same object reference
+            self.test_dataset = self.val_dataset
             logger.info(f"Setup val/test dataset: {len(self.val_dataset)} samples")
 
     def train_dataloader(self) -> DataLoader:
@@ -168,6 +189,7 @@ class BraTS2023DataModule(LightningDataModule):
             drop_last=self.config.drop_last_train,
             persistent_workers=self.num_workers > 0,
             prefetch_factor=2 if self.num_workers > 0 else None,
+            collate_fn=brats_collate_fn,
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -187,6 +209,7 @@ class BraTS2023DataModule(LightningDataModule):
             pin_memory=self.pin_memory,
             persistent_workers=self.num_workers > 0,
             prefetch_factor=2 if self.num_workers > 0 else None,
+            collate_fn=brats_collate_fn,
         )
 
     def test_dataloader(self) -> DataLoader:
@@ -208,6 +231,7 @@ class BraTS2023DataModule(LightningDataModule):
             pin_memory=self.pin_memory,
             persistent_workers=self.num_workers > 0,
             prefetch_factor=2 if self.num_workers > 0 else None,
+            collate_fn=brats_collate_fn,
         )
 
     def predict_dataloader(self) -> DataLoader:
@@ -227,4 +251,5 @@ class BraTS2023DataModule(LightningDataModule):
             pin_memory=self.pin_memory,
             persistent_workers=self.num_workers > 0,
             prefetch_factor=2 if self.num_workers > 0 else None,
+            collate_fn=brats_collate_fn,
         )
