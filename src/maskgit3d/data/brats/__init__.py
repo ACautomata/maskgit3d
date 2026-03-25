@@ -1,10 +1,11 @@
-"""BraTS dataset preprocessing transforms."""
+"""BraTS dataset module."""
 
 from .config import (
     MODALITY_ORDER,
     BraTS2023Config,
     BraTSSubDataset,
 )
+from .datamodule import BraTS2023DataModule
 from .dataset import (
     BraTS2023CaseRecord,
     BraTS2023Dataset,
@@ -15,7 +16,9 @@ from .dataset import (
 from .transforms import (
     create_brats2023_inference_preprocessing,
     create_brats2023_preprocessing,
+    create_brats2023_training_transforms,
     create_brats2023_training_preprocessing,
+    create_brats2023_validation_transforms,
     create_brats_inference_preprocessing,
     create_brats_preprocessing,
     create_brats_training_preprocessing,
@@ -26,6 +29,8 @@ __all__ = [
     "BraTS2023Config",
     "BraTSSubDataset",
     "MODALITY_ORDER",
+    # DataModule
+    "BraTS2023DataModule",
     # Dataset
     "BraTS2023CaseRecord",
     "BraTS2023Dataset",
@@ -39,4 +44,6 @@ __all__ = [
     "create_brats2023_preprocessing",
     "create_brats2023_training_preprocessing",
     "create_brats2023_inference_preprocessing",
+    "create_brats2023_training_transforms",
+    "create_brats2023_validation_transforms",
 ]

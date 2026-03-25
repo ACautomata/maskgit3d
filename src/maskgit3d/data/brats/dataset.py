@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Tuple
 
+from torch.utils.data import Dataset
+
 from maskgit3d.data.brats.config import MODALITY_ORDER, BraTSSubDataset
 
 
@@ -45,8 +47,10 @@ def _discover_cases(
 ) -> list[BraTS2023CaseRecord]:
     """Discover all complete BraTS 2023 cases from the data directory.
 
+    Recursively searches subdirectories for case folders (BraTS-XXX-YYYYY-ZZZ).
+
     Args:
-        data_dir: Root directory containing BraTS case folders
+        data_dir: Root directory containing BraTS data (may have nested structure)
         subdatasets: List of sub-datasets to include
 
     Returns:
@@ -58,17 +62,15 @@ def _discover_cases(
     if not data_dir.exists():
         return cases
 
-    for item in data_dir.iterdir():
+    for item in data_dir.rglob("*"):
         if not item.is_dir():
             continue
 
         case_id = item.name
 
-        # Check if this is a BraTS directory for one of the requested subdatasets
         if not any(case_id.startswith(prefix) for prefix in subdataset_prefixes):
             continue
 
-        # Determine subdataset from case_id
         subdataset: BraTSSubDataset | None = None
         for sd in subdatasets:
             if case_id.startswith(f"BraTS-{sd.value.upper()}"):
@@ -78,11 +80,9 @@ def _discover_cases(
         if subdataset is None:
             continue
 
-        # Check if case is complete (all modalities present)
         if not _is_complete_case(item, case_id):
             continue
 
-        # Build image paths in fixed order
         image_paths = [item / f"{case_id}-{modality}.nii.gz" for modality in MODALITY_ORDER]
 
         cases.append(
@@ -144,7 +144,7 @@ def _generate_stratified_split(
     return train_cases, held_out_cases
 
 
-class BraTS2023Dataset:
+class BraTS2023Dataset(Dataset):
     """PyTorch Dataset for BraTS 2023 reconstruction task.
 
     This dataset loads multi-modal MRI data for self-reconstruction.
@@ -156,47 +156,25 @@ class BraTS2023Dataset:
     """
 
     def __init__(self, cases: list[BraTS2023CaseRecord], transform=None) -> None:
-        """Initialize dataset.
-
-        Args:
-            cases: List of case records for this dataset split
-            transform: Optional MONAI transform pipeline
-        """
+        super().__init__()
         self.cases = cases
         self.transform = transform
 
     def __len__(self) -> int:
-        """Return number of cases in dataset."""
         return len(self.cases)
 
     def __getitem__(self, idx: int) -> dict:
-        """Get a single sample from the dataset.
-
-        Args:
-            idx: Index of case to retrieve
-
-        Returns:
-            Dictionary with keys:
-                - "image": List of 4 modality paths (or transformed tensor)
-                - "case_id": Case identifier
-                - "subdataset": Sub-dataset type
-
-        Raises:
-            IndexError: If idx is out of range
-        """
         if idx < 0 or idx >= len(self.cases):
             raise IndexError(f"Index {idx} out of range for dataset of size {len(self.cases)}")
 
         case = self.cases[idx]
 
-        # Build MONAI-compatible sample dict
         sample = {
             "image": case.image_paths,
             "case_id": case.case_id,
             "subdataset": case.subdataset,
         }
 
-        # Apply transform if provided
         if self.transform is not None:
             sample = self.transform(sample)
 

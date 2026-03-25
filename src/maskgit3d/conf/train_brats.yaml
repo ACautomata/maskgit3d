@@ -1,0 +1,16 @@
+defaults:
+  - _self_
+  - model: vqvae_brats
+  - task: vqvae_brats
+  - data: brats2023
+  - optimizer: adam
+  - optional scheduler: cosine
+  - trainer: default
+  - optional callbacks: default
+  - optional logger: tensorboard
+
+seed: 42
+checkpoint_path: null
+scheduler: null
+callbacks: null
+logger: null

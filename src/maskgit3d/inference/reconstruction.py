@@ -20,16 +20,25 @@ class VQVAEReconstructor:
         self.downsampling_factor = downsampling_factor
         self._sliding_window_inferer = inferer
 
-    def extract_input_tensor(self, batch: torch.Tensor | Sequence[Any]) -> torch.Tensor:
+    def extract_input_tensor(
+        self, batch: torch.Tensor | Sequence[Any] | dict[str, Any]
+    ) -> torch.Tensor:
         if isinstance(batch, torch.Tensor):
             return batch
+
+        if isinstance(batch, dict) and "image" in batch:
+            image = batch["image"]
+            if isinstance(image, torch.Tensor):
+                return image
 
         if isinstance(batch, Sequence) and batch:
             image = batch[0]
             if isinstance(image, torch.Tensor):
                 return image
 
-        raise TypeError("Expected batch to be a tensor or a sequence whose first item is a tensor.")
+        raise TypeError(
+            "Expected batch to be a tensor, a dict with 'image' key, or a sequence whose first item is a tensor."
+        )
 
     def get_sliding_window_inferer(self) -> Any | None:
         if self._sliding_window_inferer is None:
@@ -64,9 +73,12 @@ class VQVAEReconstructor:
             return torch.Tensor(z_e)
 
         z_e_padded = cast(torch.Tensor, inferer(x_real_padded, encode_fn))
-        latent_shape = tuple(size // self.downsampling_factor for size in original_shape)
+        padded_shape = x_real_padded.shape[2:]
+        latent_shape = tuple(size // self.downsampling_factor for size in padded_shape)
         batch_size = x_real.shape[0]
         z_e = z_e_padded[:batch_size, :, : latent_shape[0], : latent_shape[1], : latent_shape[2]]
+
+        original_d, original_h, original_w = original_shape
         z_q, _, _ = vqvae.quantizer(z_e)
         latent_roi_size = tuple(
             size // self.downsampling_factor
@@ -78,7 +90,8 @@ class VQVAEReconstructor:
 
         if not latent_needs_sliding_window:
             decoded = vqvae.decode(z_q)
-            return decoded, torch.tensor(0.0, device=z_q.device)
+            decoded_cropped = decoded[:, :, :original_d, :original_h, :original_w]
+            return decoded_cropped, torch.tensor(0.0, device=z_q.device)
 
         latent_inferer = SlidingWindowInferer(
             roi_size=latent_roi_size,
@@ -97,4 +110,5 @@ class VQVAEReconstructor:
             return decoded
 
         decoded = cast(torch.Tensor, latent_inferer(z_q, decode_fn))
-        return decoded, torch.tensor(0.0, device=z_q.device)
+        decoded_cropped = decoded[:, :, :original_d, :original_h, :original_w]
+        return decoded_cropped, torch.tensor(0.0, device=z_q.device)

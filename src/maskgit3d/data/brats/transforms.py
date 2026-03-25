@@ -4,10 +4,20 @@ from monai.transforms.compose import Compose
 from monai.transforms.croppad.array import RandSpatialCrop, SpatialPad
 from monai.transforms.croppad.dictionary import RandSpatialCropd, SpatialPadd
 from monai.transforms.intensity.array import NormalizeIntensity, ScaleIntensity
-from monai.transforms.intensity.dictionary import NormalizeIntensityd, ScaleIntensityd
+from monai.transforms.intensity.dictionary import (
+    NormalizeIntensityd,
+    RandGaussianNoised,
+    RandScaleIntensityd,
+    ScaleIntensityd,
+)
 from monai.transforms.io.dictionary import LoadImaged
 from monai.transforms.spatial.array import Resize
-from monai.transforms.spatial.dictionary import Resized
+from monai.transforms.spatial.dictionary import (
+    RandAffined,
+    RandFlipd,
+    Rand3DElasticd,
+    Resized,
+)
 from monai.transforms.utility.array import EnsureChannelFirst, EnsureType
 from monai.transforms.utility.dictionary import (
     ConvertToMultiChannelBasedOnBratsClassesd,
@@ -236,5 +246,98 @@ def create_brats2023_inference_preprocessing(
                 maxv=1.0,
             )
         )
+
+    return Compose(transforms)
+
+
+def create_brats2023_training_transforms(
+    crop_size: tuple[int, int, int] = (128, 128, 128),
+    normalize_mode: str = "zscore",
+) -> Compose:
+    """Create nnUNet-style training transforms for BraTS 2023 reconstruction.
+
+    This pipeline includes:
+    - Loading NIfTI files
+    - Channel-first conversion
+    - Per-channel z-score normalization
+    - Spatial padding to ensure minimum size
+    - nnUNet-style augmentations (affine, elastic, noise, contrast)
+    - Random spatial crop to target size
+
+    Args:
+        crop_size: Target crop size (D, H, W) for training patches
+        normalize_mode: Normalization mode ("zscore" only recommended)
+
+    Returns:
+        MONAI Compose object with full training pipeline
+
+    Raises:
+        ValueError: If normalize_mode is not "zscore"
+    """
+    if normalize_mode != "zscore":
+        raise ValueError(
+            f"Only zscore normalization supported for training, got '{normalize_mode}'"
+        )
+
+    transforms = [
+        LoadImaged(keys=["image"], image_only=True),
+        EnsureChannelFirstd(keys="image"),
+        NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+        SpatialPadd(keys=["image"], spatial_size=crop_size, mode="constant"),
+        # nnUNet-style augmentations
+        RandFlipd(keys=["image"], prob=0.5, spatial_axis=0),
+        RandFlipd(keys=["image"], prob=0.5, spatial_axis=1),
+        RandFlipd(keys=["image"], prob=0.5, spatial_axis=2),
+        RandAffined(
+            keys=["image"],
+            prob=0.15,
+            rotate_range=(0.1, 0.1, 0.1),  # ~6 degrees
+            scale_range=(0.1, 0.1, 0.1),  # +/- 10%
+            shear_range=(0.05, 0.05, 0.05),
+            mode="bilinear",
+        ),
+        Rand3DElasticd(
+            keys=["image"],
+            prob=0.15,
+            sigma_range=(5, 10),
+            magnitude_range=(50, 150),
+            mode="bilinear",
+        ),
+        RandGaussianNoised(keys=["image"], prob=0.15, mean=0.0, std=0.1),
+        RandScaleIntensityd(keys=["image"], prob=0.15, factors=0.1),
+        RandSpatialCropd(keys=["image"], roi_size=crop_size, random_center=True, random_size=False),
+    ]
+
+    return Compose(transforms)
+
+
+def create_brats2023_validation_transforms(
+    normalize_mode: str = "zscore",
+) -> Compose:
+    """Create validation/test transforms for BraTS 2023 reconstruction.
+
+    This pipeline includes:
+    - Loading NIfTI files
+    - Channel-first conversion
+    - Per-channel z-score normalization
+    - NO spatial crop (full volume preserved for sliding window inference)
+
+    Args:
+        normalize_mode: Normalization mode ("zscore" only recommended)
+
+    Returns:
+        MONAI Compose object with validation/test pipeline
+
+    Raises:
+        ValueError: If normalize_mode is not "zscore"
+    """
+    if normalize_mode != "zscore":
+        raise ValueError(f"Only zscore normalization supported, got '{normalize_mode}'")
+
+    transforms = [
+        LoadImaged(keys=["image"], image_only=True),
+        EnsureChannelFirstd(keys="image"),
+        NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+    ]
 
     return Compose(transforms)

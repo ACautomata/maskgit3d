@@ -1,0 +1,12 @@
+_target_: maskgit3d.data.brats.datamodule.BraTS2023DataModule
+data_dir: /data/dataset/ASNR-MICCAI-BraTS2023/
+crop_size: [128, 128, 128]
+batch_size: 2
+num_workers: 4
+pin_memory: true
+train_ratio: 0.8
+seed: 42
+subdatasets: ["gli", "men", "met"]
+stratify: true
+drop_last_train: true
+normalize_mode: zscore
