@@ -4,7 +4,7 @@
 import pytest
 import torch
 
-from src.maskgit3d.models.maskgit.scheduling import (
+from maskgit3d.models.maskgit.scheduling import (
     TrainingMaskScheduler,
     mask_by_random_topk,
 )

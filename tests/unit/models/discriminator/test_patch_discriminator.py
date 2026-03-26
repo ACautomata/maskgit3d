@@ -1,6 +1,6 @@
 import torch
 
-from src.maskgit3d.models.discriminator.patch_discriminator import PatchDiscriminator3D
+from maskgit3d.models.discriminator.patch_discriminator import PatchDiscriminator3D
 
 
 def test_patch_discriminator_forward() -> None:

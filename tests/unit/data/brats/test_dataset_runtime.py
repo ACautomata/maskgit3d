@@ -1,7 +1,7 @@
 """Tests for BraTS2023 dataset runtime behavior."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

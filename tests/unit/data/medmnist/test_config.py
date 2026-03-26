@@ -1,6 +1,6 @@
 """Tests for MedMNIST configuration."""
 
-from src.maskgit3d.data.medmnist.config import (
+from maskgit3d.data.medmnist.config import (
     MedMNISTConfig,
     MedMNISTDatasetName,
     TaskType,

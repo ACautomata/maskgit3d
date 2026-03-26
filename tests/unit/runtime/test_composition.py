@@ -3,14 +3,14 @@ from unittest.mock import Mock
 
 from omegaconf import OmegaConf
 
-from src.maskgit3d.tasks.incontext_task import InContextMaskGITTask
-from src.maskgit3d.tasks.maskgit_task import MaskGITTask
-from src.maskgit3d.tasks.vqvae_task import VQVAETask
+from maskgit3d.tasks.incontext_task import InContextMaskGITTask
+from maskgit3d.tasks.maskgit_task import MaskGITTask
+from maskgit3d.tasks.vqvae_task import VQVAETask
 
 
 def test_build_training_task_returns_task_via_instantiate(monkeypatch) -> None:
     """Test that build_training_task dispatches to build_vqvae_task for VQVAE tasks."""
-    composition_module = import_module("src.maskgit3d.runtime.composition")
+    composition_module = import_module("maskgit3d.runtime.composition")
     cfg = OmegaConf.create(
         {
             "task": {
@@ -68,7 +68,7 @@ def test_build_training_task_returns_task_via_instantiate(monkeypatch) -> None:
 
 def test_build_training_task_returns_maskgit_task_via_instantiate(monkeypatch) -> None:
     """Test that build_training_task dispatches to build_maskgit_task for MaskGIT tasks."""
-    composition_module = import_module("src.maskgit3d.runtime.composition")
+    composition_module = import_module("maskgit3d.runtime.composition")
     cfg = OmegaConf.create(
         {
             "task": {
@@ -115,7 +115,7 @@ def test_build_training_task_returns_maskgit_task_via_instantiate(monkeypatch) -
 
 def test_build_incontext_task_via_instantiate(monkeypatch) -> None:
     """Test that build_incontext_task correctly builds InContextMaskGITTask."""
-    composition_module = import_module("src.maskgit3d.runtime.composition")
+    composition_module = import_module("maskgit3d.runtime.composition")
     cfg = OmegaConf.create(
         {
             "task": {

@@ -251,9 +251,10 @@ class TestBraTS2023DataModule:
     @patch("maskgit3d.data.brats.datamodule._discover_cases")
     def test_batch_is_tuple_format(self, mock_discover: MagicMock, tmp_path: Path) -> None:
         """Test that DataLoader returns (images, labels) tuple."""
+        import numpy as np
         import torch
         from monai.data import MetaTensor
-        import numpy as np
+
         from maskgit3d.data.brats.datamodule import brats_collate_fn
 
         batch = [
@@ -282,4 +283,4 @@ class TestBraTS2023DataModule:
         assert images.shape[0] == 4
         assert labels.shape[0] == 4
         assert labels.dtype == torch.long
-        assert all(0 <= l.item() <= 3 for l in labels)
+        assert all(0 <= label.item() <= 3 for label in labels)

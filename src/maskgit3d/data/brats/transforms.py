@@ -13,9 +13,9 @@ from monai.transforms.intensity.dictionary import (
 from monai.transforms.io.dictionary import LoadImaged
 from monai.transforms.spatial.array import Resize
 from monai.transforms.spatial.dictionary import (
+    Rand3DElasticd,
     RandAffined,
     RandFlipd,
-    Rand3DElasticd,
     Resized,
 )
 from monai.transforms.utility.array import EnsureChannelFirst, EnsureType

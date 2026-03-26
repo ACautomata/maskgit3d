@@ -2,7 +2,7 @@
 
 import torch
 
-from src.maskgit3d.models.vqvae.quantizer import VectorQuantizer
+from maskgit3d.models.vqvae.quantizer import VectorQuantizer
 
 
 def test_vector_quantizer_forward():

@@ -1,8 +1,8 @@
 from omegaconf import OmegaConf
 
-from src.maskgit3d.models.maskgit import MaskGIT
-from src.maskgit3d.models.vqvae import VQVAE
-from src.maskgit3d.runtime.model_factory import create_maskgit_model, create_vqvae_model
+from maskgit3d.models.maskgit import MaskGIT
+from maskgit3d.models.vqvae import VQVAE
+from maskgit3d.runtime.model_factory import create_maskgit_model, create_vqvae_model
 
 
 def test_create_vqvae_model_builds_vqvae_from_config() -> None:

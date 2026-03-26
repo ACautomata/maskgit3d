@@ -2,9 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-import torch
-
 from maskgit3d.data.brats.config import BraTSSubDataset
 from maskgit3d.data.brats.dataset import BraTS2023CaseRecord, BraTS2023Dataset
 
@@ -76,7 +73,7 @@ class TestMixedModalitySampling:
         from maskgit3d.data.brats.dataset import MODALITY_TO_LABEL
 
         expected = {"t1n": 0, "t1c": 1, "t2w": 2, "t2f": 3}
-        assert MODALITY_TO_LABEL == expected
+        assert expected == MODALITY_TO_LABEL
 
     def test_same_case_can_return_different_modalities(self) -> None:
         """Multiple accesses to same case can return different modalities (stochastic)."""

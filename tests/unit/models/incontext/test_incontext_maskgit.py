@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.maskgit3d.models.incontext.incontext_maskgit import InContextMaskGIT
-from src.maskgit3d.models.vqvae.vqvae import VQVAE
+from maskgit3d.models.incontext.incontext_maskgit import InContextMaskGIT
+from maskgit3d.models.vqvae.vqvae import VQVAE
 
 
 @pytest.fixture
@@ -386,7 +386,7 @@ class TestWithSlidingWindow:
         self, model_with_sliding_window: InContextMaskGIT
     ) -> None:
         """Test prepare_batch uses tokenizer's sliding window encoding."""
-        from src.maskgit3d.models.incontext.types import InContextSample
+        from maskgit3d.models.incontext.types import InContextSample
 
         batch_size = 2
         spatial_size = 32

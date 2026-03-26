@@ -3,7 +3,7 @@ import math
 import torch
 from omegaconf import OmegaConf
 
-from src.maskgit3d.runtime.scheduler_factory import create_scheduler
+from maskgit3d.runtime.scheduler_factory import create_scheduler
 
 
 def test_create_scheduler_builds_linear_warmup_lambda() -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.maskgit3d.models.incontext.sequence_builder import InContextSequenceBuilder
+from maskgit3d.models.incontext.sequence_builder import InContextSequenceBuilder
 
 
 @pytest.fixture
@@ -225,7 +225,6 @@ class TestTargetMask:
         )
 
         # Count total tokens and check only target positions are 1
-        total_tokens = target_mask.shape[1]
         latent_size = 2 * 2 * 2  # 8
 
         # Should have exactly 8 ones (the target latent)

@@ -1,7 +1,7 @@
 import torch
 from omegaconf import OmegaConf
 
-from src.maskgit3d.runtime.optimizer_factory import (
+from maskgit3d.runtime.optimizer_factory import (
     GANOptimizerFactory,
     TransformerOptimizerFactory,
     create_optimizer,

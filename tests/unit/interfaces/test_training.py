@@ -2,7 +2,7 @@ from collections.abc import Iterable
 
 import torch
 
-from src.maskgit3d.interfaces.training import OptimizerFactoryProtocol, SchedulerFactoryProtocol
+from maskgit3d.interfaces.training import OptimizerFactoryProtocol, SchedulerFactoryProtocol
 
 
 class DummyOptimizerFactory:

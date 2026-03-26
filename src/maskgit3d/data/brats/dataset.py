@@ -4,13 +4,11 @@ import hashlib
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
 
 import torch
 from torch.utils.data import Dataset
 
 from maskgit3d.data.brats.config import MODALITY_ORDER, BraTSSubDataset
-
 
 MODALITY_TO_LABEL: dict[str, int] = {modality: idx for idx, modality in enumerate(MODALITY_ORDER)}
 
@@ -105,7 +103,7 @@ def _generate_stratified_split(
     cases: list[BraTS2023CaseRecord],
     train_ratio: float,
     seed: int,
-) -> Tuple[list[BraTS2023CaseRecord], list[BraTS2023CaseRecord]]:
+) -> tuple[list[BraTS2023CaseRecord], list[BraTS2023CaseRecord]]:
     """Generate a stratified train/held-out split of cases.
 
     Args:
@@ -130,7 +128,7 @@ def _generate_stratified_split(
     train_cases: list[BraTS2023CaseRecord] = []
     held_out_cases: list[BraTS2023CaseRecord] = []
 
-    for subdataset, subdataset_cases in by_subdataset.items():
+    for _subdataset, subdataset_cases in by_subdataset.items():
         if not subdataset_cases:
             continue
 

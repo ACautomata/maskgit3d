@@ -6,7 +6,7 @@ import torch
 from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 
-from src.maskgit3d.models.vqvae import VQVAE
+from maskgit3d.models.vqvae import VQVAE
 
 CONFIG_DIR = str(Path(__file__).resolve().parents[4] / "src/maskgit3d/conf")
 

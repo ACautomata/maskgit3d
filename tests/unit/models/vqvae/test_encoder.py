@@ -1,6 +1,6 @@
 import torch
 
-from src.maskgit3d.models.vqvae.encoder import Encoder
+from maskgit3d.models.vqvae.encoder import Encoder
 
 
 def test_encoder_forward_reduces_spatial_shape() -> None:

@@ -9,7 +9,7 @@ from typing import Any
 
 import torch
 
-from src.maskgit3d.training.incontext_steps import InContextTrainingSteps
+from maskgit3d.training.incontext_steps import InContextTrainingSteps
 
 
 class RecordingLogger:

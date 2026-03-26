@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 import torch
 
-from src.maskgit3d.data.medmnist.config import MedMNISTConfig, MedMNISTDatasetName, TaskType
-from src.maskgit3d.data.medmnist.dataset import MedMNIST3DDataset
-from src.maskgit3d.data.medmnist.downloader import MedMNISTDownloader
+from maskgit3d.data.medmnist.config import MedMNISTConfig, MedMNISTDatasetName, TaskType
+from maskgit3d.data.medmnist.dataset import MedMNIST3DDataset
+from maskgit3d.data.medmnist.downloader import MedMNISTDownloader
 
 
 class TestMedMNIST3DDataset:

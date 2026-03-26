@@ -8,8 +8,8 @@ import torch
 import torch.nn as nn
 from monai.inferers.inferer import SlidingWindowInferer
 
-from ..vqvae.vqvae import VQVAE
 from ...utils.sliding_window import create_sliding_window_inferer, pad_to_divisible
+from ..vqvae.vqvae import VQVAE
 
 
 class InContextTokenizer(nn.Module):

@@ -2,7 +2,7 @@
 
 import torch
 
-from src.maskgit3d.losses.perceptual_loss import PerceptualLoss
+from maskgit3d.losses.perceptual_loss import PerceptualLoss
 
 
 def test_perceptual_loss_init_default_params() -> None:

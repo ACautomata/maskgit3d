@@ -85,7 +85,6 @@ class InContextTrainingSteps:
         B, C, D, H, W = target_image.shape
 
         with torch.no_grad():
-            context_images = [s.context_images for s in samples]
             context_modality_ids = samples[0].context_modality_ids
             target_modality_id = samples[0].target_modality_id
 

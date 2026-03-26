@@ -47,11 +47,11 @@ class MaskWeightedCrossEntropyLoss(nn.Module):
         """
         # Flatten all inputs to 1D for cross_entropy
         if logits.dim() == 3:
-            # [B, L, V] -> [B*L, V]
-            B, L, V = logits.shape
-            logits = logits.reshape(B * L, V)
-            labels = labels.reshape(B * L)
-            mask_weights = mask_weights.reshape(B * L)
+            # [B, L, vocab_size] -> [B*L, vocab_size]
+            batch_size, seq_len, vocab_size = logits.shape
+            logits = logits.reshape(batch_size * seq_len, vocab_size)
+            labels = labels.reshape(batch_size * seq_len)
+            mask_weights = mask_weights.reshape(batch_size * seq_len)
         elif labels.dim() == 2:
             # Logits already 2D, flatten labels and weights to match
             labels = labels.reshape(-1)

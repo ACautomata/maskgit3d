@@ -4,8 +4,8 @@ import warnings
 
 import torch
 
-from src.maskgit3d.data.medmnist.config import MedMNISTConfig, MedMNISTDatasetName
-from src.maskgit3d.data.medmnist.transforms import (
+from maskgit3d.data.medmnist.config import MedMNISTConfig, MedMNISTDatasetName
+from maskgit3d.data.medmnist.transforms import (
     create_inference_transforms,
     create_medmnist_inference_preprocessing,
     create_medmnist_preprocessing,

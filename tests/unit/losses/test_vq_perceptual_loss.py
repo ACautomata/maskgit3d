@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from src.maskgit3d.losses.vq_perceptual_loss import (
+from maskgit3d.losses.vq_perceptual_loss import (
     VQPerceptualLoss,
     adopt_weight,
     hinge_d_loss,

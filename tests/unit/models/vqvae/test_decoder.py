@@ -4,7 +4,7 @@ import torch
 
 
 def test_decoder_forward_expands_spatial_dims_by_16x() -> None:
-    decoder_module = importlib.import_module("src.maskgit3d.models.vqvae.decoder")
+    decoder_module = importlib.import_module("maskgit3d.models.vqvae.decoder")
     decoder_cls = decoder_module.Decoder
 
     in_channels = 256

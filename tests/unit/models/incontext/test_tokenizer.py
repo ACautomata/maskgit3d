@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.maskgit3d.models.incontext.tokenizer import InContextTokenizer
-from src.maskgit3d.models.vqvae.vqvae import VQVAE
+from maskgit3d.models.incontext.tokenizer import InContextTokenizer
+from maskgit3d.models.vqvae.vqvae import VQVAE
 
 
 @pytest.fixture

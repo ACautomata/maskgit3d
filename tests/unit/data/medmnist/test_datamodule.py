@@ -5,8 +5,8 @@ from unittest.mock import Mock, patch
 import numpy as np
 import pytest
 
-from src.maskgit3d.data.medmnist.config import TaskType
-from src.maskgit3d.data.medmnist.datamodule import MedMNIST3DDataModule
+from maskgit3d.data.medmnist.config import TaskType
+from maskgit3d.data.medmnist.datamodule import MedMNIST3DDataModule
 
 
 class TestMedMNIST3DDataModule:
@@ -49,7 +49,7 @@ class TestMedMNIST3DDataModule:
         assert datamodule.num_workers == 2
         assert datamodule.config.task_type == TaskType.CLASSIFICATION
 
-    @patch("src.maskgit3d.data.medmnist.datamodule.MedMNIST3DDataset")
+    @patch("maskgit3d.data.medmnist.datamodule.MedMNIST3DDataset")
     def test_setup_fit(self, mock_dataset_cls, tmp_path, fake_data):
         """Test setup with fit stage."""
         mock_dataset_cls.return_value = Mock(__len__=Mock(return_value=10))
@@ -66,7 +66,7 @@ class TestMedMNIST3DDataModule:
         assert datamodule.train_dataset is not None
         assert datamodule.val_dataset is not None
 
-    @patch("src.maskgit3d.data.medmnist.datamodule.MedMNIST3DDataset")
+    @patch("maskgit3d.data.medmnist.datamodule.MedMNIST3DDataset")
     def test_setup_test(self, mock_dataset_cls, tmp_path, fake_data):
         """Test setup with test stage."""
         mock_dataset_cls.return_value = Mock(__len__=Mock(return_value=10))
@@ -82,7 +82,7 @@ class TestMedMNIST3DDataModule:
 
         assert datamodule.test_dataset is not None
 
-    @patch("src.maskgit3d.data.medmnist.datamodule.MedMNIST3DDataset")
+    @patch("maskgit3d.data.medmnist.datamodule.MedMNIST3DDataset")
     def test_train_dataloader(self, mock_dataset_cls, tmp_path, fake_data):
         """Test train_dataloader creation."""
         mock_ds = Mock(__len__=Mock(return_value=10))
@@ -102,7 +102,7 @@ class TestMedMNIST3DDataModule:
         assert loader is not None
         assert loader.batch_size == 4
 
-    @patch("src.maskgit3d.data.medmnist.datamodule.MedMNIST3DDataset")
+    @patch("maskgit3d.data.medmnist.datamodule.MedMNIST3DDataset")
     def test_val_dataloader(self, mock_dataset_cls, tmp_path, fake_data):
         """Test val_dataloader creation."""
         mock_ds = Mock(__len__=Mock(return_value=10))
@@ -121,7 +121,7 @@ class TestMedMNIST3DDataModule:
 
         assert loader is not None
 
-    @patch("src.maskgit3d.data.medmnist.datamodule.MedMNIST3DDataset")
+    @patch("maskgit3d.data.medmnist.datamodule.MedMNIST3DDataset")
     def test_test_dataloader(self, mock_dataset_cls, tmp_path, fake_data):
         """Test test_dataloader creation."""
         mock_ds = Mock(__len__=Mock(return_value=10))
@@ -192,7 +192,7 @@ class TestMedMNIST3DDataModule:
         with pytest.raises(RuntimeError, match="test_dataset is None"):
             datamodule.predict_dataloader()
 
-    @patch("src.maskgit3d.data.medmnist.datamodule.MedMNIST3DDataset")
+    @patch("maskgit3d.data.medmnist.datamodule.MedMNIST3DDataset")
     def test_predict_dataloader(self, mock_dataset_cls, tmp_path, fake_data):
         """Test predict_dataloader creation."""
         mock_ds = Mock(__len__=Mock(return_value=10))
@@ -211,7 +211,7 @@ class TestMedMNIST3DDataModule:
 
         assert loader is not None
 
-    @patch("src.maskgit3d.data.medmnist.datamodule.MedMNIST3DDataset")
+    @patch("maskgit3d.data.medmnist.datamodule.MedMNIST3DDataset")
     def test_setup_validate_stage(self, mock_dataset_cls, tmp_path, fake_data):
         """Test setup with validate stage."""
         mock_dataset_cls.return_value = Mock(__len__=Mock(return_value=10))

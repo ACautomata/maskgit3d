@@ -8,8 +8,8 @@ import pytest
 import torch
 from omegaconf import DictConfig
 
-from src.maskgit3d.models.vqvae import VQVAE
-from src.maskgit3d.tasks.maskgit_task import MaskGITTask
+from maskgit3d.models.vqvae import VQVAE
+from maskgit3d.tasks.maskgit_task import MaskGITTask
 
 
 @pytest.fixture
@@ -23,9 +23,9 @@ def vqvae_checkpoint(tmp_path: Path) -> str:
 @pytest.fixture
 def maskgit_with_components(vqvae_checkpoint: str):
     """Fixture providing fully constructed MaskGIT components for injection path."""
-    from src.maskgit3d.models.maskgit import MaskGIT
-    from src.maskgit3d.runtime.optimizer_factory import TransformerOptimizerFactory
-    from src.maskgit3d.training import MaskGITTrainingSteps
+    from maskgit3d.models.maskgit import MaskGIT
+    from maskgit3d.runtime.optimizer_factory import TransformerOptimizerFactory
+    from maskgit3d.training import MaskGITTrainingSteps
 
     vqvae = VQVAE()
     vqvae.eval()
@@ -567,7 +567,8 @@ def test_maskgit_task_validation_step_returns_consistent_structure(vqvae_checkpo
 def test_maskgit_task_no_vqvae_checkpoint():
     # Should raise ValueError when vqvae_ckpt_path is None in builder
     from omegaconf import OmegaConf
-    from src.maskgit3d.runtime.composition import build_maskgit_task
+
+    from maskgit3d.runtime.composition import build_maskgit_task
 
     cfg = OmegaConf.create(
         {
@@ -638,8 +639,8 @@ class TestMaskGITTaskModelConfig:
         """MaskGITTask can be constructed with model_config DictConfig."""
         from omegaconf import DictConfig
 
-        from src.maskgit3d.models.maskgit import MaskGIT
-        from src.maskgit3d.tasks.maskgit_task import MaskGITTask
+        from maskgit3d.models.maskgit import MaskGIT
+        from maskgit3d.tasks.maskgit_task import MaskGITTask
 
         model_cfg = DictConfig(
             {
@@ -662,7 +663,7 @@ class TestMaskGITTaskModelConfig:
         """When model_config is provided, scalar transformer params are ignored."""
         from omegaconf import DictConfig
 
-        from src.maskgit3d.tasks.maskgit_task import MaskGITTask
+        from maskgit3d.tasks.maskgit_task import MaskGITTask
 
         model_cfg = DictConfig(
             {
@@ -682,8 +683,8 @@ class TestMaskGITTaskModelConfig:
 
     def test_scalar_params_still_work(self, vqvae_checkpoint):
         """Backward compat: scalar params still work without model_config."""
-        from src.maskgit3d.models.maskgit import MaskGIT
-        from src.maskgit3d.tasks.maskgit_task import MaskGITTask
+        from maskgit3d.models.maskgit import MaskGIT
+        from maskgit3d.tasks.maskgit_task import MaskGITTask
 
         task = MaskGITTask(
             vqvae_ckpt_path=str(vqvae_checkpoint),
@@ -697,7 +698,7 @@ class TestMaskGITTaskModelConfig:
         """model_config should be in hparams for checkpoint loading."""
         from omegaconf import DictConfig
 
-        from src.maskgit3d.tasks.maskgit_task import MaskGITTask
+        from maskgit3d.tasks.maskgit_task import MaskGITTask
 
         model_cfg = DictConfig(
             {

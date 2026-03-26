@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from src.maskgit3d.models.maskgit import MaskGITTransformer
+from maskgit3d.models.maskgit import MaskGITTransformer
 
 
 class TestMaskGITTransformer:

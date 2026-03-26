@@ -4,20 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 import torch
-from omegaconf import DictConfig, OmegaConf
 
-from src.maskgit3d.models.incontext import InContextMaskGIT
-from src.maskgit3d.models.incontext.types import InContextSample
-from src.maskgit3d.models.vqvae import VQVAE
-from src.maskgit3d.runtime.checkpoints import VQVAECheckpointLoader
-from src.maskgit3d.runtime.composition import build_incontext_task
-from src.maskgit3d.runtime.optimizer_factory import TransformerOptimizerFactory
-from src.maskgit3d.tasks.incontext_task import InContextMaskGITTask
-from src.maskgit3d.training.incontext_steps import InContextTrainingSteps
+from maskgit3d.models.incontext import InContextMaskGIT
+from maskgit3d.models.incontext.types import InContextSample
+from maskgit3d.models.vqvae import VQVAE
+from maskgit3d.runtime.optimizer_factory import TransformerOptimizerFactory
+from maskgit3d.tasks.incontext_task import InContextMaskGITTask
+from maskgit3d.training.incontext_steps import InContextTrainingSteps
 
 
 @pytest.fixture
@@ -315,16 +312,16 @@ class TestAny2OneBatching:
         vqvae.encoder.encoder.num_channels = [64, 128, 256]
 
         def mock_encode(x: torch.Tensor) -> tuple:
-            B, C, D, H, W = x.shape
+            batch_size, c, d, h, w = x.shape
             f = 4  # downsampling factor matching num_channels [64, 128, 256]
-            latent_D, latent_H, latent_W = D // f, H // f, W // f
-            z_e = torch.randn(B, 32, latent_D, latent_H, latent_W)
-            indices = torch.randint(0, 8192, (B, latent_D, latent_H, latent_W))
+            latent_d, latent_h, latent_w = d // f, h // f, w // f
+            z_e = torch.randn(batch_size, 32, latent_d, latent_h, latent_w)
+            indices = torch.randint(0, 8192, (batch_size, latent_d, latent_h, latent_w))
             return (None, None, indices, z_e)
 
         def mock_quantizer(z_e: torch.Tensor) -> tuple:
-            B, C, D, H, W = z_e.shape
-            indices = torch.randint(0, 8192, (B, D, H, W))
+            batch_size, c, d, h, w = z_e.shape
+            indices = torch.randint(0, 8192, (batch_size, d, h, w))
             return (z_e, None, indices)
 
         vqvae.encode = Mock(side_effect=mock_encode)
@@ -458,16 +455,16 @@ class TestInContextAny2OneIntegration:
         vqvae.encoder.encoder.num_channels = [64, 128, 256]
 
         def mock_encode(x: torch.Tensor) -> tuple:
-            B, C, D, H, W = x.shape
+            batch_size, c, d, h, w = x.shape
             f = 4
-            latent_D, latent_H, latent_W = D // f, H // f, W // f
-            z_e = torch.randn(B, 32, latent_D, latent_H, latent_W)
-            indices = torch.randint(0, 8192, (B, latent_D, latent_H, latent_W))
+            latent_d, latent_h, latent_w = d // f, h // f, w // f
+            z_e = torch.randn(batch_size, 32, latent_d, latent_h, latent_w)
+            indices = torch.randint(0, 8192, (batch_size, latent_d, latent_h, latent_w))
             return (None, None, indices, z_e)
 
         def mock_quantizer(z_e: torch.Tensor) -> tuple:
-            B, C, D, H, W = z_e.shape
-            indices = torch.randint(0, 8192, (B, D, H, W))
+            batch_size, c, d, h, w = z_e.shape
+            indices = torch.randint(0, 8192, (batch_size, d, h, w))
             return (z_e, None, indices)
 
         vqvae.encode = Mock(side_effect=mock_encode)

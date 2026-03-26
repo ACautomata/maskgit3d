@@ -7,15 +7,15 @@ import pytest
 import torch
 from omegaconf import DictConfig
 
-from src.maskgit3d.inference import VQVAEReconstructor
-from src.maskgit3d.losses.vq_perceptual_loss import VQPerceptualLoss
-from src.maskgit3d.models.vqvae import VQVAE
-from src.maskgit3d.models.vqvae.splitting import compute_downsampling_factor
-from src.maskgit3d.runtime.optimizer_factory import GANOptimizerFactory
-from src.maskgit3d.tasks.gan_training_strategy import GANTrainingStrategy
-from src.maskgit3d.tasks.vqvae_task import VQVAETask
-from src.maskgit3d.training import VQVAETrainingSteps
-from src.maskgit3d.utils import compute_padded_size, validate_crop_size
+from maskgit3d.inference import VQVAEReconstructor
+from maskgit3d.losses.vq_perceptual_loss import VQPerceptualLoss
+from maskgit3d.models.vqvae import VQVAE
+from maskgit3d.models.vqvae.splitting import compute_downsampling_factor
+from maskgit3d.runtime.optimizer_factory import GANOptimizerFactory
+from maskgit3d.tasks.gan_training_strategy import GANTrainingStrategy
+from maskgit3d.tasks.vqvae_task import VQVAETask
+from maskgit3d.training import VQVAETrainingSteps
+from maskgit3d.utils import compute_padded_size, validate_crop_size
 
 
 def _build_injected_vqvae_components() -> tuple[
@@ -816,8 +816,8 @@ class TestVQVAETaskModelConfig:
         """VQVAETask can be constructed with model_config DictConfig."""
         from omegaconf import DictConfig
 
-        from src.maskgit3d.models.vqvae import VQVAE
-        from src.maskgit3d.tasks.vqvae_task import VQVAETask
+        from maskgit3d.models.vqvae import VQVAE
+        from maskgit3d.tasks.vqvae_task import VQVAETask
 
         model_cfg = DictConfig(
             {
@@ -841,7 +841,7 @@ class TestVQVAETaskModelConfig:
         """When model_config is provided, scalar model params are ignored."""
         from omegaconf import DictConfig
 
-        from src.maskgit3d.tasks.vqvae_task import VQVAETask
+        from maskgit3d.tasks.vqvae_task import VQVAETask
 
         model_cfg = DictConfig(
             {
@@ -867,8 +867,8 @@ class TestVQVAETaskModelConfig:
 
     def test_scalar_params_still_work(self):
         """Backward compat: scalar params still construct VQVAE when no model_config."""
-        from src.maskgit3d.models.vqvae import VQVAE
-        from src.maskgit3d.tasks.vqvae_task import VQVAETask
+        from maskgit3d.models.vqvae import VQVAE
+        from maskgit3d.tasks.vqvae_task import VQVAETask
 
         task = VQVAETask(
             in_channels=1,
@@ -888,7 +888,7 @@ class TestVQVAETaskModelConfig:
         """model_config should be serializable via save_hyperparameters."""
         from omegaconf import DictConfig
 
-        from src.maskgit3d.tasks.vqvae_task import VQVAETask
+        from maskgit3d.tasks.vqvae_task import VQVAETask
 
         model_cfg = DictConfig(
             {
@@ -910,8 +910,8 @@ class TestVQVAETaskModelConfig:
         """VQVAETask works with FSQ model variant via model_config."""
         from omegaconf import DictConfig
 
-        from src.maskgit3d.models.vqvae import VQVAE
-        from src.maskgit3d.tasks.vqvae_task import VQVAETask
+        from maskgit3d.models.vqvae import VQVAE
+        from maskgit3d.tasks.vqvae_task import VQVAETask
 
         model_cfg = DictConfig(
             {

@@ -2,7 +2,7 @@ from omegaconf import OmegaConf
 
 
 def test_vqvae_model_config_creation() -> None:
-    from src.maskgit3d.config.schemas import VQVAEModelConfig
+    from maskgit3d.config.schemas import VQVAEModelConfig
 
     config = VQVAEModelConfig()
 
@@ -14,7 +14,7 @@ def test_vqvae_model_config_creation() -> None:
 
 
 def test_vqvae_model_config_round_trip_serialization() -> None:
-    from src.maskgit3d.config.schemas import VQVAEModelConfig
+    from maskgit3d.config.schemas import VQVAEModelConfig
 
     config = VQVAEModelConfig(
         embedding_dim=128,
@@ -29,7 +29,7 @@ def test_vqvae_model_config_round_trip_serialization() -> None:
 
 
 def test_maskgit_model_config_round_trip_serialization() -> None:
-    from src.maskgit3d.config.schemas import MaskGITModelConfig
+    from maskgit3d.config.schemas import MaskGITModelConfig
 
     config = MaskGITModelConfig(hidden_size=512, num_layers=8, dropout=0.0)
 
@@ -39,7 +39,7 @@ def test_maskgit_model_config_round_trip_serialization() -> None:
 
 
 def test_optimizer_scheduler_and_sliding_window_round_trip_serialization() -> None:
-    from src.maskgit3d.config.schemas import OptimizerConfig, SchedulerConfig, SlidingWindowConfig
+    from maskgit3d.config.schemas import OptimizerConfig, SchedulerConfig, SlidingWindowConfig
 
     optimizer = OptimizerConfig(_target_="torch.optim.AdamW", weight_decay=0.01)
     scheduler = SchedulerConfig(warmup_steps=250)
@@ -51,7 +51,7 @@ def test_optimizer_scheduler_and_sliding_window_round_trip_serialization() -> No
 
 
 def test_task_and_train_config_round_trip_serialization() -> None:
-    from src.maskgit3d.config.schemas import (
+    from maskgit3d.config.schemas import (
         CheckpointConfig,
         OptimizerConfig,
         SchedulerConfig,

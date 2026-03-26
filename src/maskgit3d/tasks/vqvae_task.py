@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
 from omegaconf import DictConfig, OmegaConf
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from ..inference import VQVAEReconstructor
 from ..losses.vq_perceptual_loss import VQPerceptualLoss
@@ -282,8 +283,10 @@ class VQVAETask(BaseTask):
                 scheduler_list = schedulers if isinstance(schedulers, list) else [schedulers]
                 for scheduler in scheduler_list:
                     if scheduler is not None and hasattr(scheduler, "step"):
-                        if hasattr(scheduler, "patience"):
-                            scheduler.step(self.trainer.callback_metrics.get("val_loss"))  # type: ignore[arg-type, union-attr]
+                        if isinstance(scheduler, ReduceLROnPlateau):
+                            metric = self.trainer.callback_metrics.get("val_loss")
+                            if metric is not None:
+                                scheduler.step(metric)
                         else:
                             scheduler.step()
         except RuntimeError:

@@ -195,7 +195,7 @@ class InContextMaskGIT(nn.Module):
         Returns:
             Decoded images [B, C, D', H', W'].
         """
-        B, latent_D, latent_H, latent_W = tokens.shape
+        batch_size, latent_d, latent_h, latent_w = tokens.shape
         inferer = self._get_sliding_window_inferer()
 
         # Convert tokens to latent z_q
@@ -395,23 +395,23 @@ class InContextMaskGIT(nn.Module):
         Returns:
             Generated target image tensor [B, C, D', H', W'].
         """
-        B, D, H, W = target_shape
+        batch_size, d, h, w = target_shape
         device = next(self.parameters()).device
 
         # Compute latent spatial size
         f = self.tokenizer.downsampling_factor
-        latent_D, latent_H, latent_W = D // f, H // f, W // f
+        latent_d, latent_h, latent_w = d // f, h // f, w // f
 
         # Encode context images
         context_latents = self.tokenizer.encode_modalities(context_images, context_modality_ids)
 
         # Get sequence builder
-        sequence_builder = self._get_sequence_builder((latent_D, latent_H, latent_W))
+        sequence_builder = self._get_sequence_builder((latent_d, latent_h, latent_w))
 
         # Build partial sequence with mask tokens for target
         # Create dummy target latent filled with mask tokens
         target_latent = torch.full(
-            (B, latent_D, latent_H, latent_W),
+            (batch_size, latent_d, latent_h, latent_w),
             self._mask_token_id,
             dtype=torch.long,
             device=device,
@@ -454,7 +454,7 @@ class InContextMaskGIT(nn.Module):
                 confidence = torch.softmax(logits, dim=-1).max(dim=-1).values
                 confidence[~mask] = -float("inf")
 
-                for i in range(B):
+                for i in range(batch_size):
                     sample_mask = mask[i]
                     if sample_mask.sum() > num_to_reveal:
                         masked_conf = confidence[i].clone()
@@ -463,13 +463,13 @@ class InContextMaskGIT(nn.Module):
                         mask[i, top_indices] = False
 
         final_target_tokens = torch.zeros(
-            B, latent_D * latent_H * latent_W, dtype=torch.long, device=device
+            batch_size, latent_d * latent_h * latent_w, dtype=torch.long, device=device
         )
-        for i in range(B):
+        for i in range(batch_size):
             target_positions = torch.where(target_mask[i])[0]
             final_target_tokens[i] = sequence[i, target_positions]
 
-        final_target_tokens = final_target_tokens.view(B, latent_D, latent_H, latent_W)
+        final_target_tokens = final_target_tokens.view(batch_size, latent_d, latent_h, latent_w)
         return self._decode_tokens_to_images(final_target_tokens, target_shape)
 
     def prepare_batch(

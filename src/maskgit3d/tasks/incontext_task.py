@@ -310,7 +310,7 @@ class InContextMaskGITTask(BaseTask):
             encode_target_fn=self._encode_target,
         )
 
-    def configure_optimizers(self) -> dict[str, Any]:
+    def configure_optimizers(self) -> Any:
         """Configure AdamW optimizer with warmup scheduler.
 
         Returns:

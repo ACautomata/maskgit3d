@@ -1,14 +1,16 @@
 import torch
 
-from src.maskgit3d.interfaces.models import TokenGeneratorProtocol, VQTokenizerProtocol
+from maskgit3d.interfaces.models import TokenGeneratorProtocol, VQTokenizerProtocol
 
 
 class DummyVQTokenizer:
     codebook_size = 128
     downsampling_factor = 8
 
-    def encode(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        return x, torch.tensor(0.0), torch.zeros(1, dtype=torch.long)
+    def encode(
+        self, x: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        return x, torch.tensor(0.0), torch.zeros(1, dtype=torch.long), x
 
     def decode(self, z: torch.Tensor) -> torch.Tensor:
         return z

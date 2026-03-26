@@ -2,7 +2,7 @@
 
 import torch
 
-from src.maskgit3d.tasks.vqvae_task import VQVAETask
+from maskgit3d.tasks.vqvae_task import VQVAETask
 
 
 class TestVQVAETaskPerceptualInit:

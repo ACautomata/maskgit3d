@@ -2,7 +2,7 @@
 
 import torch
 
-from src.maskgit3d.losses.mask_weighted_ce import MaskWeightedCrossEntropyLoss
+from maskgit3d.losses.mask_weighted_ce import MaskWeightedCrossEntropyLoss
 
 
 def test_mask_weighted_ce_basic_forward() -> None:

@@ -3,14 +3,14 @@ from __future__ import annotations
 import torch
 from omegaconf import OmegaConf
 
-from src.maskgit3d.losses.vq_perceptual_loss import VQPerceptualLoss
-from src.maskgit3d.models.vqvae import VQVAE
-from src.maskgit3d.runtime.composition import build_maskgit_task, build_vqvae_task
-from src.maskgit3d.runtime.model_factory import create_vqvae_model
-from src.maskgit3d.tasks.maskgit_task import MaskGITTask
-from src.maskgit3d.tasks.vqvae_task import VQVAETask
-from src.maskgit3d.training.maskgit_steps import MaskGITTrainingSteps
-from src.maskgit3d.training.vqvae_steps import VQVAETrainingSteps
+from maskgit3d.losses.vq_perceptual_loss import VQPerceptualLoss
+from maskgit3d.models.vqvae import VQVAE
+from maskgit3d.runtime.composition import build_maskgit_task, build_vqvae_task
+from maskgit3d.runtime.model_factory import create_vqvae_model
+from maskgit3d.tasks.maskgit_task import MaskGITTask
+from maskgit3d.tasks.vqvae_task import VQVAETask
+from maskgit3d.training.maskgit_steps import MaskGITTrainingSteps
+from maskgit3d.training.vqvae_steps import VQVAETrainingSteps
 
 
 def _vqvae_model_config():

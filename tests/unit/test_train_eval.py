@@ -4,8 +4,8 @@ from unittest.mock import Mock
 import pytest
 from omegaconf import OmegaConf
 
-from src.maskgit3d import eval as eval_module
-from src.maskgit3d import train as train_module
+from maskgit3d import eval as eval_module
+from maskgit3d import train as train_module
 
 
 def test_train_main_passes_resolved_checkpoint_path(monkeypatch: pytest.MonkeyPatch) -> None:

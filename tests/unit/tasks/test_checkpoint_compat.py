@@ -5,13 +5,13 @@ from pathlib import Path
 import pytest
 import torch
 
-from src.maskgit3d.tasks.maskgit_task import MaskGITTask
-from src.maskgit3d.tasks.vqvae_task import VQVAETask
+from maskgit3d.tasks.maskgit_task import MaskGITTask
+from maskgit3d.tasks.vqvae_task import VQVAETask
 
 
 @pytest.fixture
 def vqvae_ckpt_path(tmp_path: Path) -> str:
-    from src.maskgit3d.models.vqvae import VQVAE
+    from maskgit3d.models.vqvae import VQVAE
 
     vqvae = VQVAE()
     ckpt_path = str(tmp_path / "vqvae.ckpt")

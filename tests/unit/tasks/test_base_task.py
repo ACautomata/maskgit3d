@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from lightning import LightningModule
 
-from src.maskgit3d.tasks.base_task import BaseTask
+from maskgit3d.tasks.base_task import BaseTask
 
 
 class SimpleModel(nn.Module):

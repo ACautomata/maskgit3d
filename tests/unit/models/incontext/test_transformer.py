@@ -1,9 +1,8 @@
 """Tests for VariableLengthMaskGITTransformer."""
 
-import pytest
 import torch
 
-from src.maskgit3d.models.incontext import VariableLengthMaskGITTransformer
+from maskgit3d.models.incontext import VariableLengthMaskGITTransformer
 
 
 class TestVariableLengthMaskGITTransformer:

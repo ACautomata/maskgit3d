@@ -6,7 +6,7 @@ from typing import Any
 
 import torch
 
-from src.maskgit3d.training.maskgit_steps import MaskGITTrainingSteps
+from maskgit3d.training.maskgit_steps import MaskGITTrainingSteps
 
 
 class RecordingLogger:

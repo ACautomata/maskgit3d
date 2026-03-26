@@ -5,8 +5,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.maskgit3d.data.medmnist.config import MedMNISTConfig, MedMNISTDatasetName
-from src.maskgit3d.data.medmnist.downloader import MedMNISTDownloader
+from maskgit3d.data.medmnist.config import MedMNISTConfig, MedMNISTDatasetName
+from maskgit3d.data.medmnist.downloader import MedMNISTDownloader
 
 
 class TestMedMNISTDownloader:

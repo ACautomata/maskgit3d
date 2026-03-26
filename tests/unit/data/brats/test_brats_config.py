@@ -3,9 +3,9 @@
 import pytest
 
 from maskgit3d.data.brats.config import (
+    MODALITY_ORDER,
     BraTS2023Config,
     BraTSSubDataset,
-    MODALITY_ORDER,
 )
 
 
@@ -31,7 +31,7 @@ class TestModalityOrder:
     def test_modality_order_fixed(self) -> None:
         """Test that modality order is fixed and correct."""
         expected = ("t1n", "t1c", "t2w", "t2f")
-        assert MODALITY_ORDER == expected
+        assert expected == MODALITY_ORDER
         assert len(MODALITY_ORDER) == 4
 
     def test_modality_order_immutable(self) -> None:

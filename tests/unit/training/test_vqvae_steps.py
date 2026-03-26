@@ -7,7 +7,7 @@ from typing import Any
 
 import torch
 
-from src.maskgit3d.training.vqvae_steps import VQVAETrainingSteps
+from maskgit3d.training.vqvae_steps import VQVAETrainingSteps
 
 
 class RecordingLoss:

@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from src.maskgit3d.inference.reconstruction import VQVAEReconstructor
+from maskgit3d.inference.reconstruction import VQVAEReconstructor
 
 
 class DummyQuantizer:
@@ -202,7 +202,7 @@ def test_sliding_window_averages_in_latent_space_not_indices() -> None:
 def test_reconstruct_with_large_latent_uses_decoder_sliding_window(monkeypatch) -> None:
     RecordingDecoderInferer.instances.clear()
     monkeypatch.setattr(
-        "src.maskgit3d.inference.reconstruction.SlidingWindowInferer",
+        "maskgit3d.inference.reconstruction.SlidingWindowInferer",
         RecordingDecoderInferer,
     )
     indices_padded = torch.arange(64, dtype=torch.float32).view(1, 1, 4, 4, 4)

@@ -3,8 +3,8 @@ from unittest.mock import Mock
 
 import torch
 
-from src.maskgit3d.models.vqvae import VQVAE
-from src.maskgit3d.runtime.checkpoints import VQVAECheckpointLoader, load_vqvae_from_checkpoint
+from maskgit3d.models.vqvae import VQVAE
+from maskgit3d.runtime.checkpoints import VQVAECheckpointLoader, load_vqvae_from_checkpoint
 
 
 def test_load_vqvae_from_checkpoint_extracts_state_dict(tmp_path: Path) -> None:

@@ -8,9 +8,9 @@ import pytest
 import torch
 from omegaconf import DictConfig
 
-from src.maskgit3d.models.incontext import InContextMaskGIT
-from src.maskgit3d.models.vqvae import VQVAE
-from src.maskgit3d.tasks.incontext_task import InContextMaskGITTask
+from maskgit3d.models.incontext import InContextMaskGIT
+from maskgit3d.models.vqvae import VQVAE
+from maskgit3d.tasks.incontext_task import InContextMaskGITTask
 
 
 @pytest.fixture
@@ -24,8 +24,8 @@ def vqvae_checkpoint(tmp_path: Path) -> str:
 @pytest.fixture
 def incontext_with_components(vqvae_checkpoint: str):
     """Fixture providing fully constructed InContextMaskGIT components for injection path."""
-    from src.maskgit3d.runtime.optimizer_factory import TransformerOptimizerFactory
-    from src.maskgit3d.training.incontext_steps import InContextTrainingSteps
+    from maskgit3d.runtime.optimizer_factory import TransformerOptimizerFactory
+    from maskgit3d.training.incontext_steps import InContextTrainingSteps
 
     vqvae = VQVAE()
     vqvae.eval()

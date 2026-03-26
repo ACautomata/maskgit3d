@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Tuple
 
 
 class BraTSSubDataset(str, Enum):
@@ -14,7 +13,7 @@ class BraTSSubDataset(str, Enum):
 
 
 # Fixed modality order: T1, T1 contrast-enhanced, T2, T2-FLAIR
-MODALITY_ORDER: Tuple[str, str, str, str] = ("t1n", "t1c", "t2w", "t2f")
+MODALITY_ORDER: tuple[str, str, str, str] = ("t1n", "t1c", "t2w", "t2f")
 
 
 def _validate_crop_size(crop_size: tuple[int, int, int]) -> None:
@@ -69,7 +68,7 @@ class BraTS2023Config:
         _validate_train_ratio(self.train_ratio)
 
     @property
-    def modality_order(self) -> Tuple[str, str, str, str]:
+    def modality_order(self) -> tuple[str, str, str, str]:
         """Return the fixed modality order for BraTS 2023."""
         return MODALITY_ORDER
 

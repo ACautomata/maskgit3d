@@ -1,10 +1,6 @@
 """Tests for BraTS2023 case discovery and split logic."""
 
-import random
 from pathlib import Path
-from unittest.mock import patch
-
-import pytest
 
 from maskgit3d.data.brats.config import BraTSSubDataset
 from maskgit3d.data.brats.dataset import (
@@ -243,8 +239,8 @@ class TestGenerateStratifiedSplit:
         cases = self.create_mock_cases(10, 10, 10)
         train_cases, held_out_cases = _generate_stratified_split(cases, train_ratio=0.8, seed=42)
 
-        all_ids = set(c.case_id for c in train_cases + held_out_cases)
-        original_ids = set(c.case_id for c in cases)
+        all_ids = {c.case_id for c in train_cases + held_out_cases}
+        original_ids = {c.case_id for c in cases}
 
         assert all_ids == original_ids
         assert len(all_ids) == 30
@@ -254,7 +250,7 @@ class TestGenerateStratifiedSplit:
         cases = self.create_mock_cases(10, 10, 10)
         train_cases, held_out_cases = _generate_stratified_split(cases, train_ratio=0.8, seed=42)
 
-        train_ids = set(c.case_id for c in train_cases)
-        held_ids = set(c.case_id for c in held_out_cases)
+        train_ids = {c.case_id for c in train_cases}
+        held_ids = {c.case_id for c in held_out_cases}
 
         assert len(train_ids.intersection(held_ids)) == 0

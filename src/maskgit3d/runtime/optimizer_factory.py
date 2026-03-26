@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import torch
 from hydra.utils import get_class, instantiate
@@ -177,7 +177,10 @@ class TransformerOptimizerFactory:
         from .scheduler_factory import create_scheduler
 
         if self.optimizer_config is not None:
-            cfg = OmegaConf.create(OmegaConf.to_container(self.optimizer_config, resolve=True))
+            cfg = cast(
+                DictConfig,
+                OmegaConf.create(OmegaConf.to_container(self.optimizer_config, resolve=True)),
+            )
             cfg.lr = self.lr
             cfg.weight_decay = self.weight_decay
             optimizer = create_optimizer(model.parameters(), cfg)
