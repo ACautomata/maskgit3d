@@ -8,12 +8,15 @@ from omegaconf import DictConfig, OmegaConf
 
 from ..inference import VQVAEReconstructor
 from ..losses.vq_perceptual_loss import VQPerceptualLoss
+from ..models.incontext.incontext_maskgit import InContextMaskGIT
 from ..models.maskgit import MaskGIT
 from ..models.vqvae.splitting import compute_downsampling_factor, resolve_num_splits
 from ..tasks.gan_training_strategy import GANTrainingStrategy
+from ..tasks.incontext_task import InContextMaskGITTask
 from ..tasks.maskgit_task import MaskGITTask
 from ..tasks.vqvae_task import VQVAETask
 from ..training import MaskGITTrainingSteps, VQVAETrainingSteps
+from ..training.incontext_steps import InContextTrainingSteps
 from .checkpoints import load_vqvae_from_checkpoint
 from .model_factory import create_maskgit_model, create_vqvae_model
 from .optimizer_factory import TransformerOptimizerFactory
@@ -198,7 +201,64 @@ def build_maskgit_task(cfg: DictConfig) -> MaskGITTask:
     return cast(MaskGITTask, task)
 
 
-def build_training_task(cfg: DictConfig) -> VQVAETask | MaskGITTask:
+def build_incontext_task(cfg: DictConfig) -> InContextMaskGITTask:
+    """Build InContextMaskGITTask from Hydra config.
+
+    Args:
+        cfg: Hydra config with task parameters
+
+    Returns:
+        InContextMaskGITTask with all components initialized
+    """
+    task_kwargs = _build_task_kwargs(cfg, is_vqvae=False)
+    task_kwargs["model_config"] = None
+
+    # Validate vqvae_ckpt_path
+    ckpt_path = cfg.task.get("vqvae_ckpt_path")
+    if ckpt_path is None:
+        raise ValueError(
+            "task.vqvae_ckpt_path is required for InContextMaskGIT training. "
+            "Please provide a path to a trained VQVAE checkpoint."
+        )
+    task_kwargs["vqvae_ckpt_path"] = ckpt_path
+
+    task = instantiate(cfg.task, **task_kwargs)
+    if not _is_task_instance(task, InContextMaskGITTask):
+        raise TypeError("build_incontext_task only supports InContextMaskGITTask.")
+
+    vqvae = load_vqvae_from_checkpoint(str(ckpt_path))
+    vqvae.eval()
+    vqvae.requires_grad_(False)
+
+    incontext_model = InContextMaskGIT(
+        vqvae=vqvae,
+        num_modalities=int(cfg.task.get("num_modalities", 4)),
+        hidden_size=int(cfg.task.get("hidden_size", 768)),
+        num_layers=int(cfg.task.get("num_layers", 12)),
+        num_heads=int(cfg.task.get("num_heads", 12)),
+        mlp_ratio=float(cfg.task.get("mlp_ratio", 4.0)),
+        dropout=float(cfg.task.get("dropout", 0.1)),
+        gamma_type=str(cfg.task.get("gamma_type", "cosine")),
+        sliding_window_cfg=_to_dict_config(cfg.task.get("sliding_window") or OmegaConf.create({})),
+    )
+
+    training_steps = InContextTrainingSteps(model=incontext_model)
+
+    optimizer_factory = TransformerOptimizerFactory(
+        lr=float(cfg.task.get("lr", 2e-4)),
+        weight_decay=float(cfg.task.get("weight_decay", 0.05)),
+        warmup_steps=int(cfg.task.get("warmup_steps", 1000)),
+        optimizer_config=cfg.get("optimizer"),
+    )
+
+    task.vqvae = vqvae
+    task.incontext_model = incontext_model
+    task.training_steps = training_steps
+    task.optimizer_factory = optimizer_factory
+    return cast(InContextMaskGITTask, task)
+
+
+def build_training_task(cfg: DictConfig) -> VQVAETask | MaskGITTask | InContextMaskGITTask:
     """Build training task by dispatching to specialized builders.
 
     This function determines the task type from cfg.task._target_ and
@@ -208,13 +268,16 @@ def build_training_task(cfg: DictConfig) -> VQVAETask | MaskGITTask:
     task_target = _get_task_target(cfg)
 
     # Dispatch to specialized builders based on task type
+    # Check "incontext" before "maskgit" since InContextMaskGITTask contains "maskgit"
+    if "incontext" in task_target.lower():
+        return build_incontext_task(cfg)
     if "vqvae" in task_target.lower():
         return build_vqvae_task(cfg)
     if "maskgit" in task_target.lower():
         return build_maskgit_task(cfg)
 
     raise TypeError(
-        f"build_training_task only supports VQVAETask and MaskGITTask. Got: {task_target}"
+        f"build_training_task only supports VQVAETask, MaskGITTask, and InContextMaskGITTask. Got: {task_target}"
     )
 
 
