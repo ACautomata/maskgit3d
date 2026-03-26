@@ -1,0 +1,38 @@
+# InContext MaskGIT Task Configuration
+defaults:
+  - /model@model: incontext_maskgit
+
+_target_: maskgit3d.tasks.incontext_task.InContextMaskGITTask
+
+# Model configuration (passed to model config)
+model_config: ${model}
+
+# VQVAE checkpoint path (required for Stage 2)
+vqvae_ckpt_path: null
+
+# Number of modalities
+num_modalities: 4
+
+# Transformer architecture
+hidden_size: 768
+num_layers: 12
+num_heads: 12
+mlp_ratio: 4.0
+dropout: 0.1
+
+# Mask scheduling
+gamma_type: cosine
+
+# Optimizer
+lr: 0.0002
+weight_decay: 0.05
+warmup_steps: 1000
+
+# Sliding window for large images
+sliding_window:
+  enabled: false
+  roi_size: [32, 32, 32]
+  overlap: 0.25
+  mode: gaussian
+  sigma_scale: 0.125
+  sw_batch_size: 4
