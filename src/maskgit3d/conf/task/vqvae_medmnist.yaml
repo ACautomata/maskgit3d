@@ -45,7 +45,7 @@ lambda_gan: 0.1
 
 # Perceptual loss (LPIPS)
 use_perceptual: true
-lambda_perceptual: 0.1
+lambda_perceptual: 0.5  # Optimized: 0.5 achieves best FID=31.29 (vs 0.1 → 34.20)
 perceptual_network: alex
 
 # GAN / Discriminator settings

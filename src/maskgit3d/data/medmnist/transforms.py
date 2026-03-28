@@ -5,7 +5,7 @@ from collections.abc import Callable
 from monai.transforms.compose import Compose
 from monai.transforms.croppad.array import RandSpatialCrop, SpatialPad
 from monai.transforms.intensity.array import ScaleIntensity, ScaleIntensityRange
-from monai.transforms.spatial.array import Resize
+from monai.transforms.spatial.array import RandFlip, Resize
 from monai.transforms.utility.array import EnsureType
 
 from .config import MedMNISTConfig
@@ -17,9 +17,10 @@ def create_training_transforms(config: MedMNISTConfig) -> Callable:
 
     Pipeline:
     1. EnsureType - Ensure tensor type
-    2. ScaleIntensityRange - Normalize [0,255] to [-1,1]
-    3. SpatialPad - Pad to crop_size if smaller
-    4. RandSpatialCrop - Random crop to crop_size
+    2. SpatialPad - Pad to crop_size if smaller
+    3. ScaleIntensityRange - Normalize [0,255] to [-1,1]
+    4. RandFlip - Random flip along each spatial axis (prob=0.5)
+    5. RandSpatialCrop - Random crop to crop_size
 
     Args:
         config: MedMNIST configuration
@@ -41,6 +42,9 @@ def create_training_transforms(config: MedMNISTConfig) -> Callable:
                 b_min=-1.0,
                 b_max=1.0,
             ),
+            RandFlip(prob=0.5, spatial_axis=0),
+            RandFlip(prob=0.5, spatial_axis=1),
+            RandFlip(prob=0.5, spatial_axis=2),
             RandSpatialCrop(
                 roi_size=crop_size,
                 random_center=True,
