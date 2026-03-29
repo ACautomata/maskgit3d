@@ -1,4 +1,4 @@
 defaults:
   - default
 
-val_check_interval: 5  # 每 5 个 epoch 验证一次
+check_val_every_n_epoch: 5  # 每 5 个 epoch 验证一次
