@@ -4,13 +4,10 @@ defaults:
   - task: vqvae
   - data: medmnist3d
   - optimizer: adam
-  - optional scheduler: cosine
   - trainer: default
-  - optional callbacks: default
+  - callbacks: vqvae
+  - optional scheduler: cosine
   - optional logger: tensorboard
 
 seed: 42
 checkpoint_path: null
-scheduler: null
-callbacks: null
-logger: null

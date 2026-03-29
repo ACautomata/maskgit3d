@@ -1,11 +1,4 @@
-# InContext MaskGIT Task Configuration
-defaults:
-  - /model@model: incontext_maskgit
-
 _target_: maskgit3d.tasks.incontext_task.InContextMaskGITTask
-
-# Model configuration (passed to model config)
-model_config: ${model}
 
 # VQVAE checkpoint path (required for Stage 2)
 vqvae_ckpt_path: null

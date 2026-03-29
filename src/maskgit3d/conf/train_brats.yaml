@@ -1,16 +1,21 @@
-defaults:
-  - _self_
-  - model: vqvae_brats
-  - task: vqvae_brats
-  - data: brats2023
-  - optimizer: adam
-  - optional scheduler: cosine
-  - trainer: brats
-  - optional callbacks: default
-  - optional logger: tensorboard
+# BraTS 2023 Training Configuration
+# Inherits from train.yaml and overrides BraTS-specific settings
+#
+# Usage:
+#   maskgit3d-train --config-name train_brats
+#   maskgit3d-train --config-name train_brats trainer.max_epochs=100
 
-seed: 42
-checkpoint_path: null
-scheduler: null
-callbacks: null
-logger: null
+defaults:
+  - train
+  - override /data: brats2023
+  - override /model: vqvae
+  - override /trainer: brats
+  - override /callbacks: vqvae
+  - _self_
+
+# Override task parameters for BraTS (large 3D volumes)
+task:
+  sliding_window:
+    enabled: true
+    roi_size: [128, 128, 128]
+    sw_batch_size: 1

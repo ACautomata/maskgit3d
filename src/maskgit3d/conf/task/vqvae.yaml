@@ -1,49 +1,43 @@
-# DEPRECATION NOTICE (v2.0)
-# Direct task instantiation with these parameters is deprecated.
-# Use build_vqvae_task() from runtime.composition instead.
-# See docs/migration/v2.0.md for migration guide.
-
-defaults:
-  - /model@model: vqvae
-  - /optimizer@optimizer: adam
-  - /optimizer@disc_optimizer: adamw_discriminator
-
 _target_: maskgit3d.tasks.vqvae_task.VQVAETask
 
-model_config: ${model}
-optimizer_config: ${optimizer}
-disc_optimizer_config: ${disc_optimizer}
-data_config: ${data}
-
+# Learning rates
 lr_g: 1.0e-4
 lr_d: 1.0e-4
 
+# Weight decay
 weight_decay_g: 0.01
 weight_decay_d: 0.0
 
+# Learning rate schedule
 warmup_steps: 100
 min_lr_ratio: 0.1
 
+# Loss weights
 lambda_l1: 1.0
 lambda_vq: 1.0
 lambda_gan: 0.1
 
+# Perceptual loss (LPIPS)
 use_perceptual: true
 lambda_perceptual: 0.1
 perceptual_network: alex
 
+# GAN / Discriminator settings
 disc_start: 2000
 disc_factor: 1.0
 use_adaptive_weight: true
 adaptive_weight_max: 100.0
 disc_loss: hinge
 
+# Gradient clipping
 gradient_clip_enabled: true
 gradient_clip_val: 1.0
 
+# Data parallelism
 num_splits: null
 dim_split: 0
 
+# Sliding window inference configuration
 sliding_window:
   enabled: false
   roi_size: [32, 32, 32]

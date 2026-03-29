@@ -1,5 +1,11 @@
 # Training Configuration for MedMNIST 3D VQVAE
-# One-command training with optimized settings for small datasets
+# Optimized settings for small datasets (~1000 training samples)
+#
+# Key optimizations:
+# - vqvae_small model for faster training
+# - Lower disc_start (150) to enable GAN early
+# - Higher lambda_perceptual (0.5) for better FID
+# - Shorter warmup for smaller dataset
 #
 # Usage:
 #   maskgit3d-train --config-name train_medmnist
@@ -7,14 +13,16 @@
 #   maskgit3d-train --config-name train_medmnist data.batch_size=32
 
 defaults:
+  - train
+  - override /model: vqvae_small
+  - override /callbacks: vqvae_medmnist
   - _self_
-  - model: vqvae_small
-  - task: vqvae_medmnist
-  - data: medmnist3d
-  - optimizer: adam
-  - trainer: default
-  - optional callbacks: vqvae_medmnist
-  - optional logger: tensorboard
 
-seed: 42
-checkpoint_path: null
+# Override task parameters for MedMNIST (small dataset)
+task:
+  lr_g: 2.0e-4
+  lr_d: 2.0e-4
+  warmup_steps: 50
+  min_lr_ratio: 0.01
+  lambda_perceptual: 0.5
+  disc_start: 150

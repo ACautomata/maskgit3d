@@ -1,16 +1,9 @@
-# DEPRECATION NOTICE (v2.0)
-# Direct task instantiation with these parameters is deprecated.
-# Use build_maskgit_task() from runtime.composition instead.
-# See docs/migration/v2.0.md for migration guide.
-
-defaults:
-  - /model@model: maskgit
-
 _target_: maskgit3d.tasks.maskgit_task.MaskGITTask
-model_config: ${model}
-optimizer_config: ${optimizer}
+
+# VQVAE checkpoint path (required for Stage 2)
 vqvae_ckpt_path: null
 
+# Optimizer settings
 lr: 0.0001
 weight_decay: 0.05
 warmup_steps: 1000
