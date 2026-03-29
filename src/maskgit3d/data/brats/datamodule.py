@@ -63,7 +63,7 @@ class BraTS2023DataModule(LightningDataModule):
         subdatasets: list[str] | None = None,
         stratify: bool = True,
         drop_last_train: bool = True,
-        normalize_mode: str = "zscore",
+        normalize_mode: str = "minmax",
     ):
         """Initialize BraTS2023 DataModule.
 

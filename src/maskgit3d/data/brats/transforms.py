@@ -27,7 +27,7 @@ from monai.transforms.utility.dictionary import (
 
 def create_brats_preprocessing(
     spatial_size: tuple[int, int, int] = (64, 64, 64),
-    normalize_mode: str = "zscore",
+    normalize_mode: str = "minmax",
 ) -> Compose:
     """Create preprocessing pipeline for BraTS MRI data.
 
@@ -53,7 +53,7 @@ def create_brats_preprocessing(
 
 def create_brats_training_preprocessing(
     crop_size: tuple[int, int, int] = (128, 128, 128),
-    normalize_mode: str = "zscore",
+    normalize_mode: str = "minmax",
 ) -> Compose:
     """Create training preprocessing pipeline for BraTS MRI data with random crop.
 
@@ -75,7 +75,7 @@ def create_brats_training_preprocessing(
 
 
 def create_brats_inference_preprocessing(
-    normalize_mode: str = "zscore",
+    normalize_mode: str = "minmax",
 ) -> Compose:
     """Create inference preprocessing pipeline for BraTS MRI data.
 
@@ -95,7 +95,7 @@ def create_brats_inference_preprocessing(
 
 def create_brats2023_preprocessing(
     spatial_size: tuple[int, int, int] = (64, 64, 64),
-    normalize_mode: str = "zscore",
+    normalize_mode: str = "minmax",
     task: str = "reconstruction",
 ) -> Compose:
     """Create dictionary-based preprocessing pipeline for BraTS 2023 data.
@@ -154,7 +154,7 @@ def create_brats2023_preprocessing(
 
 def create_brats2023_training_preprocessing(
     crop_size: tuple[int, int, int] = (128, 128, 128),
-    normalize_mode: str = "zscore",
+    normalize_mode: str = "minmax",
     task: str = "reconstruction",
 ) -> Compose:
     """Create training preprocessing pipeline for BraTS 2023 data with random crop.
@@ -208,7 +208,7 @@ def create_brats2023_training_preprocessing(
 
 
 def create_brats2023_inference_preprocessing(
-    normalize_mode: str = "zscore",
+    normalize_mode: str = "minmax",
     task: str = "reconstruction",
 ) -> Compose:
     """Create inference preprocessing pipeline for BraTS 2023 data.
@@ -252,7 +252,7 @@ def create_brats2023_inference_preprocessing(
 
 def create_brats2023_training_transforms(
     crop_size: tuple[int, int, int] = (128, 128, 128),
-    normalize_mode: str = "zscore",
+    normalize_mode: str = "minmax",
 ) -> Compose:
     """Create nnUNet-style training transforms for BraTS 2023 reconstruction.
 
@@ -274,45 +274,60 @@ def create_brats2023_training_transforms(
     Raises:
         ValueError: If normalize_mode is not "zscore"
     """
-    if normalize_mode != "zscore":
+    if normalize_mode not in ("minmax", "zscore"):
         raise ValueError(
-            f"Only zscore normalization supported for training, got '{normalize_mode}'"
+            f"normalize_mode must be 'minmax' or 'zscore', got '{normalize_mode}'"
         )
 
     transforms = [
         LoadImaged(keys=["image"], image_only=True),
         EnsureChannelFirstd(keys="image"),
-        NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-        SpatialPadd(keys=["image"], spatial_size=crop_size, mode="constant"),
-        # nnUNet-style augmentations
-        RandFlipd(keys=["image"], prob=0.5, spatial_axis=0),
-        RandFlipd(keys=["image"], prob=0.5, spatial_axis=1),
-        RandFlipd(keys=["image"], prob=0.5, spatial_axis=2),
-        RandAffined(
-            keys=["image"],
-            prob=0.15,
-            rotate_range=(0.1, 0.1, 0.1),  # ~6 degrees
-            scale_range=(0.1, 0.1, 0.1),  # +/- 10%
-            shear_range=(0.05, 0.05, 0.05),
-            mode="bilinear",
-        ),
-        Rand3DElasticd(
-            keys=["image"],
-            prob=0.15,
-            sigma_range=(5, 10),
-            magnitude_range=(50, 150),
-            mode="bilinear",
-        ),
-        RandGaussianNoised(keys=["image"], prob=0.15, mean=0.0, std=0.1),
-        RandScaleIntensityd(keys=["image"], prob=0.15, factors=0.1),
-        RandSpatialCropd(keys=["image"], roi_size=crop_size, random_center=True, random_size=False),
     ]
+
+    if normalize_mode == "zscore":
+        transforms.append(NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True))
+    else:
+        transforms.append(
+            ScaleIntensityd(
+                keys="image",
+                minv=-1.0,
+                maxv=1.0,
+            )
+        )
+
+    transforms.extend(
+        [
+            SpatialPadd(keys=["image"], spatial_size=crop_size, mode="constant"),
+            # nnUNet-style augmentations
+            RandFlipd(keys=["image"], prob=0.5, spatial_axis=0),
+            RandFlipd(keys=["image"], prob=0.5, spatial_axis=1),
+            RandFlipd(keys=["image"], prob=0.5, spatial_axis=2),
+            RandAffined(
+                keys=["image"],
+                prob=0.15,
+                rotate_range=(0.1, 0.1, 0.1),  # ~6 degrees
+                scale_range=(0.1, 0.1, 0.1),  # +/- 10%
+                shear_range=(0.05, 0.05, 0.05),
+                mode="bilinear",
+            ),
+            Rand3DElasticd(
+                keys=["image"],
+                prob=0.15,
+                sigma_range=(5, 10),
+                magnitude_range=(50, 150),
+                mode="bilinear",
+            ),
+            RandGaussianNoised(keys=["image"], prob=0.15, mean=0.0, std=0.1),
+            RandScaleIntensityd(keys=["image"], prob=0.15, factors=0.1),
+            RandSpatialCropd(keys=["image"], roi_size=crop_size, random_center=True, random_size=False),
+        ]
+    )
 
     return Compose(transforms)
 
 
 def create_brats2023_validation_transforms(
-    normalize_mode: str = "zscore",
+    normalize_mode: str = "minmax",
 ) -> Compose:
     """Create validation/test transforms for BraTS 2023 reconstruction.
 
@@ -331,13 +346,23 @@ def create_brats2023_validation_transforms(
     Raises:
         ValueError: If normalize_mode is not "zscore"
     """
-    if normalize_mode != "zscore":
-        raise ValueError(f"Only zscore normalization supported, got '{normalize_mode}'")
+    if normalize_mode not in ("minmax", "zscore"):
+        raise ValueError(f"normalize_mode must be 'minmax' or 'zscore', got '{normalize_mode}'")
 
     transforms = [
         LoadImaged(keys=["image"], image_only=True),
         EnsureChannelFirstd(keys="image"),
-        NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
     ]
+
+    if normalize_mode == "zscore":
+        transforms.append(NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True))
+    else:
+        transforms.append(
+            ScaleIntensityd(
+                keys="image",
+                minv=-1.0,
+                maxv=1.0,
+            )
+        )
 
     return Compose(transforms)

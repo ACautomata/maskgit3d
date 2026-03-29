@@ -21,21 +21,21 @@ class TestBraTSPreprocessing:
     """Tests for basic BraTS preprocessing functions."""
 
     def test_create_brats_preprocessing_default(self) -> None:
-        """Test default preprocessing pipeline."""
+        """Test default preprocessing pipeline uses minmax normalization."""
         pipeline = create_brats_preprocessing()
 
         assert isinstance(pipeline, Compose)
         assert len(pipeline.transforms) == 4
         assert isinstance(pipeline.transforms[0], EnsureType)
         assert isinstance(pipeline.transforms[1], EnsureChannelFirst)
-        assert isinstance(pipeline.transforms[2], NormalizeIntensity)
+        assert isinstance(pipeline.transforms[2], ScaleIntensity)
         assert isinstance(pipeline.transforms[3], Resize)
 
-    def test_create_brats_preprocessing_minmax(self) -> None:
-        """Test preprocessing with minmax normalization."""
-        pipeline = create_brats_preprocessing(normalize_mode="minmax")
+    def test_create_brats_preprocessing_zscore(self) -> None:
+        """Test preprocessing with zscore normalization."""
+        pipeline = create_brats_preprocessing(normalize_mode="zscore")
 
-        assert isinstance(pipeline.transforms[2], ScaleIntensity)
+        assert isinstance(pipeline.transforms[2], NormalizeIntensity)
 
     def test_create_brats_preprocessing_custom_size(self) -> None:
         """Test preprocessing with custom spatial size."""
@@ -48,36 +48,38 @@ class TestBraTSTrainingPreprocessing:
     """Tests for BraTS training preprocessing."""
 
     def test_create_brats_training_preprocessing_default(self) -> None:
-        """Test default training preprocessing."""
+        """Test default training preprocessing uses minmax."""
         pipeline = create_brats_training_preprocessing()
 
         assert isinstance(pipeline, Compose)
         assert len(pipeline.transforms) == 5
         assert isinstance(pipeline.transforms[4], RandSpatialCrop)
-
-    def test_create_brats_training_preprocessing_minmax(self) -> None:
-        """Test training preprocessing with minmax normalization."""
-        pipeline = create_brats_training_preprocessing(normalize_mode="minmax")
-
         assert isinstance(pipeline.transforms[2], ScaleIntensity)
+
+    def test_create_brats_training_preprocessing_zscore(self) -> None:
+        """Test training preprocessing with zscore normalization."""
+        pipeline = create_brats_training_preprocessing(normalize_mode="zscore")
+
+        assert isinstance(pipeline.transforms[2], NormalizeIntensity)
 
 
 class TestBraTSInferencePreprocessing:
     """Tests for BraTS inference preprocessing."""
 
     def test_create_brats_inference_preprocessing_default(self) -> None:
-        """Test default inference preprocessing."""
+        """Test default inference preprocessing uses minmax."""
         pipeline = create_brats_inference_preprocessing()
 
         assert isinstance(pipeline, Compose)
         assert len(pipeline.transforms) == 3
         assert isinstance(pipeline.transforms[0], EnsureType)
-
-    def test_create_brats_inference_preprocessing_minmax(self) -> None:
-        """Test inference preprocessing with minmax."""
-        pipeline = create_brats_inference_preprocessing(normalize_mode="minmax")
-
         assert isinstance(pipeline.transforms[2], ScaleIntensity)
+
+    def test_create_brats_inference_preprocessing_zscore(self) -> None:
+        """Test inference preprocessing with zscore."""
+        pipeline = create_brats_inference_preprocessing(normalize_mode="zscore")
+
+        assert isinstance(pipeline.transforms[2], NormalizeIntensity)
 
 
 class TestBraTS2023Preprocessing:

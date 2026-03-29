@@ -8,7 +8,7 @@ and uses attention masks to handle padded sequences.
 import torch
 import torch.nn as nn
 
-from src.maskgit3d.models.maskgit.transformer import (
+from maskgit3d.models.maskgit.transformer import (
     SinusoidalPositionalEncoding,
     TransformerBlock,
 )

@@ -9,4 +9,4 @@ seed: 42
 subdatasets: ["gli", "men", "met"]
 stratify: true
 drop_last_train: true
-normalize_mode: zscore
+normalize_mode: minmax
