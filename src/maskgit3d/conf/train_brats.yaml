@@ -5,7 +5,7 @@ defaults:
   - data: brats2023
   - optimizer: adam
   - optional scheduler: cosine
-  - trainer: default
+  - trainer: brats
   - optional callbacks: default
   - optional logger: tensorboard
 
