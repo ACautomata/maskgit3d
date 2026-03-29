@@ -21,13 +21,16 @@ class InceptionV3FeatureExtractor(nn.Module):
     """InceptionV3 feature extractor for FID with 2.5D support for 3D inputs.
 
     For 3D inputs, uses a 2.5D approach similar to MONAI's PerceptualLoss:
-    extracts random slices from all three axes, processes them as a batch.
+    extracts uniformly-spaced slices from all three axes for reproducibility.
 
     Args:
         input_channels: Number of input channels (default: 1).
         device: Device to run the model on.
         slice_ratio: Ratio of slices to sample per axis for 3D inputs (default: 0.3).
     """
+
+    _imagenet_mean: torch.Tensor
+    _imagenet_std: torch.Tensor
 
     def __init__(
         self,
@@ -49,6 +52,16 @@ class InceptionV3FeatureExtractor(nn.Module):
 
         self.device = device or torch.device("cpu")
         self.inception.to(device=self.device, dtype=torch.float32)
+
+        # Cache ImageNet normalization as buffers (auto device/dtype transfer)
+        self.register_buffer(
+            "_imagenet_mean",
+            torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1),
+        )
+        self.register_buffer(
+            "_imagenet_std",
+            torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1),
+        )
 
     def _batchify_axis(self, x: torch.Tensor, spatial_axis: int) -> torch.Tensor:
         """Transform slices from one spatial axis into batch dimension.
@@ -80,7 +93,7 @@ class InceptionV3FeatureExtractor(nn.Module):
         slices = self._batchify_axis(volume, spatial_axis)
 
         n_samples = max(1, int(slices.shape[0] * self.slice_ratio))
-        indices = torch.randperm(slices.shape[0], device=slices.device)[:n_samples]
+        indices = torch.linspace(0, slices.shape[0] - 1, n_samples, device=slices.device).long()
         slices = torch.index_select(slices, dim=0, index=indices)
 
         features = self._extract_2d_features(slices)
@@ -97,6 +110,8 @@ class InceptionV3FeatureExtractor(nn.Module):
 
         if images.shape[1] == 1:
             images = images.repeat(1, 3, 1, 1)
+
+        images = (images - self._imagenet_mean) / self._imagenet_std  # type: ignore[operator]
 
         with torch.no_grad():
             features = self.inception(images)
@@ -130,10 +145,9 @@ class FIDMetric:
 
     FID (Fréchet Inception Distance) measures the similarity between two distributions
     of images using InceptionV3 features. For 3D inputs, uses 2.5D approach with
-    random slice sampling.
+    uniform slice sampling for reproducibility.
 
     Args:
-        spatial_dims: Spatial dimensions (2 or 3).
         input_min: Minimum value of input data.
         input_max: Maximum value of input data.
         slice_ratio: Ratio of slices to sample for 3D inputs (default: 0.3).
@@ -142,7 +156,6 @@ class FIDMetric:
 
     def __init__(
         self,
-        spatial_dims: int = 3,
         input_min: float = -1.0,
         input_max: float = 1.0,
         slice_ratio: float = 0.3,
@@ -153,7 +166,6 @@ class FIDMetric:
         if input_max <= input_min:
             raise ValueError(f"input_max must be > input_min, got {input_max} <= {input_min}")
 
-        self.spatial_dims = spatial_dims
         self.input_min = input_min
         self.input_max = input_max
         self._get_fid_score = get_fid_score
@@ -168,11 +180,11 @@ class FIDMetric:
         self._target_features: list[torch.Tensor] = []
 
     def _normalize_to_0_1(self, tensor: torch.Tensor) -> torch.Tensor:
-        return (tensor - self.input_min) / (self.input_max - self.input_min)
+        return ((tensor - self.input_min) / (self.input_max - self.input_min)).clamp(0.0, 1.0)
 
     def update(self, predictions: Any, targets: Any) -> None:
-        pred = self._to_tensor(predictions)
-        target = self._to_tensor(targets)
+        pred = self._extract_prediction(predictions)
+        target = self._extract_target(targets)
 
         pred_normalized = self._normalize_to_0_1(pred)
         target_normalized = self._normalize_to_0_1(target)
@@ -184,18 +196,25 @@ class FIDMetric:
         self._target_features.append(target_features.detach().cpu())
 
     def __call__(self, predictions: Any, targets: Any) -> dict[str, float]:
+        """Convenience method: update, compute, and reset in one call.
+
+        Note: Resets internal state after computing. For multi-batch accumulation,
+        use ``update()`` per batch and ``compute()`` once at epoch end.
+        """
         self.update(predictions, targets)
-        return self.compute()
+        result = self.compute()
+        self.reset()
+        return result
 
     def compute(self) -> dict[str, float]:
         if len(self._pred_features) == 0:
-            return {"fid": 0.0}
+            return {"fid": float("nan")}
 
         pred_features = torch.cat(self._pred_features, dim=0)
         target_features = torch.cat(self._target_features, dim=0)
 
         if pred_features.shape[0] < 2:
-            return {"fid": 0.0}
+            return {"fid": float("nan")}
 
         fid_score = self._get_fid_score(pred_features, target_features)
         return {"fid": float(fid_score.item())}
@@ -204,20 +223,42 @@ class FIDMetric:
         self._pred_features.clear()
         self._target_features.clear()
 
-    def _to_tensor(self, value: Any) -> torch.Tensor:
+    def _extract_prediction(self, value: Any) -> torch.Tensor:
+        """Extract prediction tensor from various input formats.
+
+        Key priority for dicts: ``x_recon`` > ``images`` > ``volumes``.
+        """
         if isinstance(value, torch.Tensor):
             return value
 
         if isinstance(value, dict):
-            if "images" in value:
+            if "x_recon" in value:
+                value = value["x_recon"]
+            elif "images" in value:
                 value = value["images"]
             elif "volumes" in value:
                 value = value["volumes"]
-            elif "x_recon" in value:
-                value = value["x_recon"]
-            elif "x_real" in value:
-                value = value["x_real"]
             else:
-                raise ValueError(f"Unsupported keys: {list(value.keys())}")
+                raise ValueError(f"No prediction key found in dict: {list(value.keys())}")
+
+        return torch.as_tensor(value)
+
+    def _extract_target(self, value: Any) -> torch.Tensor:
+        """Extract target tensor from various input formats.
+
+        Key priority for dicts: ``x_real`` > ``images`` > ``volumes``.
+        """
+        if isinstance(value, torch.Tensor):
+            return value
+
+        if isinstance(value, dict):
+            if "x_real" in value:
+                value = value["x_real"]
+            elif "images" in value:
+                value = value["images"]
+            elif "volumes" in value:
+                value = value["volumes"]
+            else:
+                raise ValueError(f"No target key found in dict: {list(value.keys())}")
 
         return torch.as_tensor(value)
