@@ -359,7 +359,10 @@ class InContextMaskGIT(nn.Module):
             targets = sequence[mask_indices]
             mask_acc = (preds == targets).float().mean().item()
 
-        actual_mask_ratio = mask_indices.float().mean().item()
+        # Compute mask ratio among target positions only (not entire sequence)
+        num_masked_targets = mask_indices.sum().item()
+        num_total_targets = target_mask.sum().item()
+        actual_mask_ratio = num_masked_targets / max(num_total_targets, 1)
 
         metrics: dict[str, float] = {
             "mask_acc": mask_acc,
@@ -614,7 +617,10 @@ class InContextMaskGIT(nn.Module):
             else:
                 mask_acc = 0.0
 
-        actual_mask_ratio = mask_indices.float().mean().item()
+        # Compute mask ratio among target positions only (not entire sequence)
+        num_masked_targets = mask_indices.sum().item()
+        num_total_targets = target_mask.sum().item()
+        actual_mask_ratio = num_masked_targets / max(num_total_targets, 1)
 
         return loss, {"mask_acc": mask_acc, "mask_ratio": actual_mask_ratio}
 

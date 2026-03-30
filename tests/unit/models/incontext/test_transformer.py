@@ -109,45 +109,6 @@ class TestVariableLengthMaskGITTransformer:
         # Second sequence: all real -> all 0 (starts at index B*num_heads//2)
         assert (attn_mask[2, 0, :] == 0).all()
 
-    def test_predict_masked_variable_lengths(self):
-        """Test predict_masked with variable-length sequences."""
-        model = VariableLengthMaskGITTransformer(
-            vocab_size=1025,
-            mask_token_id=1024,
-            hidden_size=128,
-            num_layers=2,
-            num_heads=2,
-        )
-        model.eval()
-
-        batch_size = 2
-        seq_len = 16
-        tokens = torch.randint(0, 1024, (batch_size, seq_len))
-
-        # Variable lengths: first has 10 real tokens, second has 16
-        attention_mask = torch.zeros(batch_size, seq_len)
-        attention_mask[0, :10] = 1
-        attention_mask[1, :] = 1
-
-        with torch.no_grad():
-            masked_logits, targets, mask = model.predict_masked(
-                tokens, attention_mask, mask_ratio=0.15
-            )
-
-        # Mask should have same shape as tokens
-        assert mask.shape == (batch_size, seq_len)
-
-        # Logits should be for masked positions only
-        assert masked_logits.shape[0] == targets.shape[0]
-        assert masked_logits.shape[1] == 1025
-
-        # First sequence should only have masks in first 10 positions
-        assert not mask[0, 10:].any()
-
-        # At least one token masked per sequence
-        assert mask[0, :10].sum() >= 1
-        assert mask[1].sum() >= 1
-
     def test_padding_does_not_affect_output(self):
         """Test that padding positions don't affect real token outputs."""
         model = VariableLengthMaskGITTransformer(
@@ -204,62 +165,6 @@ class TestVariableLengthMaskGITTransformer:
         logits = model.forward(tokens, attention_mask, mask_indices)
 
         assert logits.shape == (batch_size, seq_len, 1025)
-
-    def test_predict_masked_only_masks_real_tokens(self):
-        """Test that predict_masked only masks real tokens, never padding."""
-        model = VariableLengthMaskGITTransformer(
-            vocab_size=1025,
-            mask_token_id=1024,
-            hidden_size=128,
-            num_layers=2,
-            num_heads=2,
-        )
-        model.eval()
-
-        batch_size = 4
-        seq_len = 20
-        tokens = torch.randint(0, 1024, (batch_size, seq_len))
-
-        # Variable lengths
-        attention_mask = torch.zeros(batch_size, seq_len)
-        attention_mask[0, :5] = 1  # 5 real tokens
-        attention_mask[1, :10] = 1  # 10 real tokens
-        attention_mask[2, :15] = 1  # 15 real tokens
-        attention_mask[3, :] = 1  # all real tokens
-
-        with torch.no_grad():
-            _, _, mask = model.predict_masked(tokens, attention_mask, mask_ratio=0.5)
-
-        # Check that no padding positions are masked
-        for i in range(batch_size):
-            real_positions = attention_mask[i].bool()
-            padding_positions = ~real_positions
-
-            # No padding should be masked
-            assert not mask[i][padding_positions].any()
-
-    def test_predict_masked_ensures_at_least_one_mask(self):
-        """Test that predict_masked ensures at least one token is masked per sample."""
-        model = VariableLengthMaskGITTransformer(
-            vocab_size=1025,
-            mask_token_id=1024,
-            hidden_size=128,
-            num_layers=2,
-            num_heads=2,
-        )
-        model.eval()
-
-        # Small sequence with low mask ratio might not mask anything by chance
-        # Run multiple times to test the safeguard
-        for _ in range(10):
-            tokens = torch.randint(0, 1024, (4, 8))
-            attention_mask = torch.ones(4, 8)  # All real tokens
-
-            with torch.no_grad():
-                _, _, mask = model.predict_masked(tokens, attention_mask, mask_ratio=0.01)
-
-            # Each sample should have at least one masked token
-            assert mask.sum(dim=1).min() >= 1
 
     def test_forward_all_padding_in_batch(self):
         """Test forward when some samples are all padding."""

@@ -7,7 +7,6 @@
 | Component | File | Tests |
 |-----------|------|-------|
 | MaskWeightedCrossEntropyLoss | `losses/mask_weighted_ce.py` | 7 |
-| VariableLengthInContextCollator | `data/collators/incontext_collator.py` | 12 |
 | InContextTokenizer | `models/incontext/tokenizer.py` | 31 |
 | VariableLengthMaskGITTransformer | `models/incontext/transformer.py` | 11 |
 | InContextSequenceBuilder | `models/incontext/sequence_builder.py` | 19 |
@@ -154,9 +153,6 @@ src/maskgit3d/
 │   └── incontext_steps.py          # InContextTrainingSteps
 ├── tasks/
 │   └── incontext_task.py           # InContextMaskGITTask
-├── data/collators/
-│   ├── incontext_collator.py       # VariableLengthInContextCollator
-│   └── incontext_sample_list_collator.py  # InContextSampleListCollator
 ├── losses/
 │   └── mask_weighted_ce.py         # MaskWeightedCrossEntropyLoss
 └── conf/
@@ -166,7 +162,6 @@ src/maskgit3d/
 tests/
 ├── unit/models/incontext/          # 84+ tests
 ├── unit/training/
-├── unit/data/collators/
 └── integration/test_incontext_training.py  # 17 tests
 ```
 
