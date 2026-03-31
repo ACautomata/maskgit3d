@@ -63,6 +63,9 @@ class InceptionV3FeatureExtractor(nn.Module):
             torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1),
         )
 
+        # Move entire module (including buffers) to target device
+        self.to(device=self.device)
+
     def _batchify_axis(self, x: torch.Tensor, spatial_axis: int) -> torch.Tensor:
         """Transform slices from one spatial axis into batch dimension.
 
