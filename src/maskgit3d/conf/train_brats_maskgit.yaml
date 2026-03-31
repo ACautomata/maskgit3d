@@ -1,0 +1,35 @@
+# BraTS 2023 MaskGIT (Stage 2) Training Configuration
+# Requires trained VQVAE checkpoint from Stage 1
+#
+# Best VQVAE checkpoint: FID=1.850, epoch 44
+# VQVAE config: large model, channels=[64,128,256,256], num_embeddings=8192
+#
+# Usage:
+#   maskgit3d-train --config-name train_brats_maskgit
+#   maskgit3d-train --config-name train_brats_maskgit trainer.max_epochs=100
+
+defaults:
+  - train
+  - override /task: maskgit
+  - override /model: maskgit
+  - override /data: brats2023
+  - override /trainer: brats
+  - override /callbacks: maskgit
+  - _self_
+
+# Data overrides for BraTS (must match VQVAE training normalization)
+data:
+  batch_size: 2
+  num_workers: 4
+  normalize_mode: zscore
+
+# Task overrides for MaskGIT Stage 2
+task:
+  vqvae_ckpt_path: /home/junran/maskgit3d-run/checkpoints/2026-03-29/06-59-26/epoch=044-val_rec_loss=0.0183.ckpt
+  lr: 1.0e-4
+  weight_decay: 0.05
+  warmup_steps: 1000
+  sliding_window:
+    enabled: false
+    roi_size: [128, 128, 128]
+    sw_batch_size: 1
