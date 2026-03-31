@@ -1,8 +1,8 @@
 """Sample saving callback for saving PNG samples during evaluation.
 
 This callback saves generated or reconstructed samples as PNG images during
-validation and test phases. For 3D volumes, the middle depth slice is extracted
-for 2D visualization.
+validation and test phases. For 3D volumes, three orthogonal views (sagittal,
+coronal, axial) are extracted and arranged in a grid for 2D visualization.
 """
 
 from pathlib import Path
@@ -33,17 +33,62 @@ def _normalize_to_uint8(tensor: torch.Tensor) -> np.ndarray:
     return (tensor * 255).clamp(0, 255).to(torch.uint8).numpy()
 
 
-def _extract_middle_slice(tensor: torch.Tensor) -> torch.Tensor:
-    """Extract the middle depth slice from a 5-D volume tensor.
+def _extract_three_views(
+    tensor: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Extract sagittal, coronal, and axial middle slices from a 5D volume.
+
+    Each slice is rotated 90° counterclockwise to correct for the storage
+    orientation of 3D medical volumes.
 
     Args:
         tensor: Shape [B, C, D, H, W].
 
     Returns:
-        Tensor of shape [B, C, H, W].
+        Tuple of three tensors (sagittal, coronal, axial), each of shape
+        [B, C, H_out, W_out].
     """
-    middle_idx = tensor.shape[2] // 2
-    return tensor[:, :, middle_idx, :, :]
+    d_mid = tensor.shape[2] // 2
+    h_mid = tensor.shape[3] // 2
+    w_mid = tensor.shape[4] // 2
+
+    # Axial: fix D, show H×W plane
+    axial = tensor[:, :, d_mid, :, :]
+    # Coronal: fix H, show D×W plane
+    coronal = tensor[:, :, :, h_mid, :]
+    # Sagittal: fix W, show D×H plane
+    sagittal = tensor[:, :, :, :, w_mid]
+
+    # Correct orientation: rotate 90° counterclockwise
+    sagittal = torch.rot90(sagittal, k=1, dims=[-2, -1])
+    coronal = torch.rot90(coronal, k=1, dims=[-2, -1])
+    axial = torch.rot90(axial, k=1, dims=[-2, -1])
+
+    return sagittal, coronal, axial
+
+
+def _make_view_grid(
+    views: list[np.ndarray],
+    n_cols: int,
+) -> Image.Image:
+    """Arrange a list of CHW uint8 arrays into a grid PIL image.
+
+    Args:
+        views: List of CHW uint8 arrays (each view as one cell).
+        n_cols: Number of columns in the grid.
+
+    Returns:
+        Combined grid as a PIL Image.
+    """
+    pil_images = [_chw_to_pil(v) for v in views]
+    n = len(pil_images)
+    n_rows = (n + n_cols - 1) // n_cols
+    cell_w, cell_h = pil_images[0].size
+    grid = Image.new("L", (n_cols * cell_w, n_rows * cell_h))
+    for idx, img in enumerate(pil_images):
+        row, col = divmod(idx, n_cols)
+        grid.paste(img, (col * cell_w, row * cell_h))
+    return grid
 
 
 def _chw_to_pil(chw: np.ndarray) -> Image.Image:
@@ -72,12 +117,14 @@ class SampleSavingCallback(Callback):
     outputs dict:
 
     * **VQVAE** mode – expects ``x_real`` and ``x_recon`` keys; saves a
-      side-by-side comparison (real on the left, reconstruction on the right).
-    * **MaskGIT** mode – expects a ``generated_images`` key; saves each
-      generated image individually.
+      2×3 grid (real row: sagittal, coronal, axial; recon row: sagittal,
+      coronal, axial).
+    * **MaskGIT** mode – expects a ``generated_images`` key; saves a
+      1×3 grid (sagittal, coronal, axial).
 
-    For 3D volumes with shape ``[B, C, D, H, W]``, the middle slice along the
-    depth axis is extracted before saving.
+    For 3D volumes with shape ``[B, C, D, H, W]``, three orthogonal views
+    are extracted and rotated to correct for storage orientation. For 2D
+    images, a simple side-by-side layout is used.
 
     Args:
         output_dir: Base directory for saved PNG files.
@@ -110,7 +157,13 @@ class SampleSavingCallback(Callback):
         stage: str,
         batch_idx: int,
     ) -> None:
-        """Save side-by-side VQVAE real/reconstruction pairs.
+        """Save VQVAE real/reconstruction pairs with three orthogonal views.
+
+        For 3D volumes, saves a 2×3 grid per sample:
+        Row 1: real (sagittal, coronal, axial)
+        Row 2: reconstruction (sagittal, coronal, axial)
+
+        For 2D images, saves a side-by-side pair as before.
 
         Args:
             x_real: Tensor [B, C, D, H, W] or [B, C, H, W].
@@ -121,25 +174,31 @@ class SampleSavingCallback(Callback):
         out_dir = self.output_dir / stage
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        if x_real.dim() == 5:
-            x_real = _extract_middle_slice(x_real)
-            x_recon = _extract_middle_slice(x_recon)
+        is_3d = x_real.dim() == 5
 
         n = min(x_real.shape[0], self.max_samples_per_batch)
         for i in range(n):
-            real_arr = _normalize_to_uint8(x_real[i])
-            recon_arr = _normalize_to_uint8(x_recon[i])
-
-            real_img = _chw_to_pil(real_arr)
-            recon_img = _chw_to_pil(recon_arr)
-
-            total_width = real_img.width + recon_img.width
-            combined = Image.new(real_img.mode, (total_width, real_img.height))
-            combined.paste(real_img, (0, 0))
-            combined.paste(recon_img, (real_img.width, 0))
+            if is_3d:
+                real_views = _extract_three_views(x_real[i : i + 1])
+                recon_views = _extract_three_views(x_recon[i : i + 1])
+                cells = []
+                for v in real_views:
+                    cells.append(_normalize_to_uint8(v[0]))
+                for v in recon_views:
+                    cells.append(_normalize_to_uint8(v[0]))
+                grid = _make_view_grid(cells, n_cols=3)
+            else:
+                real_arr = _normalize_to_uint8(x_real[i])
+                recon_arr = _normalize_to_uint8(x_recon[i])
+                real_img = _chw_to_pil(real_arr)
+                recon_img = _chw_to_pil(recon_arr)
+                total_width = real_img.width + recon_img.width
+                grid = Image.new(real_img.mode, (total_width, real_img.height))
+                grid.paste(real_img, (0, 0))
+                grid.paste(recon_img, (real_img.width, 0))
 
             filename = out_dir / f"batch{batch_idx:04d}_sample{i:02d}.png"
-            combined.save(filename)
+            grid.save(filename)
 
     def _save_maskgit_batch(
         self,
@@ -147,7 +206,10 @@ class SampleSavingCallback(Callback):
         stage: str,
         batch_idx: int,
     ) -> None:
-        """Save MaskGIT generated images.
+        """Save MaskGIT generated images with three orthogonal views.
+
+        For 3D volumes, saves a 1×3 grid per sample (sagittal, coronal, axial).
+        For 2D images, saves each image individually.
 
         Args:
             generated: Tensor [B, C, D, H, W] or [B, C, H, W].
@@ -157,15 +219,21 @@ class SampleSavingCallback(Callback):
         out_dir = self.output_dir / stage
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        if generated.dim() == 5:
-            generated = _extract_middle_slice(generated)
+        is_3d = generated.dim() == 5
 
         n = min(generated.shape[0], self.max_samples_per_batch)
         for i in range(n):
-            arr = _normalize_to_uint8(generated[i])
-            img = _chw_to_pil(arr)
-            filename = out_dir / f"batch{batch_idx:04d}_sample{i:02d}.png"
-            img.save(filename)
+            if is_3d:
+                views = _extract_three_views(generated[i : i + 1])
+                cells = [_normalize_to_uint8(v[0]) for v in views]
+                grid = _make_view_grid(cells, n_cols=3)
+                filename = out_dir / f"batch{batch_idx:04d}_sample{i:02d}.png"
+                grid.save(filename)
+            else:
+                arr = _normalize_to_uint8(generated[i])
+                img = _chw_to_pil(arr)
+                filename = out_dir / f"batch{batch_idx:04d}_sample{i:02d}.png"
+                img.save(filename)
 
     def _process_outputs(
         self,
